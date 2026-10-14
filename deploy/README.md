@@ -26,11 +26,13 @@ chmod 600 /www/couple-app/shared/*.env
 
 在宝塔文件编辑器中设置：
 
-- `backend.env`：真实 `MYSQL_PASSWORD`、随机 `JWT_SECRET` 和 SMTP 邮件参数。新数据库数据会保存在 `/www/couple-app/shared/data/mysql`，照片在 `shared/data/uploads`。
+- `backend.env`：连接宝塔中已经创建的 `couple` 库，设置 `DB_HOST=127.0.0.1`、`DB_PORT=3306`、`DB_NAME=couple`、`DB_USER=couple`，在 `DB_PASSWORD` 填入真实密码，`DATABASE_URL` 留空。再填写随机 `JWT_SECRET` 和 SMTP 邮件参数。真实密码只在服务器保存，不在 Git 中。照片保存到 `shared/data/uploads`。
 - `frontend.env`：默认 API 地址留空，走当前域名的 `/api`；需要地图时填写对应公开 Key。实际文件不要提交到 Git。
 - `webhook.env`：将 `WEBHOOK_SECRET` 替换为真实随机密钥，可用 `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` 生成。Gitee 中填写相同的密码。
 
-如果服务器已经有此项目的数据，先停止旧的服务，确认数据目录和备份，再将原数据库和照片接到这个固定数据目录。不要在未经确认时覆盖已有数据库。
+生产 Compose 只启动 API，使用 Linux host 网络连接宝塔的本机 MySQL，不创建新 MySQL 容器、不重新创建 couple 库。数据库应为 MySQL 8.0.13+，couple 用户需要具有该库的建表、改表、索引和读写权限。宝塔中已有数据库的数据仍由宝塔管理；如已有本项目照片，保留并接入固定 uploads 目录。
+
+`backend/docker-compose.dev.yml` 才是含 MySQL 容器的本地开发配置，生产部署不会使用它。
 
 ## 2. 首次部署
 
@@ -39,9 +41,9 @@ cd /www/couple-app/repo
 node --env-file=/www/couple-app/shared/frontend.env deploy/deploy-all.mjs
 ```
 
-这会从 `origin/master` 构建前端，检查后端并构建 Docker 服务，等待后端健康检查通过，再发布前端。前后端固定使用同一个提交；部署中又收到的新推送将在下一轮执行。
+这会从 `origin/master` 构建前端，检查后端类型及迁移文件，构建 API 镜像。有待执行迁移时，先备份已有 couple 库，再自动迁移；成功后替换 API，等待健康检查通过，最后发布前端。前后端固定使用同一个提交；部署中又收到的新推送将在下一轮执行。
 
-首次执行时 Docker 会创建数据库并自动迁移。后端 API 只监听服务器本机 `8787`。部署状态记录在 `/www/couple-app/state/`。
+首次执行时会在已经创建的 couple 库中自动建表。后端 API 只监听服务器本机 `8787`。部署状态记录在 `/www/couple-app/state/`。
 
 宝塔网站目录固定为 `/www/wwwroot/couple.senfoundry.com`。脚本让这个路径指向已构建完成的前端版本，所以 Nginx 始终从这个站点目录提供页面；发布时切换软链接，避免用户访问到只上传了一半的文件。真实版本保留在 `/www/couple-app/releases/` 中。首次部署若站点目录已经存在，会保留为同级 `.backup-时间戳` 目录，不删除原文件；如果切换失败会恢复原目录。
 
@@ -119,6 +121,20 @@ node /www/couple-app/repo/deploy/rollback-frontend.mjs
 ```
 
 部署工具自身或 systemd / Nginx 配置改变时，还需要在主克隆目录手动 `git pull --ff-only origin master`，然后按需重启 webhook 或重载 Nginx。业务更新由 webhook 自动构建，不需要在该主克隆中切换工作文件。
+
+## 数据表字段自动更新
+
+每次开发字段变化时，同步修改 `backend/src/db/schema.ts`，在 backend 中运行 `npm run db:generate`，把新 SQL 和 drizzle 元数据一同提交。后续由 Codex 实现需求时，`backend/AGENTS.md` 要求完成这一步，你无需自己生成或手工执行 SQL。
+
+服务器的自动部署会执行以下步骤：
+
+1. `npm run db:check` 验证 schema 与已提交迁移一致；遗漏 SQL 就停止。
+2. 核对数据库里的 `__drizzle_migrations` 历史，防止已发布 SQL 被改写或迁移缺失。
+3. 有新迁移时，使用一次性的官方 mysql:8.4 客户端容器，将现有数据库备份到 `/www/couple-app/shared/backups/before-migration-*.sql`。它仅运行 mysqldump，不启动新的数据库。备份失败就停止，不执行 DDL。
+4. 获取数据库迁移锁，按顺序执行尚未执行的 SQL，并记录版本。重复部署跳过已执行的迁移。
+5. 迁移成功后更新 API，再切换前端。API 启动时再次检查迁移记录，确保不会重复执行。
+
+字段重命名和数据格式转换会写成明确的迁移，不自动猜测或清空表。涉及 MySQL DDL 的失败可能留下部分表结构变更，应用版本回退不等于数据库逆向回退；旧服务能否继续运行取决于迁移是否向后兼容。备份文件用于需要时恢复，部署过程不自动覆盖数据库。
 
 ## 网页更新与提醒
 

@@ -3,3 +3,6 @@ node_modules/
 uploads/
 data/
 .mysql/
+.migration-test-*/
+migration-test-*/
+.publish-test-*/

@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import path from 'node:path';
+import { databaseUrlFrom } from './databaseConfig.ts';
 
 function required(name: string): string {
   const v = process.env[name];
@@ -10,7 +11,7 @@ function required(name: string): string {
 export const env = {
   port: Number(process.env.PORT ?? 8787),
   host: process.env.HOST ?? '0.0.0.0',
-  databaseUrl: required('DATABASE_URL'),
+  databaseUrl: databaseUrlFrom(process.env),
   jwtSecret: required('JWT_SECRET'),
   uploadDir: path.resolve(process.env.UPLOAD_DIR ?? './uploads'),
   /** 登录有效期 */

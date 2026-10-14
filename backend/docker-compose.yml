@@ -1,38 +1,21 @@
-# 一条命令启动：MySQL 8.4 + 后端
-#   cp .env.example .env    # 改好 JWT_SECRET、MYSQL_PASSWORD
-#   docker compose up -d
-# 然后在 App 里用邮箱注册（最多 2 个账号）；也可以用命令建号：
-#   docker compose exec api npm run user:add -- 你的邮箱 你的密码 昵称
+# 宝塔生产部署：仅启动 API，连接服务器现有的 MySQL couple 数据库。
+# Linux host 网络允许 API 连接宿主机 127.0.0.1:3306，不创建新数据库容器。
 services:
-  mysql:
-    image: mysql:8.4
-    restart: unless-stopped
-    environment:
-      MYSQL_DATABASE: couple
-      MYSQL_USER: couple
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?请在 .env 里设置 MYSQL_PASSWORD}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-${MYSQL_PASSWORD}}
-      TZ: Asia/Shanghai
-    command: ['--character-set-server=utf8mb4', '--collation-server=utf8mb4_0900_ai_ci']
-    volumes:
-      - ${COUPLE_DATA_DIR:-./data}/mysql:/var/lib/mysql
-    healthcheck:
-      test: ['CMD', 'mysqladmin', 'ping', '-h', '127.0.0.1', '-u', 'root', '-p${MYSQL_ROOT_PASSWORD:-${MYSQL_PASSWORD}}']
-      interval: 5s
-      retries: 30
-
   api:
     build: .
     restart: unless-stopped
-    depends_on:
-      mysql:
-        condition: service_healthy
+    network_mode: host
     environment:
-      DATABASE_URL: mysql://couple:${MYSQL_PASSWORD}@mysql:3306/couple
-      JWT_SECRET: ${JWT_SECRET:?请在 .env 里设置 JWT_SECRET}
+      DATABASE_URL: ${DATABASE_URL:-}
+      DB_HOST: ${DB_HOST:-127.0.0.1}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_NAME: ${DB_NAME:-couple}
+      DB_USER: ${DB_USER:-couple}
+      DB_PASSWORD: ${DB_PASSWORD:-}
+      JWT_SECRET: ${JWT_SECRET:?请设置 JWT_SECRET}
       UPLOAD_DIR: /app/uploads
       PORT: 8787
-      HOST: 0.0.0.0
+      HOST: 127.0.0.1
       MAX_USERS: ${MAX_USERS:-2}
       APP_TZ: ${APP_TZ:-Asia/Shanghai}
       SMTP_HOST: ${SMTP_HOST:-}
@@ -44,5 +27,3 @@ services:
       EXPO_ACCESS_TOKEN: ${EXPO_ACCESS_TOKEN:-}
     volumes:
       - ${COUPLE_DATA_DIR:-./data}/uploads:/app/uploads
-    ports:
-      - '127.0.0.1:8787:8787'

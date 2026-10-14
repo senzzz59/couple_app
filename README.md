@@ -11,6 +11,8 @@ docs/      产品和配置文档
 
 **部署从 [deploy/README.md](deploy/README.md) 开始。** 前端、后端各自独立构建和运行；一个 Gitee webhook 在 master 更新时部署两边，后端健康检查通过后再切换前端。真实环境配置、数据库和照片保存在服务器固定目录，不提交到仓库。
 
+生产使用宝塔中已创建的 MySQL `couple` 数据库。字段变更的迁移随代码提交，自动部署先备份、执行迁移，再更新服务；服务器不需要手工改表。生产 Compose 不会创建另一套数据库。
+
 ## 本地开发
 
 前端：在 `frontend` 执行 `npm ci`、`npm run web`。本地默认连接 `http://127.0.0.1:8787`；正式网页默认使用同域名 `/api`。
@@ -27,6 +29,7 @@ npm run build:web
 
 cd ../backend
 npm run typecheck
+npm run db:check
 npm test
 ```
 
