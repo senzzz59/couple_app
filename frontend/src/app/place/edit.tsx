@@ -1,6 +1,6 @@
 import * as Clipboard from 'expo-clipboard';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ClipboardPaste, LocateFixed, MapPin, Search } from 'lucide-react-native';
+import { ClipboardPaste, LocateFixed, MapPin, Navigation, Search } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, FadeOut } from 'react-native-reanimated';
@@ -10,6 +10,7 @@ import { PhotoItem, PhotoPicker } from '@/components/Photos';
 import { SheetScreen } from '@/components/Screen';
 import { Button, Chip, Field, PressScale, Row, Txt } from '@/components/ui';
 import { api, uploadImages } from '@/lib/api';
+import { amapShareUrl } from '@/lib/amap';
 import { confirm } from '@/lib/confirm';
 import { CATEGORIES, categoryEmoji } from '@/lib/food';
 import { AMAP_KEY, currentPosition, parseXhsShare, Poi, searchPoi } from '@/lib/geo';
@@ -38,22 +39,55 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
     lat: p?.lat ?? null,
     lng: p?.lng ?? null,
     xhsUrl: p?.xhsUrl ?? '',
+    amapUrl: p?.amapUrl ?? '',
     note: p?.note ?? '',
   });
   const [cover, setCover] = useState<PhotoItem[]>(p?.cover ? [{ remote: p.cover }] : []);
   const [saving, setSaving] = useState(false);
   const [locating, setLocating] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importedUrl, setImportedUrl] = useState(p?.amapUrl ?? '');
   const [poiResults, setPois] = useState<Poi[]>([]);
   const set = (patch: Partial<typeof f>) => setF((s) => ({ ...s, ...patch }));
 
   // 高德搜索：输入店名时自动联想（已经选定位置后就不再提示）
-  const searching = !!AMAP_KEY && f.name.trim().length >= 2 && f.lat == null;
+  const searching = !!AMAP_KEY && f.name.trim().length >= 2 && f.lat == null && !f.amapUrl;
   const pois = searching ? poiResults : [];
   useEffect(() => {
     if (!searching) return;
-    const t = setTimeout(() => searchPoi(f.name, f.city).then(setPois).catch(() => setPois([])), 400);
-    return () => clearTimeout(t);
+    let active = true;
+    const t = setTimeout(() => searchPoi(f.name, f.city).then((results) => { if (active) setPois(results); }).catch(() => { if (active) setPois([]); }), 400);
+    return () => { active = false; clearTimeout(t); };
   }, [searching, f.name, f.city]);
+
+  const readAmap = async (text: string) => {
+    const url = amapShareUrl(text);
+    if (!url) throw new Error('没有找到高德链接，请在高德地点页点「分享 → 复制链接」');
+    const result = await api.post<{ amapUrl: string; location: { name: string; address: string; lat: number; lng: number } | null }>('/api/amap/resolve', { url });
+    setImportedUrl(result.amapUrl);
+    return {
+      amapUrl: result.amapUrl,
+      lat: result.location?.lat ?? null,
+      lng: result.location?.lng ?? null,
+      ...(result.location?.name ? { name: result.location.name } : {}),
+      ...(result.location?.address ? { address: result.location.address, city: '' } : {}),
+    };
+  };
+
+  const pasteAmap = async () => {
+    setImporting(true);
+    try {
+      const patch = await readAmap(await Clipboard.getStringAsync());
+      set(patch);
+      setPois([]);
+      haptic.success();
+      toast(patch.lat != null ? '已读取高德地点，保存后即可导航' : '已关联高德链接，保存后可打开原地点', '📍');
+    } catch (e) {
+      toast((e as Error).message, '📍');
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const pasteXhs = async () => {
     const text = await Clipboard.getStringAsync();
@@ -68,7 +102,7 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
     setLocating(true);
     try {
       const pos = await currentPosition();
-      set({ lat: pos.lat, lng: pos.lng, address: f.address || pos.address, city: f.city || pos.city });
+      set({ amapUrl: '', lat: pos.lat, lng: pos.lng, address: f.address || pos.address, city: f.city || pos.city });
       haptic.success();
     } catch (e) {
       toast((e as Error).message, '📍');
@@ -78,20 +112,23 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
   };
 
   const save = async () => {
-    if (!f.name.trim()) return toast('店名还没填', '✏️');
     setSaving(true);
     try {
+      const form = f.amapUrl && f.amapUrl !== importedUrl ? { ...f, ...await readAmap(f.amapUrl) } : f;
+      set(form);
+      if (!form.name.trim()) return toast('店名还没填', '✏️');
       const newCover = cover[0]?.local ? (await uploadImages([cover[0].local]))[0] : (cover[0]?.remote ?? null);
       const body = {
-        name: f.name.trim(),
+        name: form.name.trim(),
         status: f.status,
         category: f.category || null,
         price: f.price ? Math.round(Number(f.price)) || null : null,
         rating: f.status === 'visited' && f.rating ? f.rating : null,
-        address: f.address || null,
-        city: f.city || null,
-        lat: f.lat,
-        lng: f.lng,
+        address: form.address || null,
+        city: form.city || null,
+        lat: form.lat,
+        lng: form.lng,
+        amapUrl: form.amapUrl || null,
         xhsUrl: f.xhsUrl || null,
         note: f.note || null,
         cover: newCover,
@@ -117,7 +154,36 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
   };
 
   return (
-    <SheetScreen title={params.id ? '编辑' : '收藏一家店'} action={<Button title="保存" onPress={save} loading={saving} style={{ height: 38, paddingHorizontal: 16 }} />}>
+    <SheetScreen title={params.id ? '编辑' : '收藏一家店'} action={<Button title="保存" onPress={save} loading={saving} disabled={importing || locating} style={{ height: 38, paddingHorizontal: 16 }} />}>
+      <View style={styles.amapCard}>
+        <Row gap={10}>
+          <Navigation size={22} color={colors.sageInk} />
+          <View style={{ flex: 1, gap: 4 }}>
+            <Txt v="bodyStrong">收藏高德地点</Txt>
+            <Txt v="caption">在高德找到这家店，点「分享 → 复制链接」，回来粘贴</Txt>
+          </View>
+        </Row>
+        <Button title={f.amapUrl ? '粘贴另一处高德地点' : '粘贴高德地点链接'} icon={ClipboardPaste} onPress={pasteAmap} loading={importing} disabled={saving || locating} />
+        <Field
+          label="高德链接"
+          value={f.amapUrl}
+          editable={!importing && !saving && !locating}
+          onChangeText={(amapUrl) => set({ amapUrl, lat: null, lng: null })}
+          placeholder="也可以在这里粘贴高德分享链接或文案"
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        {!!f.amapUrl && (
+          <Row style={{ flexWrap: 'wrap', justifyContent: 'space-between' }}>
+            <Txt v="caption" color={colors.sageInk}>
+              {f.amapUrl !== importedUrl ? '保存时会读取地点信息' : f.lat != null && f.lng != null ? '已关联高德位置，可一键导航' : '已关联分享链接，可打开高德原地点'}
+            </Txt>
+            <PressScale disabled={importing || saving || locating} onPress={() => { set({ amapUrl: '', lat: null, lng: null }); setImportedUrl(''); }}>
+              <Txt v="caption">移除链接</Txt>
+            </PressScale>
+          </Row>
+        )}
+      </View>
       <Animated.View entering={FadeInDown.springify().damping(18)}>
         <PressScale onPress={pasteXhs} style={styles.xhsCard}>
           <View style={styles.xhsLogo}>
@@ -145,7 +211,7 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
       />
 
       <View>
-        <Field label="店名" value={f.name} onChangeText={(name) => set({ name, lat: f.lat && name !== f.name ? null : f.lat })} placeholder={AMAP_KEY ? '输入店名，自动搜索' : '例如：湊湊火锅'} />
+        <Field label="店名" value={f.name} editable={!importing && !saving} onChangeText={(name) => set({ name })} placeholder={AMAP_KEY ? '输入店名，自动搜索' : '例如：湊湊火锅'} />
         {pois.length > 0 && (
           <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.pois}>
             {pois.slice(0, 6).map((p) => (
@@ -154,7 +220,7 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
                 style={styles.poi}
                 onPress={() => {
                   haptic.tick();
-                  set({ name: p.name, address: p.address, city: p.city, lat: p.lat, lng: p.lng, category: f.category || (CATEGORIES.includes(p.category) ? p.category : '') });
+                  set({ amapUrl: '', name: p.name, address: p.address, city: p.city, lat: p.lat, lng: p.lng, category: f.category || (CATEGORIES.includes(p.category) ? p.category : '') });
                   setPois([]);
                 }}>
                 <Search size={14} color={colors.muted} />
@@ -195,15 +261,15 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
       <Field label="人均（元）" value={f.price} onChangeText={(price) => set({ price: price.replace(/[^\d]/g, '') })} keyboardType="number-pad" placeholder="例如 150" />
 
       <View style={{ gap: 8 }}>
-        <Field label="地址" value={f.address} onChangeText={(address) => set({ address })} placeholder="街道、商场、楼层" />
+        <Field label="地址" value={f.address} editable={!importing && !saving} onChangeText={(address) => set({ address })} placeholder="街道、商场、楼层" />
         <Row>
-          <PressScale onPress={locate} style={styles.locate}>
+          <PressScale onPress={locate} disabled={locating || importing || saving} style={styles.locate}>
             {locating ? <ActivityIndicator size="small" color={colors.ink} /> : <LocateFixed size={16} color={colors.ink} />}
             <Txt v="caption" color={colors.ink} style={{ fontWeight: '600' }}>
-              用我现在的位置
+              我就在店里，使用当前位置
             </Txt>
           </PressScale>
-          {f.lat != null && (
+          {f.lat != null && f.lng != null && (
             <Animated.View entering={FadeIn}>
               <Row gap={4}>
                 <MapPin size={14} color={colors.sageInk} />
@@ -232,6 +298,7 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
 }
 
 const styles = StyleSheet.create({
+  amapCard: { gap: 12, backgroundColor: colors.surface, borderRadius: radius.lg, padding: 14, borderWidth: 1, borderColor: colors.line },
   xhsCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderRadius: radius.lg, padding: 14, borderWidth: 1, borderColor: '#FFD6DC' },
   xhsLogo: { width: 52, height: 52, borderRadius: 14, backgroundColor: '#FF2442', alignItems: 'center', justifyContent: 'center' },
   pois: { marginTop: 6, backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, overflow: 'hidden' },

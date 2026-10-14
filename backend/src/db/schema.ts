@@ -70,6 +70,7 @@ export const places = mysqlTable(
     rating: double('rating'),
     price: int('price'),
     xhsUrl: varchar('xhs_url', { length: 500 }),
+    amapUrl: varchar('amap_url', { length: 2000 }),
     note: text('note'),
     cover: varchar('cover', { length: 100 }),
     createdBy: userRef('created_by'),

@@ -1,0 +1,1 @@
+ALTER TABLE `places` ADD `amap_url` varchar(2000);

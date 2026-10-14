@@ -1,5 +1,6 @@
 import * as Location from 'expo-location';
 import { Linking, Platform } from 'react-native';
+import { mapLinks, type MapDestination } from './amap';
 
 /**
  * 国内地图用 GCJ-02 坐标（高德 / Apple 地图中国区）。手机定位拿到的是 WGS-84，需要转换。
@@ -89,22 +90,15 @@ export const AMAP_JS_KEY = process.env.EXPO_PUBLIC_AMAP_JS_KEY;
 export const AMAP_JS_CODE = process.env.EXPO_PUBLIC_AMAP_JS_CODE ?? '';
 
 /** 打开导航：优先高德 App，没有就打开高德网页版（网页版也会尝试唤起 App） */
-export async function openInMaps(p: { name: string; lat: number | null; lng: number | null; address?: string | null }) {
-  const name = encodeURIComponent(p.name);
-  if (p.lat == null || p.lng == null) {
-    return Linking.openURL(`https://uri.amap.com/search?keyword=${encodeURIComponent(`${p.name} ${p.address ?? ''}`)}&callnative=1`);
-  }
-  const native =
-    Platform.OS === 'ios'
-      ? `iosamap://viewMap?sourceApplication=couple&poiname=${name}&lat=${p.lat}&lon=${p.lng}&dev=0`
-      : `androidamap://viewMap?sourceApplication=couple&poiname=${name}&lat=${p.lat}&lon=${p.lng}&dev=0`;
-  if (Platform.OS !== 'web') {
+export async function openInMaps(p: MapDestination) {
+  const { native, web } = mapLinks(p, Platform.OS);
+  if (Platform.OS !== 'web' && native) {
     try {
       await Linking.openURL(native);
       return;
     } catch {}
   }
-  return Linking.openURL(`https://uri.amap.com/marker?position=${p.lng},${p.lat}&name=${name}&coordinate=gaode&callnative=1`);
+  return Linking.openURL(web);
 }
 
 /** 从小红书分享文案里提取链接和标题 */

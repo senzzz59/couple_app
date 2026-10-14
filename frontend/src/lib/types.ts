@@ -36,6 +36,7 @@ export interface Place extends Base {
   rating: number | null;
   price: number | null;
   xhsUrl: string | null;
+  amapUrl: string | null;
   note: string | null;
   cover: string | null;
 }

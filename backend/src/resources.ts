@@ -8,6 +8,7 @@ import { removeFiles } from './files.ts';
 import { broadcast } from './realtime.ts';
 import { visibleAnswers } from './answerPrivacy.ts';
 import { momentPagination } from './momentPagination.ts';
+import { validAmapUrl } from './amap.ts';
 
 const s = schema;
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -45,6 +46,7 @@ const resources: Resource[] = [
       rating: opt(z.number().min(0).max(5)),
       price: opt(z.number().int().min(0)),
       xhsUrl: opt(z.string().max(500)),
+      amapUrl: opt(z.string().max(2000).refine(validAmapUrl, '请使用高德地图的地点分享链接')),
       note: opt(z.string().max(2000)),
       cover: opt(file),
     }),

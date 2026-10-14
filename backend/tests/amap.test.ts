@@ -1,0 +1,67 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { parseAmapLocation, resolveAmapUrl, validAmapUrl } from '../src/amap.ts';
+import { amapShareUrl, mapLinks } from '../../frontend/src/lib/amap.ts';
+
+test('extracts a full AMap share message and rejects lookalike hosts and credentials', () => {
+  assert.equal(amapShareUrl('推荐这家店！https://surl.amap.com/abc（高德地图）'), 'https://surl.amap.com/abc');
+  assert.equal(amapShareUrl('http://url.amap.com/abc'), 'https://url.amap.com/abc');
+  for (const url of ['https://amap.com.evil.com/x', 'https://evilamap.com/x', 'https://amap.com@127.0.0.1/x', 'https://user@amap.com/x', 'https://amap.com:8080/x', 'file:///tmp/x']) {
+    assert.equal(validAmapUrl(url), false);
+    assert.equal(amapShareUrl(url), null);
+  }
+});
+
+test('reads latitude-first AMap shares and longitude-first URI destinations', () => {
+  const share = 'https://wb.amap.com/?p=' + encodeURIComponent('B0TEST,22.540755,113.940255,火锅店,科技路80号');
+  assert.deepEqual(parseAmapLocation(share), { lat: 22.540755, lng: 113.940255, name: '火锅店', address: '科技路80号' });
+  const marker = 'https://uri.amap.com/marker?position=113.940255,22.540755&name=火锅店&coordinate=gaode';
+  assert.equal(parseAmapLocation(marker)?.lng, 113.940255);
+  assert.equal(parseAmapLocation(marker + '&dev=1'), null);
+  for (const pair of ['NaN,22', '113,NaN', '181,22', '113,91', ',22']) {
+    assert.equal(parseAmapLocation(`https://uri.amap.com/marker?position=${pair}`), null);
+  }
+});
+
+test('resolves real short-link redirect shape without fetching the destination page', async () => {
+  const calls: string[] = [];
+  const fetcher = (async (url, options) => {
+    calls.push(String(url));
+    assert.equal(options?.redirect, 'manual');
+    return new Response(null, { status: 302, headers: { location: 'https://wb.amap.com/?p=' + encodeURIComponent('B0TEST,22.54,113.94,店名,地址') } });
+  }) as typeof fetch;
+  const result = await resolveAmapUrl('https://surl.amap.com/test', fetcher);
+  assert.equal(result.amapUrl, 'https://surl.amap.com/test');
+  assert.equal(result.location?.lng, 113.94);
+  assert.equal(calls.length, 1);
+});
+
+test('blocked redirects, timeouts, missing data and loops preserve the original link', async () => {
+  for (const target of ['http://127.0.0.1/private', 'https://amap.com.evil.com/x', 'https://amap.com:8080/x']) {
+    let count = 0;
+    const fetcher = (async () => { count++; return new Response(null, { status: 302, headers: { location: target } }); }) as typeof fetch;
+    assert.equal((await resolveAmapUrl('https://surl.amap.com/test', fetcher)).location, null);
+    assert.equal(count, 1);
+  }
+  const failed = await resolveAmapUrl('https://surl.amap.com/test', (async () => { throw new Error('timeout'); }) as typeof fetch);
+  assert.deepEqual(failed, { amapUrl: 'https://surl.amap.com/test', location: null });
+  let count = 0;
+  await resolveAmapUrl('https://surl.amap.com/test', (async () => {
+    count++; return new Response(null, { status: 302, headers: { location: '/test' } });
+  }) as typeof fetch);
+  assert.equal(count, 5);
+  await assert.rejects(resolveAmapUrl('https://example.com/test'));
+});
+
+test('navigation uses GCJ-02 destination, with saved links and old-place search as fallbacks', () => {
+  const place = { name: '火锅 & 茶', lat: 22.54, lng: 113.94, amapUrl: 'https://surl.amap.com/test' };
+  assert.ok(mapLinks(place, 'ios').native?.startsWith('iosamap://navi?'));
+  assert.ok(mapLinks(place, 'android').native?.startsWith('androidamap://navi?'));
+  const web = new URL(mapLinks(place, 'web').web);
+  assert.equal(web.pathname, '/navigation');
+  assert.equal(web.searchParams.get('to'), '113.94,22.54,火锅 & 茶');
+  assert.equal(web.searchParams.get('from'), '');
+  assert.equal(mapLinks({ ...place, lat: null }, 'web').web, place.amapUrl);
+  const search = new URL(mapLinks({ name: '火锅', city: '深圳', address: '科技路', lat: null, lng: null }, 'web').web);
+  assert.equal(search.searchParams.get('keyword'), '深圳 火锅 科技路');
+});
