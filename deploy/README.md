@@ -56,6 +56,8 @@ node --env-file=/www/couple-app/shared/frontend.env deploy/deploy-all.mjs
 
 部署脚本不自动删除旧版本。新版本保留旧的带哈希资源，避免仍打开旧页面的手机加载失败。
 
+前端构建限制 Metro 使用一个 worker，降低同时打包浏览器和静态页面时的内存占用。若构建报 `npm exited 137`，表示进程被强制结束，可能是服务器或容器内存限制；先检查 `free -h`、`swapon --show` 和 `journalctl -k -n 100 --no-pager` 中是否有 OOM / Killed process 记录。npm 的 Unknown global config 警告本身不会导致此次退出。处理内存不足后重新运行部署命令即可，失败构建不会发布到网站目录。
+
 ## 3. 常驻 webhook 接收器
 
 请求分工如下：

@@ -10,7 +10,11 @@ export function run(command, args, cwd, env = process.env) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd, env, stdio: 'inherit' });
     child.on('error', reject);
-    child.on('exit', (code) => code === 0 ? resolve() : reject(new Error(`${command} exited ${code}`)));
+    child.on('exit', (code, signal) => {
+      if (code === 0) return resolve();
+      const hint = code === 137 || signal === 'SIGKILL' ? '；进程被强制结束，请检查 free -h、swapon --show 和内核 OOM 日志' : '';
+      reject(new Error(`${command} exited ${code ?? signal}${hint}`));
+    });
   });
 }
 
