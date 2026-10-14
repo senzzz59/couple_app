@@ -20,10 +20,10 @@ export function today(): Date {
   return new Date(n.getFullYear(), n.getMonth(), n.getDate());
 }
 
-export const diffDays = (a: Date, b: Date) => Math.round((a.getTime() - b.getTime()) / DAY);
+export const diffDays = (a: Date, b: Date) => Math.round((Date.UTC(a.getFullYear(), a.getMonth(), a.getDate()) - Date.UTC(b.getFullYear(), b.getMonth(), b.getDate())) / DAY);
 
-/** 在一起的天数，第一天算第 1 天 */
-export const daysTogether = (start: string | null | undefined) => (start ? diffDays(today(), parseDay(start)) + 1 : 0);
+/** 已经在一起的完整日历天数：当天为 0，次日为 1。 */
+export const daysTogether = (start: string | null | undefined, from = today()) => (start ? Math.max(0, diffDays(from, parseDay(start))) : 0);
 
 const WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 export const fmtDate = (d: Date | string, withWeek = false) => {
@@ -89,11 +89,12 @@ export function nextOccurrence(a: Pick<Anniversary, 'date' | 'lunar' | 'yearly'>
 /** 恋爱里程碑：每 100 天、每 520/1314 等特殊数字 */
 export function nextMilestone(start: string | null | undefined, from = today()) {
   if (!start) return null;
-  const n = diffDays(from, parseDay(start)) + 1;
+  const n = diffDays(from, parseDay(start));
   const specials = [520, 1314, 2000, 3000, 5200];
   const next100 = Math.max(100, Math.ceil(n / 100) * 100);
   const target = Math.min(next100, ...specials.filter((x) => x >= n));
-  const date = new Date(parseDay(start).getTime() + (target - 1) * DAY);
+  const date = parseDay(start);
+  date.setDate(date.getDate() + target);
   return { target, date, daysLeft: target - n };
 }
 

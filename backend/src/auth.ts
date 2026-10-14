@@ -76,6 +76,7 @@ export async function authRoutes(app: FastifyInstance) {
       .object({
         name: z.string().trim().min(1).max(40),
         avatar: z.string().max(100).nullable(),
+        gender: z.enum(['male', 'female']).nullable(),
         birthday: dateStr.nullable(),
         birthdayLunar: z.boolean(),
         mood: z.string().max(16).nullable(),

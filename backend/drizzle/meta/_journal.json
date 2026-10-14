@@ -43,6 +43,13 @@
       "when": 1791998897790,
       "tag": "0005_mysql57_compatible_defaults",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1792002959867,
+      "tag": "0006_curious_the_santerians",
+      "breakpoints": true
     }
   ]
 }

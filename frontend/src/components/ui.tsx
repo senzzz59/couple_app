@@ -17,6 +17,7 @@ import {
 import Animated, { FadeInDown, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { fileUrl } from '@/lib/api';
+import { mascotFor } from '@/lib/profile';
 import { Blob } from './Mascot';
 import { haptic } from '@/lib/haptics';
 import type { User } from '@/lib/types';
@@ -144,13 +145,16 @@ export function Chip({ label, active, onPress, color = colors.accentStrong }: { 
   );
 }
 
-// ---------- 头像：没有照片就用名字首字 + 柔和底色
+// ---------- 头像：照片优先，已设置性别时显示对应团子，否则用名字首字
 export function Avatar({ user, size = 40, ring }: { user?: User | null; size?: number; ring?: string }) {
-  const tint = user?.name ? [colors.peach, colors.lilac, colors.sky, colors.sage][user.name.charCodeAt(0) % 4] : colors.surfaceAlt;
+  const who = mascotFor(user);
+  const tint = who === 'him' ? colors.peach : who === 'her' ? colors.pink : colors.surfaceAlt;
   return (
     <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: tint, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderWidth: ring ? 2.5 : 0, borderColor: ring }}>
       {user?.avatar ? (
         <Image source={fileUrl(user.avatar, true)} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} />
+      ) : who ? (
+        <Blob who={who} size={size * 0.9} bob={false} />
       ) : (
         <Txt style={{ fontSize: size * 0.42, fontWeight: '700' }} color={colors.inkSoft}>
           {user?.name?.slice(0, 1) ?? '·'}
