@@ -13,6 +13,8 @@ import Animated, {
 import Svg, { Ellipse, Path } from 'react-native-svg';
 
 import { mascot } from '@/theme';
+import { mascotFor } from '@/lib/profile';
+import type { User } from '@/lib/types';
 
 const AnimatedEllipse = Animated.createAnimatedComponent(Ellipse);
 
@@ -128,7 +130,7 @@ function RisingHeart({ i, size }: { i: number; size: number }) {
 }
 
 /** 两个靠在一起的小人，中间冒小爱心 */
-export function BlobCouple({ size = 160, hearts = true, mood = 'normal' }: { size?: number; hearts?: boolean; mood?: BlobMood }) {
+export function BlobCouple({ size = 160, hearts = true, mood = 'normal', me, partner }: { size?: number; hearts?: boolean; mood?: BlobMood; me?: User | null; partner?: User | null }) {
   const b = size * 0.56;
   return (
     <View style={{ width: size, height: b * 1.15, alignItems: 'center', justifyContent: 'flex-end' }}>
@@ -140,8 +142,8 @@ export function BlobCouple({ size = 160, hearts = true, mood = 'normal' }: { siz
         </View>
       )}
       <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
-        <Blob who="him" size={b} lean={-6} mood={mood} />
-        <Blob who="her" size={b} lean={6} mood={mood} delay={400} style={{ marginLeft: -b * 0.16 }} />
+        <Blob who={mascotFor(me) ?? 'him'} size={b} lean={-6} mood={mood} />
+        <Blob who={mascotFor(partner) ?? 'her'} size={b} lean={6} mood={mood} delay={400} style={{ marginLeft: -b * 0.16 }} />
       </View>
     </View>
   );

@@ -1,7 +1,7 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "7e903086-0d51-4919-98e4-e872f62e1bda",
+  "id": "ae17512d-1f54-4bf9-bacd-651bc5a39fee",
   "prevId": "58c46eb8-b83d-4c73-a39b-2aad61e4a95b",
   "tables": {
     "anniversaries": {
@@ -704,13 +704,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "amap_url": {
-          "name": "amap_url",
-          "type": "varchar(2000)",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "note": {
           "name": "note",
           "type": "text",
@@ -1043,6 +1036,13 @@
         "avatar": {
           "name": "avatar",
           "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "gender": {
+          "name": "gender",
+          "type": "enum('male','female')",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false

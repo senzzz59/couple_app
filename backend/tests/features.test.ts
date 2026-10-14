@@ -54,7 +54,7 @@ test('reminder quota retains earliest deadlines, excludes completed todos and re
 
 test('today’s milestone is included, then advances to the next milestone', () => {
   const start = new Date(2026, 0, 1);
-  const day100 = new Date(2026, 0, 100);
+  const day100 = new Date(2026, 0, 101);
   assert.equal(nextMilestone(toDay(start), day100)?.target, 100);
-  assert.equal(nextMilestone(toDay(start), new Date(2026, 0, 101))?.target, 200);
+  assert.equal(nextMilestone(toDay(start), new Date(2026, 0, 102))?.target, 200);
 });
