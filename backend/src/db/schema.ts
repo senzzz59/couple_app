@@ -29,6 +29,7 @@ export const users = mysqlTable('users', {
   passwordHash: varchar('password_hash', { length: 100 }).notNull(),
   name: varchar('name', { length: 40 }).notNull().default(''),
   avatar: varchar('avatar', { length: 100 }),
+  gender: mysqlEnum('gender', ['male', 'female']),
   birthday: date('birthday', { mode: 'string' }),
   birthdayLunar: boolean('birthday_lunar').notNull().default(false),
   mood: varchar('mood', { length: 16 }),

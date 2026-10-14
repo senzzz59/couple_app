@@ -34,7 +34,7 @@ import { colors, fonts, radius, springs } from '@/theme';
 
 // ---------------- 在一起天数大卡片
 function HeroCard() {
-  const { space } = useCouple();
+  const { space, me, partner } = useCouple();
   const anns = useQuery<Anniversary[]>('/api/anniversaries');
   const n = daysTogether(space?.startDate);
   const next = upcomingEvents(anns.data, space?.startDate, false)[0];
@@ -42,7 +42,7 @@ function HeroCard() {
   return (
     <PressScale onPress={() => router.push('/anniversaries')} style={styles.hero}>
       <View style={styles.heroBlobs} pointerEvents="none">
-        <BlobCouple size={150} />
+        <BlobCouple size={150} me={me} partner={partner} />
       </View>
       <Txt v="label" color={colors.pinkInk}>
         我们在一起

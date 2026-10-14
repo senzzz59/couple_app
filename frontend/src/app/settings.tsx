@@ -5,6 +5,7 @@ import { ActivityIndicator, Modal, Platform, StyleSheet, View } from 'react-nati
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { DatePicker } from '@/components/DatePicker';
+import { Blob } from '@/components/Mascot';
 import { toast } from '@/components/motion';
 import { pickImages } from '@/components/Photos';
 import { Screen } from '@/components/Screen';
@@ -90,6 +91,7 @@ function UpdateSettings() {
 /** 资料表单：拿到 me 之后才挂载，直接用它做初始值 */
 function ProfileForm({ me, showPw, onSaved }: { me: User; showPw: boolean; onSaved: () => void }) {
   const [name, setName] = useState(me.name);
+  const [gender, setGender] = useState<User['gender']>(me.gender ?? null);
   const [birthday, setBirthday] = useState<string | null>(me.birthday);
   const [pw, setPw] = useState('');
   const [saving, setSaving] = useState(false);
@@ -97,7 +99,7 @@ function ProfileForm({ me, showPw, onSaved }: { me: User; showPw: boolean; onSav
   const saveProfile = async () => {
     setSaving(true);
     try {
-      await api.patch('/api/me', { name: name.trim() || me.name, birthday, ...(pw ? { password: pw } : {}) });
+      await api.patch('/api/me', { name: name.trim() || me.name, gender, birthday, ...(pw ? { password: pw } : {}) });
       haptic.success();
       toast('已保存', '✅');
       setPw('');
@@ -113,6 +115,18 @@ function ProfileForm({ me, showPw, onSaved }: { me: User; showPw: boolean; onSav
   return (
     <Animated.View entering={enter(1)} style={{ gap: 14 }}>
       <Field label="昵称" value={name} onChangeText={setName} maxLength={40} />
+      <View style={{ gap: 8 }}>
+        <Txt v="label">我的性别</Txt>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          {([{ value: 'male', label: '男生', who: 'him' }, { value: 'female', label: '女生', who: 'her' }, { value: null, label: '暂不设置', who: null }] as const).map((option) => (
+            <PressScale key={option.value ?? 'unset'} accessibilityRole="radio" aria-checked={gender === option.value} accessibilityState={{ checked: gender === option.value }} accessibilityLabel={option.label} onPress={() => setGender(option.value)} style={{ flex: 1, minHeight: 96, alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: radius.md, borderWidth: 2, borderColor: gender === option.value ? colors.accentStrong : colors.line, backgroundColor: colors.surface }}>
+              {option.who ? <Blob who={option.who} size={48} bob={false} /> : <Txt style={{ fontSize: 28 }}>·</Txt>}
+              <Txt v="caption">{option.label}</Txt>
+            </PressScale>
+          ))}
+        </View>
+        <Txt v="caption">男生对应橙色小芽，女生对应粉色蝴蝶结，保存后生效。</Txt>
+      </View>
       <DatePicker label="我的生日" value={birthday} onChange={setBirthday} showLunar />
       {showPw && (
         <Animated.View entering={FadeInDown.springify()}>

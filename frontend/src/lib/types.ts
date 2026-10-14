@@ -3,6 +3,7 @@ export interface User {
   email: string;
   name: string;
   avatar: string | null;
+  gender: 'male' | 'female' | null;
   birthday: string | null;
   birthdayLunar: boolean;
   mood: string | null;
