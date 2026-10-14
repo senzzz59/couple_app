@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 
 export const root = path.resolve(process.env.COUPLE_APP_ROOT || '/www/couple-app');
 export const repository = path.join(root, 'repo');
+export const webRoot = path.resolve(process.env.COUPLE_WEB_ROOT || '/www/wwwroot/couple.senfoundry.com');
 
 export function run(command, args, cwd, env = process.env) {
   return new Promise((resolve, reject) => {
@@ -57,11 +58,25 @@ export async function checkout(kind) {
   return { commit, id, worktree };
 }
 
-export async function publishFrontend(release) {
-  const link = path.join(root, 'frontend-current');
-  const temporary = path.join(root, `frontend-next-${process.pid}`);
-  const existing = await fs.lstat(link).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
-  if (existing && !existing.isSymbolicLink()) throw new Error('frontend-current exists and is not a symlink; refusing to overwrite');
-  await fs.symlink(release, temporary, 'dir');
-  await fs.rename(temporary, link);
+export async function publishFrontend(release, { link = webRoot, io = fs } = {}) {
+  if (!path.isAbsolute(link) || link === path.parse(link).root || link === root || link === repository) throw new Error('Invalid website root');
+  const temporary = `${link}.next-${process.pid}-${Date.now()}`;
+  const backup = `${link}.backup-${Date.now()}`;
+  await io.mkdir(path.dirname(link), { recursive: true });
+  const existing = await io.lstat(link).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
+  if (existing && !existing.isSymbolicLink() && !existing.isDirectory()) throw new Error('Website root is not a directory');
+  await io.symlink(release, temporary, 'dir');
+  let moved = false;
+  try {
+    if (existing?.isDirectory() && !existing.isSymbolicLink()) {
+      await io.rename(link, backup);
+      moved = true;
+    }
+    await io.rename(temporary, link);
+    if (moved) console.log(`Previous website directory preserved at ${backup}`);
+  } catch (error) {
+    if (moved) await io.rename(backup, link);
+    await io.unlink(temporary).catch(() => {});
+    throw error;
+  }
 }

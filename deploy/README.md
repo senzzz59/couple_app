@@ -41,11 +41,13 @@ node --env-file=/www/couple-app/shared/frontend.env deploy/deploy-all.mjs
 
 这会从 `origin/master` 构建前端，检查后端并构建 Docker 服务，等待后端健康检查通过，再发布前端。前后端固定使用同一个提交；部署中又收到的新推送将在下一轮执行。
 
-首次执行时 Docker 会创建数据库并自动迁移。后端 API 只监听服务器本机 `8787`。部署状态记录在 `/www/couple-app/state/`；前端文件位于 `releases/`，`frontend-current` 指向当前版本。
+首次执行时 Docker 会创建数据库并自动迁移。后端 API 只监听服务器本机 `8787`。部署状态记录在 `/www/couple-app/state/`。
+
+宝塔网站目录固定为 `/www/wwwroot/couple.senfoundry.com`。脚本让这个路径指向已构建完成的前端版本，所以 Nginx 始终从这个站点目录提供页面；发布时切换软链接，避免用户访问到只上传了一半的文件。真实版本保留在 `/www/couple-app/releases/` 中。首次部署若站点目录已经存在，会保留为同级 `.backup-时间戳` 目录，不删除原文件；如果切换失败会恢复原目录。
 
 宝塔新建 `couple.senfoundry.com` 静态站点：
 
-1. 根目录设置为 `/www/couple-app/frontend-current`。
+1. 根目录设置为 `/www/wwwroot/couple.senfoundry.com`。
 2. 申请 SSL 证书，开启强制 HTTPS。
 3. 在站点 `server {}` 内加入 `deploy/baota-nginx.conf`，替换原来的 `location /`，保留宝塔生成的证书、监听端口和域名配置。
 4. 检测并重载 Nginx。打开 `/api/health`，应返回 `{"ok":true}`，然后打开首页。
@@ -53,6 +55,20 @@ node --env-file=/www/couple-app/shared/frontend.env deploy/deploy-all.mjs
 部署脚本不自动删除旧版本。新版本保留旧的带哈希资源，避免仍打开旧页面的手机加载失败。
 
 ## 3. 常驻 webhook 接收器
+
+请求分工如下：
+
+```text
+couple.senfoundry.com 页面、JS、图片图标
+  → Nginx 从 /www/wwwroot/couple.senfoundry.com 提供前端
+/api/ 与 /files/
+  → Nginx 反向代理到 127.0.0.1:8787 业务后端
+/webhooks/gitee
+  → Nginx 反向代理到 127.0.0.1:8790 部署服务
+  → 验证 master 推送 → 拉取代码 → 构建并更新前后端
+```
+
+Webhook 属于服务器端接口，部署服务独立于业务 API。部署业务后端时接收器不会跟着重启，仍能接收新的推送并排队处理。
 
 ```sh
 cp /www/couple-app/repo/deploy/couple-webhook.service /etc/systemd/system/
