@@ -1,0 +1,81 @@
+{
+  "expo": {
+    "name": "us.",
+    "slug": "us-couple",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "uscouple",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#FFF7F5",
+    "ios": {
+      "bundleIdentifier": "com.us.couple",
+      "supportsTablet": false,
+      "infoPlist": {
+        "LSApplicationQueriesSchemes": [
+          "iosamap",
+          "xhsdiscover"
+        ],
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
+      }
+    },
+    "android": {
+      "package": "com.us.couple",
+      "adaptiveIcon": {
+        "backgroundColor": "#FDE2E8",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#FFF7F5",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 160
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "选择照片，记录我们吃过的美食和一起的瞬间"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "获取当前位置，用来收藏我们去过的店"
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#F27B96"
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}

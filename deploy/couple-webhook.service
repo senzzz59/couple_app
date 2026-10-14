@@ -1,0 +1,20 @@
+[Unit]
+Description=Couple frontend and backend deployment webhook
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=www
+WorkingDirectory=/www/couple-app/repo
+Environment=NODE_ENV=production
+EnvironmentFile=/www/couple-app/shared/webhook.env
+EnvironmentFile=-/www/couple-app/shared/frontend.env
+ExecStart=/usr/bin/node /www/couple-app/repo/deploy/webhook.mjs
+Restart=on-failure
+RestartSec=5
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target
