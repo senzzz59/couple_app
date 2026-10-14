@@ -30,7 +30,7 @@ chmod 600 /www/couple-app/shared/*.env
 - `frontend.env`：默认 API 地址留空，走当前域名的 `/api`；需要地图时填写对应公开 Key。实际文件不要提交到 Git。
 - `webhook.env`：将 `WEBHOOK_SECRET` 替换为真实随机密钥，可用 `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` 生成。Gitee 中填写相同的密码。
 
-生产 Compose 只启动 API，使用 Linux host 网络连接宝塔的本机 MySQL，不创建新 MySQL 容器、不重新创建 couple 库。数据库应为 MySQL 8.0.13+，couple 用户需要具有该库的建表、改表、索引和读写权限。宝塔中已有数据库的数据仍由宝塔管理；如已有本项目照片，保留并接入固定 uploads 目录。
+生产 Compose 只启动 API，使用 Linux host 网络连接宝塔的本机 MySQL，不创建新 MySQL 容器、不重新创建 couple 库。支持你的 MySQL 5.7.44，也兼容 MySQL 8+。couple 用户需要具有该库的建表、改表、索引和读写权限。宝塔中已有数据库的数据仍由宝塔管理；如已有本项目照片，保留并接入固定 uploads 目录。
 
 `backend/docker-compose.dev.yml` 才是含 MySQL 容器的本地开发配置，生产部署不会使用它。
 
@@ -130,11 +130,13 @@ node /www/couple-app/repo/deploy/rollback-frontend.mjs
 
 1. `npm run db:check` 验证 schema 与已提交迁移一致；遗漏 SQL 就停止。
 2. 核对数据库里的 `__drizzle_migrations` 历史，防止已发布 SQL 被改写或迁移缺失。
-3. 有新迁移时，使用一次性的官方 mysql:8.4 客户端容器，将现有数据库备份到 `/www/couple-app/shared/backups/before-migration-*.sql`。它仅运行 mysqldump，不启动新的数据库。备份失败就停止，不执行 DDL。
+3. 有新迁移时，按服务器版本选择一次性的官方客户端容器（5.7 使用 mysql:5.7.44，8+ 使用 mysql:8.4），将现有数据库备份到 `/www/couple-app/shared/backups/before-migration-*.sql`。它仅运行 mysqldump，不启动新的数据库。备份失败就停止，不执行 DDL。
 4. 获取数据库迁移锁，按顺序执行尚未执行的 SQL，并记录版本。重复部署跳过已执行的迁移。
 5. 迁移成功后更新 API，再切换前端。API 启动时再次检查迁移记录，确保不会重复执行。
 
 字段重命名和数据格式转换会写成明确的迁移，不自动猜测或清空表。涉及 MySQL DDL 的失败可能留下部分表结构变更，应用版本回退不等于数据库逆向回退；旧服务能否继续运行取决于迁移是否向后兼容。备份文件用于需要时恢复，部署过程不自动覆盖数据库。
+
+MySQL 5.7.44 不支持 JSON 数据库默认值，数组默认值由应用写入；时间默认值使用兼容的 CURRENT_TIMESTAMP。首次安装时，迁移器仅对指定哈希的旧迁移适配这两种语法，并保存原始迁移哈希，不修改已提交 SQL。新增迁移直接使用兼容语法，MySQL 8 的现有安装也可正常更新。
 
 ## 网页更新与提醒
 

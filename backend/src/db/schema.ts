@@ -20,7 +20,7 @@ const id = () => varchar('id', { length: 36 }).primaryKey().$defaultFn(() => cry
 const userRef = (name: string) => varchar(name, { length: 36 });
 const timestamps = {
   createdAt: timestamp('created_at', { fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
-  updatedAt: timestamp('updated_at').notNull().defaultNow().onUpdateNow(),
+  updatedAt: timestamp('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`).onUpdateNow(),
 };
 
 export const users = mysqlTable('users', {
@@ -45,7 +45,7 @@ export const pushTokens = mysqlTable('push_tokens', {
 export const pushReceipts = mysqlTable('push_receipts', {
   id: varchar('id', { length: 191 }).primaryKey(),
   token: varchar('token', { length: 191 }).notNull(),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
+  createdAt: timestamp('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
 /** 涓や汉绌洪棿璁剧疆锛屽彧鏈?id=1 涓€琛?*/
@@ -88,8 +88,8 @@ export const visits = mysqlTable(
       .notNull()
       .references(() => places.id, { onDelete: 'cascade' }),
     date: date('date', { mode: 'string' }).notNull(),
-    photos: json('photos').$type<string[]>().notNull().default([]),
-    dishes: json('dishes').$type<Dish[]>().notNull().default([]),
+    photos: json('photos').$type<string[]>().notNull().$defaultFn(() => []),
+    dishes: json('dishes').$type<Dish[]>().notNull().$defaultFn(() => []),
     rating: double('rating'),
     note: text('note'),
     createdBy: userRef('created_by'),
@@ -105,7 +105,7 @@ export const anniversaries = mysqlTable('anniversaries', {
   kind: mysqlEnum('kind', ['love', 'birthday', 'custom']).notNull().default('custom'),
   lunar: boolean('lunar').notNull().default(false),
   yearly: boolean('yearly').notNull().default(true),
-  remind: json('remind').$type<number[]>().notNull().default([0]), // 鎻愬墠鍑犲ぉ鎻愰啋
+  remind: json('remind').$type<number[]>().notNull().$defaultFn(() => [0]), // 鎻愬墠鍑犲ぉ鎻愰啋
   emoji: varchar('emoji', { length: 16 }),
   createdBy: userRef('created_by'),
   ...timestamps,
@@ -114,7 +114,7 @@ export const anniversaries = mysqlTable('anniversaries', {
 export const moments = mysqlTable('moments', {
   id: id(),
   content: text('content'),
-  photos: json('photos').$type<string[]>().notNull().default([]),
+  photos: json('photos').$type<string[]>().notNull().$defaultFn(() => []),
   mood: varchar('mood', { length: 16 }),
   placeId: varchar('place_id', { length: 36 }).references(() => places.id, { onDelete: 'set null' }),
   createdBy: userRef('created_by'),
@@ -202,10 +202,10 @@ export const capsules = mysqlTable(
     id: id(),
     title: varchar('title', { length: 40 }).notNull(),
     content: text('content').notNull(),
-    photos: json('photos').$type<string[]>().notNull().default([]),
+    photos: json('photos').$type<string[]>().notNull().$defaultFn(() => []),
     unlockAt: date('unlock_at', { mode: 'string' }).notNull(),
     /** 已经打开过的人（用来决定是否播放开信动画） */
-    openedBy: json('opened_by').$type<string[]>().notNull().default([]),
+    openedBy: json('opened_by').$type<string[]>().notNull().$defaultFn(() => []),
     createdBy: userRef('created_by').notNull(),
     ...timestamps,
   },

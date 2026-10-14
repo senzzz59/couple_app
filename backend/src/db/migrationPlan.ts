@@ -2,7 +2,7 @@ type Migration = { folderMillis: number; hash: string };
 type Applied = { created_at: number | string; hash: string };
 
 /** Published SQL is immutable; older binaries may see later additive migrations. */
-export function pendingMigrations(migrations: Migration[], applied: Applied[]) {
+export function pendingMigrations<T extends Migration>(migrations: T[], applied: Applied[]): T[] {
   const known = new Map(migrations.map((migration) => [migration.folderMillis, migration]));
   const latestKnown = Math.max(0, ...migrations.map((migration) => migration.folderMillis));
   const latestApplied = Math.max(0, ...applied.map((row) => Number(row.created_at)));

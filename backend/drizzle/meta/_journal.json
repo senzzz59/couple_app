@@ -36,6 +36,13 @@
       "when": 1791993205599,
       "tag": "0004_noisy_invisible_woman",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1791998897790,
+      "tag": "0005_mysql57_compatible_defaults",
+      "breakpoints": true
     }
   ]
 }
