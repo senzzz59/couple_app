@@ -28,29 +28,59 @@ export function parseAmapLocation(value: string) {
   };
 }
 
+/** Only explicit per-person cost fields; ratings, totals and arbitrary numbers are ignored. */
+export function parseAmapPrice(text: string): number | null {
+  const decoded = text.replace(/&quot;|&#34;/g, '"').replace(/&#165;|&yen;/g, '¥');
+  const raw = decoded.match(/(?:人均(?:消费|价格)?\s*[:：]?\s*[¥￥]?\s*)(\d+(?:\.\d+)?)/)?.[1]
+    ?? decoded.match(/"(?:cost|avg_price|avgPrice|price_per_person)"\s*:\s*"?(\d+(?:\.\d+)?)/)?.[1];
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 && value <= 100000 ? Math.round(value) : null;
+}
+
+async function boundedText(res: Response) {
+  const reader = res.body?.getReader();
+  if (!reader) return '';
+  const decoder = new TextDecoder();
+  let text = '', size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.length;
+      if (size > 512000) break;
+      text += decoder.decode(value, { stream: true });
+    }
+  } finally { await reader.cancel(); }
+  return text;
+}
+
 /** Follow only approved AMap hosts, with a shared deadline and bounded redirects. */
-export async function resolveAmapUrl(value: string, fetcher: typeof fetch = fetch) {
+export async function resolveAmapUrl(value: string, fetcher: typeof fetch = fetch, shareText = '') {
   if (!validAmapUrl(value)) throw new Error('请粘贴高德地图的地点分享链接');
   let current = new URL(value);
   current.protocol = 'https:';
   const amapUrl = current.href;
-  const fallback = { amapUrl, location: null };
+  const fallback = { amapUrl, location: null, price: parseAmapPrice(shareText) };
   const signal = AbortSignal.timeout(6000);
+  let location = null;
+  let price = fallback.price;
   try {
     for (let i = 0; i < 5; i++) {
-      const location = parseAmapLocation(current.href);
-      if (location) return { amapUrl, location };
-      // Full links without coordinates still remain usable as saved destinations.
-      if (!['surl.amap.com', 'url.amap.com'].includes(current.hostname)) return fallback;
+      location = parseAmapLocation(current.href) ?? location;
+      price = price ?? parseAmapPrice(current.search);
       const res = await fetcher(current.href, { redirect: 'manual', signal });
       const next = res.headers.get('location');
+      if (res.status >= 200 && res.status < 300) {
+        price = price ?? parseAmapPrice(await boundedText(res));
+        return { amapUrl, location, price };
+      }
       await res.body?.cancel();
-      if (res.status < 300 || res.status >= 400 || !next) return fallback;
+      if (res.status < 300 || res.status >= 400 || !next) break;
       const target = new URL(next, current);
-      if (!validAmapUrl(target.href)) return fallback;
+      if (!validAmapUrl(target.href)) break;
       target.protocol = 'https:';
       current = target;
     }
   } catch {}
-  return fallback;
+  return { amapUrl, location, price };
 }

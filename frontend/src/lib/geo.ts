@@ -1,6 +1,6 @@
 import * as Location from 'expo-location';
 import { Linking, Platform } from 'react-native';
-import { mapLinks, type MapDestination } from './amap';
+import { mapLinks, phonePlatform, type MapDestination } from './amap';
 
 /**
  * 国内地图用 GCJ-02 坐标（高德 / Apple 地图中国区）。手机定位拿到的是 WGS-84，需要转换。
@@ -63,24 +63,26 @@ export interface Poi {
   lat: number;
   lng: number;
   category: string;
+  price: number | null;
 }
 
 /** 高德 POI 搜索（需要在 .env 里配置 EXPO_PUBLIC_AMAP_KEY，Web 服务类型的 key） */
 export const AMAP_KEY = process.env.EXPO_PUBLIC_AMAP_KEY;
 export async function searchPoi(keywords: string, city = ''): Promise<Poi[]> {
   if (!AMAP_KEY || !keywords.trim()) return [];
-  const url = `https://restapi.amap.com/v3/place/text?key=${AMAP_KEY}&keywords=${encodeURIComponent(keywords)}&city=${encodeURIComponent(city)}&types=050000&offset=15&extensions=base`;
+  const url = `https://restapi.amap.com/v3/place/text?key=${AMAP_KEY}&keywords=${encodeURIComponent(keywords)}&city=${encodeURIComponent(city)}&types=050000&offset=15&extensions=all`;
   const res = await fetch(url);
   const data = await res.json();
-  return (data.pois ?? []).map((p: Record<string, string>) => {
+  return (data.pois ?? []).map((p: Record<string, unknown>) => {
     const [lng, lat] = String(p.location).split(',').map(Number);
     return {
-      name: p.name,
+      name: String(p.name ?? ''),
       address: typeof p.address === 'string' ? p.address : '',
       city: typeof p.cityname === 'string' ? p.cityname : '',
       lat,
       lng,
       category: String(p.type ?? '').split(';')[1] ?? '',
+      price: Number((p.biz_ext as { cost?: string })?.cost) > 0 ? Math.round(Number((p.biz_ext as { cost?: string }).cost)) : null,
     };
   });
 }
@@ -91,7 +93,22 @@ export const AMAP_JS_CODE = process.env.EXPO_PUBLIC_AMAP_JS_CODE ?? '';
 
 /** 打开导航：优先高德 App，没有就打开高德网页版（网页版也会尝试唤起 App） */
 export async function openInMaps(p: MapDestination) {
-  const { native, web } = mapLinks(p, Platform.OS);
+  const platform = Platform.OS === 'web' && typeof navigator !== 'undefined' ? phonePlatform(navigator.userAgent) : Platform.OS;
+  const { native, web } = mapLinks(p, platform);
+  if (Platform.OS === 'web' && platform !== 'web' && native) {
+    // Same-tab scheme launch preserves the tap gesture. Only fall back if the app did not open.
+    const fallback = window.setTimeout(() => { cleanup(); window.location.assign(web); }, 1800);
+    const cleanup = () => {
+      window.clearTimeout(fallback);
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', cleanup);
+    };
+    const onHide = () => { if (document.hidden) cleanup(); };
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('pagehide', cleanup, { once: true });
+    window.location.assign(native);
+    return;
+  }
   if (Platform.OS !== 'web' && native) {
     try {
       await Linking.openURL(native);

@@ -8,6 +8,7 @@ import fs from 'node:fs/promises';
 import { ZodError } from 'zod';
 
 import { authRoutes, decorateAuth } from './auth.ts';
+import { foodCategoryRoutes } from './foodCategories.ts';
 import { amapRoutes } from './amapRoutes.ts';
 import { capsuleRoutes } from './capsules.ts';
 import { runMigrations } from './db/index.ts';
@@ -59,6 +60,7 @@ await app.register(realtimeRoutes);
 await app.register(fileRoutes);
 await app.register(resourceRoutes);
 await app.register(amapRoutes);
+await app.register(foodCategoryRoutes);
 await app.register(capsuleRoutes);
 await app.register(pushRoutes);
 

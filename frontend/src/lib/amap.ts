@@ -34,7 +34,14 @@ export function mapLinks(p: MapDestination, platform: string) {
     };
   }
   return {
-    native: null,
+    native: `${platform === 'ios' ? 'iosamap' : 'androidamap'}://arroundpoi?sourceApplication=uscouple&keywords=${encodeURIComponent([p.city, p.name, p.address].filter(Boolean).join(' '))}&dev=0`,
     web: (p.amapUrl && amapShareUrl(p.amapUrl)) || `https://uri.amap.com/search?keyword=${encodeURIComponent([p.city, p.name, p.address].filter(Boolean).join(' '))}&callnative=1`,
   };
+}
+
+/** Browsers cannot reliably query installed apps. Detect only the phone OS. */
+export function phonePlatform(userAgent: string) {
+  if (/android/i.test(userAgent)) return 'android';
+  if (/iPhone|iPad|iPod/i.test(userAgent)) return 'ios';
+  return 'web';
 }

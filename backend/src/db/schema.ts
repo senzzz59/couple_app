@@ -213,3 +213,9 @@ export const capsules = mysqlTable(
   },
   (t) => [index('capsules_unlock_idx').on(t.unlockAt)]
 );
+
+/** Private food category preferences; null/missing row uses starter categories. */
+export const foodPreferences = mysqlTable('food_preferences', {
+  userId: varchar('user_id', { length: 36 }).primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  categories: json('categories').$type<string[]>().notNull().$defaultFn(() => []),
+});

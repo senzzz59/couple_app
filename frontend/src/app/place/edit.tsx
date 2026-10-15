@@ -1,6 +1,6 @@
 import * as Clipboard from 'expo-clipboard';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ClipboardPaste, LocateFixed, MapPin, Navigation, Search } from 'lucide-react-native';
+import { ClipboardPaste, LocateFixed, MapPin, Navigation, Search, Plus, X } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, FadeOut } from 'react-native-reanimated';
@@ -15,7 +15,7 @@ import { confirm } from '@/lib/confirm';
 import { CATEGORIES, categoryEmoji } from '@/lib/food';
 import { AMAP_KEY, currentPosition, parseXhsShare, Poi, searchPoi } from '@/lib/geo';
 import { haptic } from '@/lib/haptics';
-import { invalidate, useQuery } from '@/lib/store';
+import { invalidate, setQueryData, useQuery } from '@/lib/store';
 import type { Place, PlaceStatus } from '@/lib/types';
 import { colors, radius } from '@/theme';
 
@@ -28,6 +28,11 @@ export default function EditPlace() {
 }
 
 function PlaceForm({ params, initial: p }: { params: { id?: string; status?: PlaceStatus }; initial?: Place }) {
+  const preferences = useQuery<{ categories: string[] | null }>('/api/food-categories');
+  const categories = preferences.data?.categories ?? CATEGORIES;
+  const [managing, setManaging] = useState(false);
+  const [newCategory, setNewCategory] = useState('');
+  const [categorySaving, setCategorySaving] = useState(false);
   const [f, setF] = useState({
     name: p?.name ?? '',
     status: p?.status ?? params.status ?? 'want',
@@ -63,10 +68,11 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
   const readAmap = async (text: string) => {
     const url = amapShareUrl(text);
     if (!url) throw new Error('没有找到高德链接，请在高德地点页点「分享 → 复制链接」');
-    const result = await api.post<{ amapUrl: string; location: { name: string; address: string; lat: number; lng: number } | null }>('/api/amap/resolve', { url });
+    const result = await api.post<{ price: number | null; amapUrl: string; location: { name: string; address: string; lat: number; lng: number } | null }>('/api/amap/resolve', { url, shareText: text.slice(0, 10000) });
     setImportedUrl(result.amapUrl);
     return {
       amapUrl: result.amapUrl,
+      ...(result.price != null ? { price: String(result.price) } : {}),
       lat: result.location?.lat ?? null,
       lng: result.location?.lng ?? null,
       ...(result.location?.name ? { name: result.location.name } : {}),
@@ -122,7 +128,7 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
         name: form.name.trim(),
         status: f.status,
         category: f.category || null,
-        price: f.price ? Math.round(Number(f.price)) || null : null,
+        price: form.price ? Math.round(Number(form.price)) || null : null,
         rating: f.status === 'visited' && f.rating ? f.rating : null,
         address: form.address || null,
         city: form.city || null,
@@ -143,6 +149,25 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
     } finally {
       setSaving(false);
     }
+  };
+
+  const updateCategories = async (next: string[]) => {
+    setCategorySaving(true);
+    try {
+      const result = await api.put<{ categories: string[] }>('/api/food-categories', { categories: next });
+      setQueryData('/api/food-categories', () => result);
+      setNewCategory('');
+      return true;
+    } catch (e) { toast((e as Error).message, '⚠️'); return false; }
+    finally { setCategorySaving(false); }
+  };
+
+  const addCategory = async () => {
+    if (categorySaving || !preferences.data) return;
+    const name = newCategory.trim();
+    if (!name) return;
+    if (categories.includes(name)) return toast('这个类型已经有了', '🍽️');
+    if (await updateCategories([...categories, name])) set({ category: name });
   };
 
   const remove = async () => {
@@ -220,7 +245,7 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
                 style={styles.poi}
                 onPress={() => {
                   haptic.tick();
-                  set({ amapUrl: '', name: p.name, address: p.address, city: p.city, lat: p.lat, lng: p.lng, category: f.category || (CATEGORIES.includes(p.category) ? p.category : '') });
+                  set({ amapUrl: '', name: p.name, address: p.address, city: p.city, lat: p.lat, lng: p.lng, price: p.price != null ? String(p.price) : f.price, category: f.category || (categories.includes(p.category) ? p.category : '') });
                   setPois([]);
                 }}>
                 <Search size={14} color={colors.muted} />
@@ -239,14 +264,33 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
       </View>
 
       <View>
-        <Txt v="label" style={{ marginBottom: 8, marginLeft: 4 }}>
-          类型
-        </Txt>
+        <Row style={{ justifyContent: 'space-between', marginBottom: 10 }}>
+          <Txt v="label">类型</Txt>
+          <PressScale accessibilityLabel={managing ? '完成类型管理' : '管理我的类型'} onPress={() => setManaging(!managing)}>
+            <Txt v="caption" color={colors.sageInk}>{managing ? '完成' : '管理'}</Txt>
+          </PressScale>
+        </Row>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          {CATEGORIES.map((c) => (
-            <Chip key={c} label={`${categoryEmoji(c)} ${c}`} active={f.category === c} onPress={() => set({ category: f.category === c ? '' : c })} />
+          {[...new Set([...categories, ...(f.category && !categories.includes(f.category) ? [f.category] : [])])].map((c) => (
+            <Row key={c} gap={2}>
+              <Chip label={`${categoryEmoji(c)} ${c}`} active={f.category === c} onPress={() => set({ category: f.category === c ? '' : c })} />
+              {managing && categories.includes(c) && <PressScale accessibilityLabel={`删除类型${c}`} disabled={categorySaving || !preferences.data} onPress={async () => {
+                if (await updateCategories(categories.filter((name) => name !== c))) {
+                  if (f.category === c) set({ category: '' });
+                }
+              }} style={{ padding: 8, minWidth: 36, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}><X size={14} color={colors.muted} /></PressScale>}
+            </Row>
           ))}
+          {!managing && <Chip label="＋ 添加" onPress={() => setManaging(true)} />}
         </View>
+        {managing && <View style={{ marginTop: 12, gap: 8, padding: 14, borderRadius: radius.md, backgroundColor: colors.surface }}>
+          <Txt v="caption">我的类型 · 仅自己可见，删除不会影响已收藏的店铺</Txt>
+          {preferences.error && <PressScale onPress={preferences.refresh}><Txt v="caption">加载失败，点此重试</Txt></PressScale>}
+          <Row gap={8}>
+            <View style={{ flex: 1 }}><Field value={newCategory} onChangeText={setNewCategory} maxLength={20} placeholder="例如：私房菜" onSubmitEditing={addCategory} /></View>
+            <Button title="添加" icon={Plus} onPress={addCategory} loading={categorySaving} disabled={!newCategory.trim() || !preferences.data} />
+          </Row>
+        </View>}
       </View>
 
       {f.status === 'visited' && (

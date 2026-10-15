@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { parseAmapLocation, resolveAmapUrl, validAmapUrl } from '../src/amap.ts';
-import { amapShareUrl, mapLinks } from '../../frontend/src/lib/amap.ts';
+import { parseAmapPrice, parseAmapLocation, resolveAmapUrl, validAmapUrl } from '../src/amap.ts';
+import { amapShareUrl, mapLinks, phonePlatform } from '../../frontend/src/lib/amap.ts';
 
 test('extracts a full AMap share message and rejects lookalike hosts and credentials', () => {
   assert.equal(amapShareUrl('推荐这家店！https://surl.amap.com/abc（高德地图）'), 'https://surl.amap.com/abc');
@@ -23,17 +23,19 @@ test('reads latitude-first AMap shares and longitude-first URI destinations', ()
   }
 });
 
-test('resolves real short-link redirect shape without fetching the destination page', async () => {
+test('resolves a short link and reads per-person cost from its destination', async () => {
   const calls: string[] = [];
   const fetcher = (async (url, options) => {
     calls.push(String(url));
     assert.equal(options?.redirect, 'manual');
+    if (calls.length === 2) return new Response('<script>{"biz_ext":{"cost":"128.4"}}</script>');
     return new Response(null, { status: 302, headers: { location: 'https://wb.amap.com/?p=' + encodeURIComponent('B0TEST,22.54,113.94,店名,地址') } });
   }) as typeof fetch;
   const result = await resolveAmapUrl('https://surl.amap.com/test', fetcher);
   assert.equal(result.amapUrl, 'https://surl.amap.com/test');
   assert.equal(result.location?.lng, 113.94);
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 2);
+  assert.equal(result.price, 128);
 });
 
 test('blocked redirects, timeouts, missing data and loops preserve the original link', async () => {
@@ -44,7 +46,7 @@ test('blocked redirects, timeouts, missing data and loops preserve the original 
     assert.equal(count, 1);
   }
   const failed = await resolveAmapUrl('https://surl.amap.com/test', (async () => { throw new Error('timeout'); }) as typeof fetch);
-  assert.deepEqual(failed, { amapUrl: 'https://surl.amap.com/test', location: null });
+  assert.deepEqual(failed, { amapUrl: 'https://surl.amap.com/test', location: null, price: null });
   let count = 0;
   await resolveAmapUrl('https://surl.amap.com/test', (async () => {
     count++; return new Response(null, { status: 302, headers: { location: '/test' } });
@@ -64,4 +66,24 @@ test('navigation uses GCJ-02 destination, with saved links and old-place search 
   assert.equal(mapLinks({ ...place, lat: null }, 'web').web, place.amapUrl);
   const search = new URL(mapLinks({ name: '火锅', city: '深圳', address: '科技路', lat: null, lng: null }, 'web').web);
   assert.equal(search.searchParams.get('keyword'), '深圳 火锅 科技路');
+});
+
+test('per-person cost is optional and never inferred from rating or address', async () => {
+  assert.equal(parseAmapPrice('人均消费：￥128.5'), 129);
+  assert.equal(parseAmapPrice('{&quot;cost&quot;:&quot;88&quot;}'), 88);
+  for (const text of ['评分4.8 地址128号', '{"cost":0}', '{"cost":-1}', '人均暂无', '人均99999999']) assert.equal(parseAmapPrice(text), null);
+  const failed = (async () => { throw new Error('offline'); }) as typeof fetch;
+  const result = await resolveAmapUrl('https://uri.amap.com/marker?position=113,22', failed, '店名 人均 ¥88');
+  assert.equal(result.location?.lat, 22);
+  assert.equal(result.price, 88);
+});
+
+test('mobile browsers select their native app scheme, including places without coordinates', () => {
+  assert.equal(phonePlatform('Mozilla Android 15'), 'android');
+  assert.equal(phonePlatform('Mozilla iPhone OS 18'), 'ios');
+  assert.equal(phonePlatform('Mozilla Windows NT'), 'web');
+  const p = { name: '私房菜', city: '深圳', lat: null, lng: null };
+  const native = mapLinks(p, 'ios').native;
+  assert.ok(native?.startsWith('iosamap://arroundpoi?'));
+  assert.equal(new URL(native!).searchParams.get('keywords'), '深圳 私房菜');
 });
