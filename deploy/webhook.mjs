@@ -1,17 +1,23 @@
 import http from 'node:http';
-import { timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-export function validateWebhook(headers, body, secret) {
-  const supplied = headers['x-gitee-token'] || body.password;
-  if (typeof supplied !== 'string' || typeof secret !== 'string' || secret.length < 32) return { status: 401, message: 'unauthorized' };
-  const actual = Buffer.from(supplied);
-  const expected = Buffer.from(secret);
-  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return { status: 401, message: 'unauthorized' };
-  const event = headers['x-gitee-event'] || headers['x-git-oschina-event'] || body.hook_name;
-  const repository = body.repository?.full_name || body.repository?.path_with_namespace;
-  if (!['Push Hook', 'push_hooks'].includes(event) || repository !== 'sensnow/couple_web' || body.ref !== 'refs/heads/master' || body.deleted === true || !/^[0-9a-f]{40}$/i.test(body.after ?? '') || /^0+$/.test(body.after)) {
+export function validateWebhook(headers, rawBody, secret) {
+  const supplied = headers['x-hub-signature-256'];
+  if (typeof supplied !== 'string' || !/^sha256=[0-9a-f]{64}$/i.test(supplied) || typeof secret !== 'string' || secret.length < 32 || !Buffer.isBuffer(rawBody)) return { status: 401, message: 'unauthorized' };
+  // GitHub signs the original bytes, including JSON whitespace and UTF-8 content.
+  const actual = Buffer.from(supplied.slice(7), 'hex');
+  const expected = createHmac('sha256', secret).update(rawBody).digest();
+  if (!timingSafeEqual(actual, expected)) return { status: 401, message: 'unauthorized' };
+  let body;
+  try { body = JSON.parse(rawBody.toString('utf8')); }
+  catch { return { status: 400, message: 'invalid payload' }; }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { status: 400, message: 'invalid payload' };
+  const event = headers['x-github-event'];
+  if (body.repository?.full_name !== 'senzzz59/couple_app') return { status: 200, message: 'ignored' };
+  if (event === 'ping') return { status: 200, message: 'pong' };
+  if (event !== 'push' || body.ref !== 'refs/heads/master' || body.deleted === true || !/^[0-9a-f]{40}$/i.test(body.after ?? '') || /^0+$/.test(body.after)) {
     return { status: 200, message: 'ignored' };
   }
   return { status: 202, message: 'frontend and backend deployment queued' };
@@ -33,7 +39,9 @@ export function createWebhookServer({ secret, deploy }) {
   };
   return http.createServer(async (req, res) => {
     const send = (status, message) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ message })); };
-    if (req.method !== 'POST' || req.url !== '/webhooks/gitee') return send(404, 'not found');
+    // Keep the old URL usable while existing Nginx configurations are updated.
+    // Both paths require GitHub's signature; Gitee tokens are no longer accepted.
+    if (req.method !== 'POST' || !['/webhooks/github', '/webhooks/gitee'].includes(req.url)) return send(404, 'not found');
     let size = 0;
     const chunks = [];
     try {
@@ -42,9 +50,7 @@ export function createWebhookServer({ secret, deploy }) {
         if (size > 1024 * 1024) return send(413, 'payload too large');
         chunks.push(chunk);
       }
-      const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-      if (!body || typeof body !== 'object' || Array.isArray(body)) return send(400, 'invalid payload');
-      const result = validateWebhook(req.headers, body, secret);
+      const result = validateWebhook(req.headers, Buffer.concat(chunks), secret);
       send(result.status, result.message);
       if (result.status === 202) { pending = true; void drain(); }
     } catch { if (!res.headersSent) send(400, 'invalid payload'); }
@@ -60,5 +66,5 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     child.on('error', reject);
     child.on('exit', (code) => code === 0 ? resolve() : reject(new Error(`deploy exited ${code}`)));
   });
-  createWebhookServer({ secret, deploy }).listen(Number(process.env.WEBHOOK_PORT || 8790), '127.0.0.1', () => console.log('Gitee deployment webhook listening on 127.0.0.1:8790'));
+  createWebhookServer({ secret, deploy }).listen(Number(process.env.WEBHOOK_PORT || 8790), '127.0.0.1', () => console.log('GitHub deployment webhook listening on 127.0.0.1:8790'));
 }
