@@ -1,11 +1,11 @@
 import * as Clipboard from 'expo-clipboard';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ClipboardPaste, LocateFixed, MapPin, Navigation, Search, Plus, X } from 'lucide-react-native';
+import { ClipboardPaste, LocateFixed, MapPin, Search, Plus, X, ChevronRight, ChevronDown, Link2, Heart, Check, Pencil } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown, FadeOut } from 'react-native-reanimated';
+import { ActivityIndicator, Modal, ScrollView, StyleSheet, View } from 'react-native';
 
-import { Segmented, StarRating, toast } from '@/components/motion';
+import { StarRating, toast } from '@/components/motion';
+import { LivePlaceInfo } from '@/components/LivePlaceInfo';
 import { PhotoItem, PhotoPicker } from '@/components/Photos';
 import { SheetScreen } from '@/components/Screen';
 import { Button, Chip, Field, PressScale, Row, Txt } from '@/components/ui';
@@ -13,17 +13,18 @@ import { api, uploadImages } from '@/lib/api';
 import { amapShareUrl } from '@/lib/amap';
 import { confirm } from '@/lib/confirm';
 import { CATEGORIES, categoryEmoji } from '@/lib/food';
-import { AMAP_KEY, currentPosition, parseXhsShare, Poi, searchPoi } from '@/lib/geo';
+import { AMAP_KEY, currentPosition, parseXhsShare } from '@/lib/geo';
+import { type AmapPlace, poiUrl } from '@/lib/amapLive';
 import { haptic } from '@/lib/haptics';
 import { invalidate, setQueryData, useQuery } from '@/lib/store';
 import type { Place, PlaceStatus } from '@/lib/types';
-import { colors, radius } from '@/theme';
+import { colors, fonts, radius } from '@/theme';
 
 export default function EditPlace() {
   const params = useLocalSearchParams<{ id?: string; status?: PlaceStatus }>();
   const existing = useQuery<Place>(params.id ? `/api/places/${params.id}` : null);
   // 编辑时等数据到了再挂载表单，表单直接用它做初始值
-  if (params.id && !existing.data) return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
+  if (params.id && !existing.data) return <SheetScreen title="编辑这家店">{existing.error ? <View style={{ gap: 12 }}><Txt v="caption">店铺暂时没有加载出来</Txt><Button title="重新加载" onPress={existing.refresh} /></View> : <ActivityIndicator color={colors.accentStrong} />}</SheetScreen>;
   return <PlaceForm params={params} initial={existing.data} />;
 }
 
@@ -52,31 +53,51 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
   const [locating, setLocating] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importedUrl, setImportedUrl] = useState(p?.amapUrl ?? '');
-  const [poiResults, setPois] = useState<Poi[]>([]);
+  const [searchState, setSearchState] = useState<{ key: string; places: AmapPlace[]; message: string }>();
+  const [sourceOpen, setSourceOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [categoryOpen, setCategoryOpen] = useState(false);
+  const [extrasOpen, setExtrasOpen] = useState(false);
   const set = (patch: Partial<typeof f>) => setF((s) => ({ ...s, ...patch }));
 
-  // 高德搜索：输入店名时自动联想（已经选定位置后就不再提示）
-  const searching = !!AMAP_KEY && f.name.trim().length >= 2 && f.lat == null && !f.amapUrl;
-  const pois = searching ? poiResults : [];
+  // Explicit search results let the user choose the right branch; never guess a same-name POI.
+  const query = f.name.trim();
+  const searchEnabled = query.length >= 2 && !f.amapUrl && f.lat == null;
+  const searchKey = `${query}:${f.city}`;
   useEffect(() => {
-    if (!searching) return;
+    if (!searchEnabled) return;
     let active = true;
-    const t = setTimeout(() => searchPoi(f.name, f.city).then((results) => { if (active) setPois(results); }).catch(() => { if (active) setPois([]); }), 400);
+    const t = setTimeout(() => api.post<{ places: AmapPlace[]; message?: string }>('/api/amap/search', { query: query.slice(0, 80), city: f.city, key: AMAP_KEY })
+      .then((result) => { if (active) setSearchState({ key: searchKey, places: result.places, message: result.message || (!result.places.length ? '没有找到这家店，试试更完整的店名或粘贴高德链接' : '') }); })
+      .catch(() => { if (active) setSearchState({ key: searchKey, places: [], message: '暂时搜不到，仍可手动填写店铺信息' }); }), 450);
     return () => { active = false; clearTimeout(t); };
-  }, [searching, f.name, f.city]);
+  }, [query, f.city, searchEnabled, searchKey]);
+  const searching = searchEnabled && searchState?.key !== searchKey;
+  const pois = searchEnabled && searchState?.key === searchKey ? searchState.places : [];
+  const searchMessage = searchEnabled && searchState?.key === searchKey ? searchState.message : '';
+  const selectPoi = (place: AmapPlace) => {
+    const url = poiUrl(place);
+    set({ name: place.name, address: place.address, city: place.city, lat: place.lat, lng: place.lng, amapUrl: url,
+      ...(place.price != null ? { price: String(place.price) } : {}), category: f.category || (categories.includes(place.category) ? place.category : '') });
+    setImportedUrl(url);
+    setSourceOpen(false);
+    haptic.tick();
+  };
 
   const readAmap = async (text: string) => {
     const url = amapShareUrl(text);
     if (!url) throw new Error('没有找到高德链接，请在高德地点页点「分享 → 复制链接」');
-    const result = await api.post<{ price: number | null; amapUrl: string; location: { name: string; address: string; lat: number; lng: number } | null }>('/api/amap/resolve', { url, shareText: text.slice(0, 10000) });
-    setImportedUrl(result.amapUrl);
+    const result = await api.post<{ place: AmapPlace | null; poiId: string | null; price: number | null; amapUrl: string; location: { name: string; address: string; lat: number; lng: number } | null }>('/api/amap/resolve', { url, shareText: text.slice(0, 10000), key: AMAP_KEY });
+    const place = result.place;
+    const urlToSave = place ? poiUrl(place) : result.amapUrl;
+    setImportedUrl(urlToSave);
     return {
-      amapUrl: result.amapUrl,
-      ...(result.price != null ? { price: String(result.price) } : {}),
-      lat: result.location?.lat ?? null,
-      lng: result.location?.lng ?? null,
-      ...(result.location?.name ? { name: result.location.name } : {}),
-      ...(result.location?.address ? { address: result.location.address, city: '' } : {}),
+      amapUrl: urlToSave,
+      ...((place?.price ?? result.price) != null ? { price: String(place?.price ?? result.price) } : {}),
+      lat: place?.lat ?? result.location?.lat ?? null,
+      lng: place?.lng ?? result.location?.lng ?? null,
+      ...(place?.name || result.location?.name ? { name: place?.name || result.location!.name } : {}),
+      ...(place?.address || result.location?.address ? { address: place?.address || result.location!.address, city: place?.city || '' } : {}),
     };
   };
 
@@ -85,8 +106,8 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
     try {
       const patch = await readAmap(await Clipboard.getStringAsync());
       set(patch);
-      setPois([]);
       haptic.success();
+      setSourceOpen(false);
       toast(patch.lat != null ? '已读取高德地点，保存后即可导航' : '已关联高德链接，保存后可打开原地点', '📍');
     } catch (e) {
       toast((e as Error).message, '📍');
@@ -167,7 +188,10 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
     const name = newCategory.trim();
     if (!name) return;
     if (categories.includes(name)) return toast('这个类型已经有了', '🍽️');
-    if (await updateCategories([...categories, name])) set({ category: name });
+    if (await updateCategories([...categories, name])) {
+      set({ category: name });
+      if (!managing) setCategoryOpen(false);
+    }
   };
 
   const remove = async () => {
@@ -178,174 +202,115 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
     router.dismissTo('/eats');
   };
 
+  const busy = saving || importing || locating;
+  const linked = !!f.amapUrl && f.amapUrl === importedUrl;
+  const openLink = async () => {
+    setImporting(true);
+    try { set(await readAmap(f.amapUrl)); setSourceOpen(false); }
+    catch (error) { toast((error as Error).message, '📍'); }
+    finally { setImporting(false); }
+  };
+
   return (
-    <SheetScreen title={params.id ? '编辑' : '收藏一家店'} action={<Button title="保存" onPress={save} loading={saving} disabled={importing || locating} style={{ height: 38, paddingHorizontal: 16 }} />}>
-      <View style={styles.amapCard}>
-        <Row gap={10}>
-          <Navigation size={22} color={colors.sageInk} />
-          <View style={{ flex: 1, gap: 4 }}>
-            <Txt v="bodyStrong">收藏高德地点</Txt>
-            <Txt v="caption">在高德找到这家店，点「分享 → 复制链接」，回来粘贴</Txt>
-          </View>
-        </Row>
-        <Button title={f.amapUrl ? '粘贴另一处高德地点' : '粘贴高德地点链接'} icon={ClipboardPaste} onPress={pasteAmap} loading={importing} disabled={saving || locating} />
-        <Field
-          label="高德链接"
-          value={f.amapUrl}
-          editable={!importing && !saving && !locating}
-          onChangeText={(amapUrl) => set({ amapUrl, lat: null, lng: null })}
-          placeholder="也可以在这里粘贴高德分享链接或文案"
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-        {!!f.amapUrl && (
-          <Row style={{ flexWrap: 'wrap', justifyContent: 'space-between' }}>
-            <Txt v="caption" color={colors.sageInk}>
-              {f.amapUrl !== importedUrl ? '保存时会读取地点信息' : f.lat != null && f.lng != null ? '已关联高德位置，可一键导航' : '已关联分享链接，可打开高德原地点'}
-            </Txt>
-            <PressScale disabled={importing || saving || locating} onPress={() => { set({ amapUrl: '', lat: null, lng: null }); setImportedUrl(''); }}>
-              <Txt v="caption">移除链接</Txt>
-            </PressScale>
-          </Row>
-        )}
-      </View>
-      <Animated.View entering={FadeInDown.springify().damping(18)}>
-        <PressScale onPress={pasteXhs} style={styles.xhsCard}>
-          <View style={styles.xhsLogo}>
-            <Txt style={{ fontWeight: '900', fontSize: 13 }} color={colors.white}>
-              小红书
-            </Txt>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Txt v="bodyStrong">{f.xhsUrl ? '已关联小红书笔记' : '从小红书粘贴'}</Txt>
-            <Txt v="caption" numberOfLines={1}>
-              {f.xhsUrl || '先在小红书里「分享 → 复制链接」'}
-            </Txt>
-          </View>
-          <ClipboardPaste size={20} color={colors.muted} />
-        </PressScale>
-      </Animated.View>
-
-      <Segmented
-        options={[
-          { key: 'want', label: '🔖 想去' },
-          { key: 'visited', label: '✅ 吃过' },
-        ]}
-        value={f.status}
-        onChange={(status) => set({ status })}
-      />
-
-      <View>
-        <Field label="店名" value={f.name} editable={!importing && !saving} onChangeText={(name) => set({ name })} placeholder={AMAP_KEY ? '输入店名，自动搜索' : '例如：湊湊火锅'} />
-        {pois.length > 0 && (
-          <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.pois}>
-            {pois.slice(0, 6).map((p) => (
-              <Pressable
-                key={`${p.name}${p.lat}`}
-                style={styles.poi}
-                onPress={() => {
-                  haptic.tick();
-                  set({ amapUrl: '', name: p.name, address: p.address, city: p.city, lat: p.lat, lng: p.lng, price: p.price != null ? String(p.price) : f.price, category: f.category || (categories.includes(p.category) ? p.category : '') });
-                  setPois([]);
-                }}>
-                <Search size={14} color={colors.muted} />
-                <View style={{ flex: 1 }}>
-                  <Txt v="bodyStrong" numberOfLines={1}>
-                    {p.name}
-                  </Txt>
-                  <Txt v="caption" numberOfLines={1}>
-                    {p.city} {p.address}
-                  </Txt>
-                </View>
-              </Pressable>
-            ))}
-          </Animated.View>
-        )}
+    <SheetScreen title={params.id ? '编辑这家店' : '收藏一家店'} action={<Button title="保存" onPress={save} loading={saving} disabled={importing || locating || categorySaving} style={{ height: 38, paddingHorizontal: 18 }} />}>
+      <View style={styles.intro}>
+        <Txt style={styles.eyebrow}>OUR NEXT BITE</Txt>
+        <Txt v="heading">把下一顿心动，收进口袋 ♡</Txt>
+        <Txt v="caption">先找到那家店，再记下我们的小期待</Txt>
       </View>
 
-      <View>
-        <Row style={{ justifyContent: 'space-between', marginBottom: 10 }}>
-          <Txt v="label">类型</Txt>
-          <PressScale accessibilityLabel={managing ? '完成类型管理' : '管理我的类型'} onPress={() => setManaging(!managing)}>
-            <Txt v="caption" color={colors.sageInk}>{managing ? '完成' : '管理'}</Txt>
-          </PressScale>
+      <View style={styles.card}>
+        <Row style={{ justifyContent: 'space-between' }}>
+          <Row gap={8}><View style={styles.iconBubble}><MapPin size={17} color={colors.accentStrong} /></View><Txt v="bodyStrong">{linked ? '心动的这家店' : '想收藏哪家？'}</Txt></Row>
+          {linked && <PressScale disabled={busy} onPress={() => { set({ amapUrl: '', lat: null, lng: null }); setImportedUrl(''); setDetailsOpen(false); }} style={styles.smallAction}><Txt v="caption" color={colors.accentStrong}>换一家</Txt></PressScale>}
         </Row>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          {[...new Set([...categories, ...(f.category && !categories.includes(f.category) ? [f.category] : [])])].map((c) => (
-            <Row key={c} gap={2}>
-              <Chip label={`${categoryEmoji(c)} ${c}`} active={f.category === c} onPress={() => set({ category: f.category === c ? '' : c })} />
-              {managing && categories.includes(c) && <PressScale accessibilityLabel={`删除类型${c}`} disabled={categorySaving || !preferences.data} onPress={async () => {
-                if (await updateCategories(categories.filter((name) => name !== c))) {
-                  if (f.category === c) set({ category: '' });
-                }
-              }} style={{ padding: 8, minWidth: 36, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}><X size={14} color={colors.muted} /></PressScale>}
-            </Row>
-          ))}
-          {!managing && <Chip label="＋ 添加" onPress={() => setManaging(true)} />}
-        </View>
-        {managing && <View style={{ marginTop: 12, gap: 8, padding: 14, borderRadius: radius.md, backgroundColor: colors.surface }}>
-          <Txt v="caption">我的类型 · 仅自己可见，删除不会影响已收藏的店铺</Txt>
-          {preferences.error && <PressScale onPress={preferences.refresh}><Txt v="caption">加载失败，点此重试</Txt></PressScale>}
-          <Row gap={8}>
-            <View style={{ flex: 1 }}><Field value={newCategory} onChangeText={setNewCategory} maxLength={20} placeholder="例如：私房菜" onSubmitEditing={addCategory} /></View>
-            <Button title="添加" icon={Plus} onPress={addCategory} loading={categorySaving} disabled={!newCategory.trim() || !preferences.data} />
-          </Row>
+        {linked ? <View style={{ gap: 7 }}>
+          <Txt v="heading">{f.name || '已关联高德店铺'}</Txt>
+          <Txt v="caption">{[f.city, f.address].filter(Boolean).join(' · ') || '保存前可以补充地址'}</Txt>
+          <PressScale onPress={() => setDetailsOpen(!detailsOpen)} style={styles.inline}><Pencil size={12} color={colors.muted} /><Txt v="caption">修正店名或地址</Txt><ChevronDown size={13} color={colors.muted} /></PressScale>
+        </View> : <>
+          <Field label="店名" value={f.name} editable={!busy} maxLength={80} onChangeText={(name) => set({ name })} placeholder="输入店名，选中对应分店" />
+          {searching && <Row gap={7}><ActivityIndicator size="small" color={colors.muted} /><Txt v="caption">正在高德找这家店…</Txt></Row>}
+          {!!searchMessage && <Txt v="caption">{searchMessage}</Txt>}
+          {pois.length > 0 && <View style={styles.searchResults}>{pois.map((place) => <PressScale key={place.id} disabled={busy} onPress={() => selectPoi(place)} style={styles.poi}>
+            <Search size={16} color={colors.muted} /><View style={{ flex: 1, gap: 3 }}><Txt v="bodyStrong" numberOfLines={1}>{place.name}</Txt><Txt v="caption" numberOfLines={1}>{[place.city, place.address].filter(Boolean).join(' ')}</Txt></View><ChevronRight size={16} color={colors.muted} />
+          </PressScale>)}</View>}
+          <View style={styles.importRow}>
+            <PressScale onPress={pasteAmap} disabled={busy} style={styles.importButton}>{importing ? <ActivityIndicator size="small" color={colors.accentStrong} /> : <ClipboardPaste size={16} color={colors.accentStrong} />}<Txt v="bodyStrong" color={colors.accentStrong} style={{ fontSize: 14 }}>粘贴高德分享</Txt></PressScale>
+            <PressScale onPress={() => setSourceOpen(!sourceOpen)} disabled={busy} style={styles.smallAction}><Link2 size={15} color={colors.muted} /><Txt v="caption">输入链接</Txt></PressScale>
+          </View>
+        </>}
+        {sourceOpen && <View style={{ gap: 10 }}><Field value={f.amapUrl} editable={!busy} onChangeText={(amapUrl) => set({ amapUrl, lat: null, lng: null })} placeholder="粘贴高德链接或分享文案" autoCapitalize="none" autoCorrect={false} /><Button title="读取这家店" onPress={openLink} loading={importing} disabled={saving || !f.amapUrl} /></View>}
+        {detailsOpen && <View style={{ gap: 12, borderTopWidth: 1, borderColor: colors.line, paddingTop: 14 }}>
+          <Field label="店名" value={f.name} maxLength={80} editable={!busy} onChangeText={(name) => set({ name })} />
+          <Field label="城市" value={f.city} maxLength={40} onChangeText={(city) => set({ city })} placeholder="例如：上海" />
+          <Field label="地址" value={f.address} maxLength={200} editable={!busy} onChangeText={(address) => set({ address })} placeholder="街道、商场、楼层" />
         </View>}
       </View>
 
-      {f.status === 'visited' && (
-        <Animated.View entering={FadeInDown.springify()} style={{ gap: 8 }}>
-          <Txt v="label" style={{ marginLeft: 4 }}>
-            总体评分
-          </Txt>
-          <StarRating value={f.rating} onChange={(rating) => set({ rating })} size={32} />
-        </Animated.View>
-      )}
+      {(linked || f.lat != null) && <LivePlaceInfo key={`${f.amapUrl}:${f.lat}:${f.lng}`} destination={{ name: f.name, lat: f.lat, lng: f.lng, city: f.city, address: f.address, amapUrl: f.amapUrl || null }} />}
 
-      <Field label="人均（元）" value={f.price} onChangeText={(price) => set({ price: price.replace(/[^\d]/g, '') })} keyboardType="number-pad" placeholder="例如 150" />
-
-      <View style={{ gap: 8 }}>
-        <Field label="地址" value={f.address} editable={!importing && !saving} onChangeText={(address) => set({ address })} placeholder="街道、商场、楼层" />
-        <Row>
-          <PressScale onPress={locate} disabled={locating || importing || saving} style={styles.locate}>
-            {locating ? <ActivityIndicator size="small" color={colors.ink} /> : <LocateFixed size={16} color={colors.ink} />}
-            <Txt v="caption" color={colors.ink} style={{ fontWeight: '600' }}>
-              我就在店里，使用当前位置
-            </Txt>
-          </PressScale>
-          {f.lat != null && f.lng != null && (
-            <Animated.View entering={FadeIn}>
-              <Row gap={4}>
-                <MapPin size={14} color={colors.sageInk} />
-                <Txt v="caption" color={colors.sageInk}>
-                  已定位，可以一键导航
-                </Txt>
-              </Row>
-            </Animated.View>
-          )}
-        </Row>
+      <View style={{ gap: 10 }}>
+        <Row style={{ justifyContent: 'space-between', paddingHorizontal: 4 }}><Txt v="bodyStrong">我的收藏</Txt><Txt v="caption">留一点期待给下次见面</Txt></Row>
+        <View style={styles.card}>
+          <View style={styles.statusRow}>{([{ value: 'want', label: '想去尝尝', Icon: Heart }, { value: 'visited', label: '已经吃过', Icon: Check }] as const).map(({ value, label, Icon }) => <PressScale key={value} accessibilityRole="radio" accessibilityState={{ checked: f.status === value }} onPress={() => set({ status: value })} style={[styles.statusOption, f.status === value && styles.statusActive]}><Icon size={17} color={f.status === value ? colors.accentStrong : colors.muted} /><Txt v="bodyStrong" style={{ fontSize: 14 }} color={f.status === value ? colors.accentStrong : colors.muted}>{label}</Txt></PressScale>)}</View>
+          <PressScale accessibilityLabel="选择我的店铺类型" onPress={() => setCategoryOpen(true)} style={styles.settingRow}><Row gap={8}><Txt style={{ fontSize: 19 }}>{categoryEmoji(f.category)}</Txt><Txt v="bodyStrong" style={{ fontSize: 14 }}>类型</Txt></Row><Row gap={5}><Txt v="caption" color={f.category ? colors.ink : colors.muted}>{f.category || '选一个喜欢的分类'}</Txt><ChevronRight size={16} color={colors.muted} /></Row></PressScale>
+          <Field label="我的备注" value={f.note} editable={!saving} onChangeText={(note) => set({ note })} placeholder="想点的菜、约好的人，或一个想去的理由…" multiline />
+          <Field label="收藏人均 · 元" value={f.price} editable={!busy} onChangeText={(price) => set({ price: price.replace(/[^\d]/g, '') })} keyboardType="number-pad" placeholder="可手动填写或修改" />
+          {f.status === 'visited' && <View style={{ gap: 8 }}><Txt v="label">我们的评分</Txt><StarRating value={f.rating} onChange={(rating) => set({ rating })} size={30} /></View>}
+        </View>
       </View>
 
-      <Field label="备注" value={f.note} onChangeText={(note) => set({ note })} placeholder="想点什么菜、要不要排队、适合什么场合…" multiline />
-      {f.xhsUrl ? <Field label="小红书链接" value={f.xhsUrl} onChangeText={(xhsUrl) => set({ xhsUrl })} autoCapitalize="none" /> : null}
-
-      <View style={{ gap: 8 }}>
-        <Txt v="label" style={{ marginLeft: 4 }}>
-          封面（可选，不选就用探店照片）
-        </Txt>
-        <PhotoPicker value={cover} onChange={setCover} max={1} size={120} />
+      <View style={styles.card}>
+        <PressScale onPress={() => setExtrasOpen(!extrasOpen)} style={styles.settingRow}><View style={{ gap: 3 }}><Txt v="bodyStrong" style={{ fontSize: 14 }}>再添一点小细节</Txt><Txt v="caption">小红书笔记 · 自选封面{!linked ? ' · 手动地址' : ''}</Txt></View><ChevronDown size={17} color={colors.muted} /></PressScale>
+        {extrasOpen && <View style={{ gap: 16 }}>
+          {!linked && <View style={{ gap: 12 }}><Field label="城市" value={f.city} maxLength={40} onChangeText={(city) => set({ city })} placeholder="帮助找到正确的分店" /><Field label="地址" value={f.address} maxLength={200} editable={!busy} onChangeText={(address) => set({ address })} placeholder="街道、商场、楼层" /><PressScale onPress={locate} disabled={busy} style={styles.inline}>{locating ? <ActivityIndicator size="small" /> : <LocateFixed size={15} color={colors.sageInk} />}<Txt v="caption" color={colors.sageInk}>我就在店里，用当前位置标记店铺</Txt></PressScale></View>}
+          <PressScale onPress={pasteXhs} disabled={busy} style={styles.extraLink}><View style={styles.xhsBadge}><Txt color={colors.white} style={{ fontSize: 10, fontWeight: '700' }}>小红书</Txt></View><View style={{ flex: 1 }}><Txt v="bodyStrong" style={{ fontSize: 14 }}>{f.xhsUrl ? '已关联小红书笔记' : '粘贴小红书笔记'}</Txt><Txt v="caption">{f.xhsUrl ? '点击更换' : '先复制笔记分享链接'}</Txt></View><ClipboardPaste size={16} color={colors.muted} /></PressScale>
+          {!!f.xhsUrl && <Field label="小红书链接" value={f.xhsUrl} onChangeText={(xhsUrl) => set({ xhsUrl })} autoCapitalize="none" />}
+          <View style={{ gap: 8 }}><Txt v="label">我的封面 · 可选</Txt><PhotoPicker value={cover} onChange={setCover} max={1} size={90} /></View>
+        </View>}
       </View>
+      {params.id && <Button title="删除这家店" variant="ghost" onPress={remove} disabled={busy} />}
 
-      {params.id && <Button title="删除这家店" variant="ghost" onPress={remove} />}
+      <Modal visible={categoryOpen} transparent animationType="slide" onRequestClose={() => setCategoryOpen(false)}>
+        <View style={styles.modalWrap}>
+          <PressScale accessibilityLabel="关闭类型选择" onPress={() => setCategoryOpen(false)} style={StyleSheet.absoluteFill} />
+          <View style={styles.categorySheet}>
+            <View style={styles.handle} />
+            <Row style={{ justifyContent: 'space-between' }}><View style={{ gap: 3 }}><Txt v="heading">我的美食类型</Txt><Txt v="caption">每个人都有自己的口味 ♡</Txt></View><PressScale accessibilityLabel="关闭类型面板" onPress={() => setCategoryOpen(false)} style={styles.smallAction}><X size={20} color={colors.ink} /></PressScale></Row>
+            <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 16, paddingBottom: 32 }}>
+              <Row style={{ justifyContent: 'space-between' }}><Txt v="caption">只管理自己的类型，不影响已有收藏</Txt><PressScale onPress={() => setManaging(!managing)} style={styles.smallAction}><Txt v="caption" color={colors.accentStrong}>{managing ? '完成管理' : '管理'}</Txt></PressScale></Row>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {[...new Set([...categories, ...(f.category && !categories.includes(f.category) ? [f.category] : [])])].map((c) => <Row key={c} gap={0}><Chip label={`${categoryEmoji(c)} ${c}`} active={f.category === c} onPress={() => { set({ category: f.category === c ? '' : c }); if (!managing) setCategoryOpen(false); }} />{managing && categories.includes(c) && <PressScale accessibilityLabel={`删除类型${c}`} disabled={categorySaving || !preferences.data} onPress={async () => { if (await updateCategories(categories.filter((name) => name !== c)) && f.category === c) set({ category: '' }); }} style={styles.smallAction}><X size={14} color={colors.muted} /></PressScale>}</Row>)}
+              </View>
+              {preferences.error && <PressScale onPress={preferences.refresh}><Txt v="caption">加载失败，点此重试</Txt></PressScale>}
+              <Row gap={8}><View style={{ flex: 1 }}><Field value={newCategory} onChangeText={setNewCategory} maxLength={20} placeholder="添加新类型，例如：私房菜" onSubmitEditing={addCategory} /></View><Button title="添加" icon={Plus} onPress={addCategory} loading={categorySaving} disabled={!newCategory.trim() || !preferences.data} /></Row>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SheetScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  amapCard: { gap: 12, backgroundColor: colors.surface, borderRadius: radius.lg, padding: 14, borderWidth: 1, borderColor: colors.line },
-  xhsCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderRadius: radius.lg, padding: 14, borderWidth: 1, borderColor: '#FFD6DC' },
-  xhsLogo: { width: 52, height: 52, borderRadius: 14, backgroundColor: '#FF2442', alignItems: 'center', justifyContent: 'center' },
-  pois: { marginTop: 6, backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, overflow: 'hidden' },
-  poi: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line },
-  locate: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.surfaceAlt, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 8 },
+  intro: { paddingHorizontal: 6, paddingVertical: 4, gap: 6 },
+  eyebrow: { fontFamily: fonts.display, color: colors.accentStrong, fontSize: 10, letterSpacing: 2 },
+  card: { padding: 16, gap: 16, backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line },
+  iconBubble: { width: 32, height: 32, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft },
+  smallAction: { minHeight: 40, minWidth: 36, padding: 6, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 5 },
+  inline: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 7, alignSelf: 'flex-start' },
+  importRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  importButton: { paddingVertical: 12, paddingHorizontal: 16, borderRadius: radius.pill, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.bg },
+  searchResults: { borderTopWidth: 1, borderColor: colors.line },
+  poi: { paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.line },
+  statusRow: { flexDirection: 'row', gap: 8, backgroundColor: colors.bg, borderRadius: radius.md, padding: 5 },
+  statusOption: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 12, borderRadius: 16 },
+  statusActive: { backgroundColor: colors.surface },
+  settingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, minHeight: 40 },
+  extraLink: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  xhsBadge: { width: 40, height: 40, borderRadius: 14, backgroundColor: '#FF526F', alignItems: 'center', justifyContent: 'center' },
+  modalWrap: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(65,35,44,0.24)' },
+  categorySheet: { backgroundColor: colors.bg, padding: 20, paddingBottom: 12, borderTopLeftRadius: 32, borderTopRightRadius: 32, maxHeight: '85%', gap: 14 },
+  handle: { width: 38, height: 4, borderRadius: 2, backgroundColor: colors.faint, alignSelf: 'center', marginTop: -8 },
 });

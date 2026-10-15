@@ -46,7 +46,7 @@ test('blocked redirects, timeouts, missing data and loops preserve the original 
     assert.equal(count, 1);
   }
   const failed = await resolveAmapUrl('https://surl.amap.com/test', (async () => { throw new Error('timeout'); }) as typeof fetch);
-  assert.deepEqual(failed, { amapUrl: 'https://surl.amap.com/test', location: null, price: null });
+  assert.deepEqual(failed, { amapUrl: 'https://surl.amap.com/test', location: null, price: null, poiId: null });
   let count = 0;
   await resolveAmapUrl('https://surl.amap.com/test', (async () => {
     count++; return new Response(null, { status: 302, headers: { location: '/test' } });

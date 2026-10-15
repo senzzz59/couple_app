@@ -7,6 +7,7 @@ import { Linking, ScrollView, StyleSheet, Text, useWindowDimensions, View } from
 import Animated, { interpolate, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { LivePlaceInfo } from '@/components/LivePlaceInfo';
 import { StarRating, toast } from '@/components/motion';
 import { openViewer } from '@/components/Photos';
 import { Avatar, Button, enter, IconButton, PressScale, Row, Txt } from '@/components/ui';
@@ -166,6 +167,8 @@ export default function PlaceDetail() {
               )}
             </Animated.View>
           )}
+
+          {(p.amapUrl || p.lat != null) && <View style={{ marginTop: 18 }}><LivePlaceInfo key={`${p.amapUrl}:${p.lat}:${p.lng}`} destination={p} /></View>}
 
           <Row style={{ justifyContent: 'space-between', marginTop: 28, marginBottom: 16 }}>
             <Text style={{ fontFamily: fonts.display, fontSize: 30, color: colors.ink }}>Our visits</Text>

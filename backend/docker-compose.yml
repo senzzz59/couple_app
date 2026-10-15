@@ -25,5 +25,6 @@ services:
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
       EXPO_ACCESS_TOKEN: ${EXPO_ACCESS_TOKEN:-}
+      AMAP_WEB_SERVICE_KEY: ${AMAP_WEB_SERVICE_KEY:-}
     volumes:
       - ${COUPLE_DATA_DIR:-./data}/uploads:/app/uploads

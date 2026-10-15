@@ -11,7 +11,7 @@ export function parseAmapLocation(value: string) {
   const u = new URL(value);
   const p = u.searchParams;
   // AMap's share payload p/q uses latitude first; URI position/to uses longitude first.
-  const payload = p.get('p')?.split(',');
+  const payload = (p.get('p') ?? p.get('__p'))?.split(',');
   const q = p.get('q')?.split(',');
   const position = (p.get('position') ?? p.get('to'))?.split(',');
   const latText = payload?.[1] ?? q?.[0] ?? position?.[1] ?? p.get('lat');
@@ -26,6 +26,14 @@ export function parseAmapLocation(value: string) {
     name: (payload?.[3] ?? q?.[2] ?? position?.[2] ?? p.get('name') ?? p.get('poiname') ?? '').slice(0, 80),
     address: (payload?.[4] ?? q?.[3] ?? '').slice(0, 200),
   };
+}
+
+export function parseAmapPoiId(value: string): string | null {
+  try {
+    const p = new URL(value).searchParams;
+    const id = p.get('poiid') ?? p.get('id') ?? (p.get('p') ?? p.get('__p'))?.split(',')[0];
+    return id && /^[a-zA-Z0-9]{6,40}$/.test(id) ? id : null;
+  } catch { return null; }
 }
 
 /** Only explicit per-person cost fields; ratings, totals and arbitrary numbers are ignored. */
@@ -62,17 +70,19 @@ export async function resolveAmapUrl(value: string, fetcher: typeof fetch = fetc
   const amapUrl = current.href;
   const fallback = { amapUrl, location: null, price: parseAmapPrice(shareText) };
   const signal = AbortSignal.timeout(6000);
+  let poiId: string | null = null;
   let location = null;
   let price = fallback.price;
   try {
     for (let i = 0; i < 5; i++) {
+      poiId = parseAmapPoiId(current.href) ?? poiId;
       location = parseAmapLocation(current.href) ?? location;
       price = price ?? parseAmapPrice(current.search);
       const res = await fetcher(current.href, { redirect: 'manual', signal });
       const next = res.headers.get('location');
       if (res.status >= 200 && res.status < 300) {
         price = price ?? parseAmapPrice(await boundedText(res));
-        return { amapUrl, location, price };
+        return { amapUrl, location, price, poiId };
       }
       await res.body?.cancel();
       if (res.status < 300 || res.status >= 400 || !next) break;
@@ -82,5 +92,5 @@ export async function resolveAmapUrl(value: string, fetcher: typeof fetch = fetc
       current = target;
     }
   } catch {}
-  return { amapUrl, location, price };
+  return { amapUrl, location, price, poiId };
 }

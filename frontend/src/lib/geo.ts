@@ -39,7 +39,7 @@ export function wgs84ToGcj02(lng: number, lat: number): [number, number] {
   return [lng + dLng, lat + dLat];
 }
 
-export async function currentPosition() {
+export async function currentPosition(includeAddress = true) {
   const { status } = await Location.requestForegroundPermissionsAsync();
   if (status !== 'granted') throw new Error('需要定位权限才能获取当前位置');
   const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
@@ -47,6 +47,7 @@ export async function currentPosition() {
   let address = '';
   let city = '';
   try {
+    if (!includeAddress) return { lat, lng, address, city };
     const [g] = await Location.reverseGeocodeAsync(pos.coords);
     if (g) {
       address = [g.district, g.street, g.streetNumber, g.name].filter((x, i, arr) => x && arr.indexOf(x) === i).join('');
@@ -56,36 +57,8 @@ export async function currentPosition() {
   return { lat, lng, address, city };
 }
 
-export interface Poi {
-  name: string;
-  address: string;
-  city: string;
-  lat: number;
-  lng: number;
-  category: string;
-  price: number | null;
-}
-
-/** 高德 POI 搜索（需要在 .env 里配置 EXPO_PUBLIC_AMAP_KEY，Web 服务类型的 key） */
+/** Compatibility with an already-configured public Web-service key; live calls use the backend. */
 export const AMAP_KEY = process.env.EXPO_PUBLIC_AMAP_KEY;
-export async function searchPoi(keywords: string, city = ''): Promise<Poi[]> {
-  if (!AMAP_KEY || !keywords.trim()) return [];
-  const url = `https://restapi.amap.com/v3/place/text?key=${AMAP_KEY}&keywords=${encodeURIComponent(keywords)}&city=${encodeURIComponent(city)}&types=050000&offset=15&extensions=all`;
-  const res = await fetch(url);
-  const data = await res.json();
-  return (data.pois ?? []).map((p: Record<string, unknown>) => {
-    const [lng, lat] = String(p.location).split(',').map(Number);
-    return {
-      name: String(p.name ?? ''),
-      address: typeof p.address === 'string' ? p.address : '',
-      city: typeof p.cityname === 'string' ? p.cityname : '',
-      lat,
-      lng,
-      category: String(p.type ?? '').split(';')[1] ?? '',
-      price: Number((p.biz_ext as { cost?: string })?.cost) > 0 ? Math.round(Number((p.biz_ext as { cost?: string }).cost)) : null,
-    };
-  });
-}
 
 /** 高德 JS API（足迹地图用）：控制台创建「Web端(JS API)」类型的 Key，会同时给一个安全密钥 */
 export const AMAP_JS_KEY = process.env.EXPO_PUBLIC_AMAP_JS_KEY;
@@ -96,18 +69,7 @@ export async function openInMaps(p: MapDestination) {
   const platform = Platform.OS === 'web' && typeof navigator !== 'undefined' ? phonePlatform(navigator.userAgent) : Platform.OS;
   const { native, web } = mapLinks(p, platform);
   if (Platform.OS === 'web' && platform !== 'web' && native) {
-    // Same-tab scheme launch preserves the tap gesture. Only fall back if the app did not open.
-    const fallback = window.setTimeout(() => { cleanup(); window.location.assign(web); }, 1800);
-    const cleanup = () => {
-      window.clearTimeout(fallback);
-      document.removeEventListener('visibilitychange', onHide);
-      window.removeEventListener('pagehide', cleanup);
-    };
-    const onHide = () => { if (document.hidden) cleanup(); };
-    document.addEventListener('visibilitychange', onHide);
-    window.addEventListener('pagehide', cleanup, { once: true });
-    window.location.assign(native);
-    return;
+    return launchAmapWeb(native, web);
   }
   if (Platform.OS !== 'web' && native) {
     try {
@@ -116,6 +78,34 @@ export async function openInMaps(p: MapDestination) {
     } catch {}
   }
   return Linking.openURL(web);
+}
+
+function launchAmapWeb(native: string, web: string) {
+  const fallback = window.setTimeout(() => { cleanup(); window.location.assign(web); }, 1800);
+  const cleanup = () => {
+    window.clearTimeout(fallback);
+    document.removeEventListener('visibilitychange', onHide);
+    window.removeEventListener('pagehide', cleanup);
+  };
+  const onHide = () => { if (document.hidden) cleanup(); };
+  document.addEventListener('visibilitychange', onHide);
+  window.addEventListener('pagehide', cleanup, { once: true });
+  window.location.assign(native);
+}
+
+/** Open the exact POI detail page for reviews, separately from navigation. */
+export async function openAmapPlace(p: MapDestination) {
+  const url = p.amapUrl;
+  if (!url) return openInMaps(p);
+  const platform = Platform.OS === 'web' && typeof navigator !== 'undefined' ? phonePlatform(navigator.userAgent) : Platform.OS;
+  const params = new URL(url).searchParams;
+  const id = params.get('poiid') ?? (params.get('__p') ?? params.get('p'))?.split(',')[0];
+  if (id && p.lat != null && p.lng != null && platform === 'android') {
+    const native = `amapuri://poi/detail?sourceApplication=uscouple&poiname=${encodeURIComponent(p.name)}&lat=${p.lat}&lon=${p.lng}&poiid=${encodeURIComponent(id)}`;
+    if (Platform.OS === 'web') return launchAmapWeb(native, url);
+    try { await Linking.openURL(native); return; } catch {}
+  }
+  return Linking.openURL(url);
 }
 
 /** 从小红书分享文案里提取链接和标题 */
