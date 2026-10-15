@@ -5,11 +5,11 @@
 ```
 frontend/   网页前端：Expo Router / React Native Web
 backend/    API 后端：Fastify / MySQL / WebSocket
-deploy/    Gitee webhook 和独立部署脚本
+deploy/    GitHub webhook 和独立部署脚本
 docs/      产品和配置文档
 ```
 
-**部署从 [deploy/README.md](deploy/README.md) 开始。** 前端、后端各自独立构建和运行；一个 Gitee webhook 在 master 更新时部署两边，后端健康检查通过后再切换前端。真实环境配置、数据库和照片保存在服务器固定目录，不提交到仓库。
+**部署从 [deploy/README.md](deploy/README.md) 开始。** 代码仓库为 [senzzz59/couple_app](https://github.com/senzzz59/couple_app)。前端、后端各自独立构建和运行；一个 GitHub webhook 在 master 更新时部署两边，后端健康检查通过后再切换前端。真实环境配置、数据库和照片保存在服务器固定目录，不提交到仓库。已有 Gitee 部署按部署说明中的「从 Gitee 切换到 GitHub」操作。
 
 生产使用宝塔中已创建的 MySQL `couple` 数据库，支持服务器当前的 MySQL 5.7.44 和 MySQL 8+。字段变更的迁移随代码提交，自动部署先备份、执行迁移，再更新服务；服务器不需要手工改表。生产 Compose 不会创建另一套数据库。
 
@@ -41,4 +41,4 @@ npm test
 
 网页关闭后的系统提醒、离线推送和离线编辑尚未接入。网页发布不需要 EAS 或 Apple 开发者账号；保留的原生配置仅用于以后需要独立 App 时使用。
 
-当前代码已做本地验证，服务器部署和 Gitee webhook 设置由项目所有者完成。
+服务器配置和 GitHub webhook 设置由项目所有者完成。推送代码不等于完成生产部署，需要核对部署日志和线上版本。
