@@ -135,10 +135,10 @@ export function IconButton({ icon: Icon, onPress, bg = colors.surface, color = c
 }
 
 // ---------- 胶囊标签
-export function Chip({ label, active, onPress, color = colors.accentStrong }: { label: string; active?: boolean; onPress?: () => void; color?: string }) {
+export function Chip({ label, active, onPress, color = colors.ink }: { label: string; active?: boolean; onPress?: () => void; color?: string }) {
   return (
     <PressScale onPress={onPress} scaleTo={0.93} style={[styles.chip, active && { backgroundColor: color, borderColor: color }]}>
-      <Txt v="caption" style={{ fontWeight: '600' }} color={active ? colors.white : colors.inkSoft}>
+      <Txt v="secondary" style={{ fontWeight: '600' }} color={active ? colors.white : colors.inkSoft}>
         {label}
       </Txt>
     </PressScale>
@@ -197,20 +197,17 @@ export const Field = forwardRef<TextInput, TextInputProps & { label?: string; st
 });
 
 // ---------- 空状态
-export function Empty({ emoji, title, hint, action }: { emoji: string; title: string; hint?: string; action?: ReactNode }) {
+export function Empty({ title, hint, action }: { emoji?: string; title: string; hint?: string; action?: ReactNode }) {
   return (
-    <Animated.View entering={enter(1)} style={{ alignItems: 'center', paddingVertical: 56, paddingHorizontal: 32, gap: 10 }}>
+    <Animated.View entering={enter(1)} style={{ alignItems: 'center', paddingVertical: 48, paddingHorizontal: 32, gap: 8 }}>
       <View style={{ marginBottom: 8 }}>
-        <Blob who={title.length % 2 ? 'her' : 'him'} size={96} mood="happy" />
-        <View style={styles.bubble}>
-          <Text style={{ fontSize: 22 }}>{emoji}</Text>
-        </View>
+        <Blob who={title.length % 2 ? 'her' : 'him'} size={84} mood="happy" />
       </View>
       <Txt v="heading" style={{ textAlign: 'center' }}>
         {title}
       </Txt>
       {hint && (
-        <Txt v="caption" style={{ textAlign: 'center' }}>
+        <Txt v="secondary" style={{ textAlign: 'center' }}>
           {hint}
         </Txt>
       )}
@@ -228,8 +225,7 @@ export function Divider() {
 }
 
 const styles = StyleSheet.create({
-  bubble: { position: 'absolute', right: -22, top: -10, width: 42, height: 42, borderRadius: 21, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', ...shadow },
-  card: { borderRadius: radius.lg, padding: 18, borderCurve: 'continuous', ...shadow },
+  card: { borderRadius: radius.lg, padding: 18, borderCurve: 'continuous', borderWidth: StyleSheet.hairlineWidth, borderColor: colors.line, ...shadow },
   button: { height: 54, borderRadius: radius.pill, paddingHorizontal: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   chip: { paddingHorizontal: 14, height: 34, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface, justifyContent: 'center' },
   input: {

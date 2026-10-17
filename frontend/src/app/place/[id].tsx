@@ -150,7 +150,7 @@ export default function PlaceDetail() {
           </Animated.View>
 
           <Animated.View entering={enter(1)} style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
-            <PressScale onPress={() => openInMaps(p).catch(() => toast('暂时打不开高德地图，请稍后重试', '📍'))} style={[styles.action, { backgroundColor: colors.ink }]}>
+            <PressScale onPress={() => openInMaps(p).catch(() => toast('打不开高德地图', '⚠️'))} style={[styles.action, { backgroundColor: colors.ink }]}>
               <Navigation size={18} color={colors.white} />
               <Txt v="bodyStrong" color={colors.white}>
                 {p.amapUrl && (p.lat == null || p.lng == null) ? '打开高德地点' : '高德导航'}

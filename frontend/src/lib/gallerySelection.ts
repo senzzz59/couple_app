@@ -55,7 +55,7 @@ export function useGallerySelection(items: GalleryItem[], opts: { albumId?: stri
         await saveEntry(galleryEntry(chosen[0]));
       } else {
         await downloadMany(ids);
-        toast(`正在打包 ${ids.length} 项`, '📦', '下载的是原图，会保存成一个压缩包');
+        toast(`正在打包下载 ${ids.length} 项原图`);
       }
     });
 
@@ -85,7 +85,7 @@ export function useGallerySelection(items: GalleryItem[], opts: { albumId?: stri
       if (!opts.albumId) return;
       await api.post(`/api/albums/${opts.albumId}/items/remove`, { ids });
       haptic.success();
-      toast(`从相册移出了 ${ids.length} 项`, '📤', '照片还在「全部照片」里');
+      toast(`已移出 ${ids.length} 项`);
       invalidate('gallery');
       invalidate('albums');
       stop();
@@ -96,7 +96,7 @@ export function useGallerySelection(items: GalleryItem[], opts: { albumId?: stri
       if (!opts.albumId || ids.length !== 1) return;
       await api.patch(`/api/albums/${opts.albumId}`, { coverId: ids[0] });
       haptic.success();
-      toast('设好封面了', '🖼️');
+      toast('已设为封面', '✓');
       invalidate('albums');
       stop();
     });

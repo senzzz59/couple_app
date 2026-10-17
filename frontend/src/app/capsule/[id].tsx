@@ -101,7 +101,7 @@ export default function CapsuleView() {
     if (c.locked) {
       haptic.warn();
       shake.set(withSequence(...[12, -12, 8, -8, 4, 0].map((x) => withTiming(x, { duration: 60 }))));
-      toast('还没到时间哦', '🤫', `${fmtFullDate(c.unlockAt)} 才能打开`);
+      toast(`${fmtFullDate(c.unlockAt)} 才能打开`);
       return;
     }
     // 拆封：火漆印弹开 → 封口翻起 → 信纸抽出 → 展开阅读

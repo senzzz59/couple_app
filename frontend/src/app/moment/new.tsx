@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { ChevronDown, ImagePlus, Lock, MapPin, Smile, X } from 'lucide-react-native';
+import { ChevronDown, ImagePlus, MapPin, Smile, X } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, FadeOut, LinearTransition, useAnimatedStyle, useSharedValue, withTiming, ZoomIn, ZoomOut } from 'react-native-reanimated';
@@ -97,7 +97,7 @@ export default function NewMoment() {
   };
 
   const post = async () => {
-    if (!canPost) return toast('写点什么，或者选张照片 / 视频吧', '✏️');
+    if (!canPost) return toast('写点什么，或者选张照片');
     setSaving(true);
     try {
       let uploaded: Awaited<ReturnType<typeof uploadMedia>> = [];
@@ -107,7 +107,7 @@ export default function NewMoment() {
       }
       const items = uploaded.map((m) => ({ kind: m.kind, image: m.image, video: m.video, w: m.w ?? null, h: m.h ?? null, duration: m.duration ?? null }));
       await api.post('/api/moments', { content: content.trim() || null, media: items, mood, placeId });
-      if (toGallery && items.length) await api.post('/api/gallery/import', { media: items }).catch(() => toast('动态发好了，但存进相册失败', '⚠️'));
+      if (toGallery && items.length) await api.post('/api/gallery/import', { media: items }).catch(() => toast('动态已发布，存入相册失败', '⚠️'));
       await AsyncStorage.removeItem(DRAFT_KEY).catch(() => {});
       haptic.success();
       invalidate('moments');
@@ -137,12 +137,6 @@ export default function NewMoment() {
         <Row gap={10}>
           <Avatar user={me} size={36} />
           <Txt v="bodyStrong">{me?.name}</Txt>
-        </Row>
-        <Row gap={4} style={styles.private}>
-          <Lock size={11} color={colors.pinkInk} />
-          <Txt v="caption" color={colors.pinkInk} style={{ fontSize: 11 }}>
-            只有你们俩能看到
-          </Txt>
         </Row>
       </Row>
 
@@ -200,18 +194,13 @@ export default function NewMoment() {
           <Animated.View layout={LinearTransition.springify().damping(18)}>
             <PressScale onPress={add} disabled={picking || saving} style={[styles.add, { width: cell, height: cell }]}>
               <ImagePlus size={26} color={colors.accentStrong} />
-              <Txt v="caption" color={colors.pinkInk} style={{ fontSize: 12 }}>
-                {picking ? '读取中…' : media.length ? `${media.length}/${MAX}` : '照片 / 视频'}
+              <Txt v="secondary" color={colors.pinkInk}>
+                {picking ? '读取中…' : media.length ? `${media.length}/${MAX}` : '照片或视频'}
               </Txt>
             </PressScale>
           </Animated.View>
         )}
       </View>
-      {!media.length && (
-        <Txt v="caption" style={{ marginTop: -8 }}>
-          支持视频和 Live 图：同时选中同名的照片和视频（比如 IMG_1234.HEIC 和 IMG_1234.MOV）会自动合成 Live 图
-        </Txt>
-      )}
 
       <View style={styles.options}>
         <PressScale haptics={false} onPress={() => setPanel(panel === 'mood' ? null : 'mood')} style={styles.option}>
@@ -219,7 +208,7 @@ export default function NewMoment() {
           <Txt v="bodyStrong" style={{ flex: 1, fontSize: 15 }}>
             心情
           </Txt>
-          <Txt v="caption" style={{ fontSize: mood ? 20 : 13 }}>
+          <Txt v="secondary" style={mood ? { fontSize: 20, lineHeight: 26 } : undefined}>
             {mood ?? '选一个'}
           </Txt>
           <ChevronDown size={16} color={colors.muted} style={{ transform: [{ rotate: panel === 'mood' ? '180deg' : '0deg' }] }} />
@@ -246,7 +235,7 @@ export default function NewMoment() {
           <Txt v="bodyStrong" style={{ flex: 1, fontSize: 15 }}>
             在哪家店
           </Txt>
-          <Txt v="caption" numberOfLines={1} style={{ maxWidth: 160 }} color={place ? colors.butterInk : colors.muted}>
+          <Txt v="secondary" numberOfLines={1} style={{ maxWidth: 160 }} color={place ? colors.inkSoft : colors.muted}>
             {place?.name ?? '不选'}
           </Txt>
           <ChevronDown size={16} color={colors.muted} style={{ transform: [{ rotate: panel === 'place' ? '180deg' : '0deg' }] }} />
@@ -260,7 +249,6 @@ export default function NewMoment() {
                     key={p.id}
                     label={p.name}
                     active={placeId === p.id}
-                    color={colors.butterInk}
                     onPress={() => {
                       setPlaceId(placeId === p.id ? null : p.id);
                       setPanel(null);
@@ -280,14 +268,9 @@ export default function NewMoment() {
             <View style={styles.sep} />
             <View style={styles.option}>
               <ImagePlus size={18} color={colors.inkSoft} />
-              <View style={{ flex: 1 }}>
-                <Txt v="bodyStrong" style={{ fontSize: 15 }}>
-                  同时存进共享相册
-                </Txt>
-                <Txt v="caption" style={{ fontSize: 11 }}>
-                  删掉动态，相册里的也还在
-                </Txt>
-              </View>
+              <Txt v="bodyStrong" style={{ flex: 1, fontSize: 15 }}>
+                同时存入相册
+              </Txt>
               <Switch value={toGallery} onValueChange={setToGallery} trackColor={{ true: colors.accent, false: colors.line }} thumbColor={colors.white} {...({ activeThumbColor: colors.white } as object)} />
             </View>
           </>
@@ -298,7 +281,6 @@ export default function NewMoment() {
 }
 
 const styles = StyleSheet.create({
-  private: { backgroundColor: colors.accentSoft, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4 },
   input: { fontSize: 18, lineHeight: 27, color: colors.ink, minHeight: 110, textAlignVertical: 'top', paddingVertical: 4 },
   tile: { borderRadius: 14, overflow: 'hidden', backgroundColor: colors.surfaceAlt },
   noPreview: { alignItems: 'center', justifyContent: 'center' },

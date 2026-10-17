@@ -2,40 +2,40 @@ import { Platform, TextStyle } from 'react-native';
 import { WithSpringConfig } from 'react-native-reanimated';
 
 /**
- * 设计系统：草莓牛奶（可爱简约风）。
- * - 整个 App 只用一个色系：粉色从浅到深 + 一点蜜桃色点缀
- * - 卡片以白色为主，颜色只给“主角”（首页大卡、图标底、按钮）
- * - 文字是带一点粉调的暖棕，比纯黑柔和
- * - 可爱感来自团子小人、圆体数字和果冻动画，而不是堆颜色
+ * 设计系统：克制的暖调。
+ * - 大面积用暖白和纯白，粉色只给真正的重点（主按钮、选中、爱心）
+ * - 文字对比度足够：正文深棕，次要信息中性灰，不再用一层层浅粉小字
+ * - 层级靠字号和字重拉开，而不是靠堆说明文字和表情
  */
 export const colors = {
-  bg: '#FFF7F5',
+  bg: '#FAF7F5',
   surface: '#FFFFFF',
-  surfaceAlt: '#FBEEEE',
-  ink: '#4B2E35',
-  inkSoft: '#6E5158',
-  muted: '#B48A92',
-  faint: '#DBC4C8',
-  line: '#F5E3E6',
-  accent: '#F27B96', // 草莓粉：爱心、强调、装饰
-  accentStrong: '#E5627F', // 按钮、加号：白字要读得清
-  accentSoft: '#FDE2E8',
+  surfaceAlt: '#F4EFED',
+  ink: '#2A1F23',
+  inkSoft: '#5C4E53',
+  muted: '#948A8D',
+  faint: '#CDC4C6',
+  line: '#ECE5E5',
+  accent: '#E8698A',
+  accentStrong: '#DC5378', // 按钮、加号：白字要读得清
+  accentSoft: '#FCEAEF',
+  danger: '#C8435F',
   white: '#FFFFFF',
 
-  // 同一色系里的几个浅色，用作图标底 / 少量卡片底
-  pink: '#FDE2E8',
-  pinkInk: '#B9506B',
-  peach: '#FCE8DA',
-  peachInk: '#A0583A',
-  // 下面是旧的板块色名，全部映射回粉 / 蜜桃 / 燕麦色，保证全局只有一个色系
-  butter: '#FCE8DA', // 美食
-  butterInk: '#A0583A',
-  lilac: '#FDE2E8', // 纪念日
-  lilacInk: '#B9506B',
-  sky: '#F9ECEF', // 动态
-  skyInk: '#9C6470',
-  sage: '#F5EDE7', // 清单（燕麦色）
-  sageInk: '#8A6A5C',
+  // 少量浅底色：图标底、少数重点卡片
+  pink: '#FCE7ED',
+  pinkInk: '#B04468',
+  peach: '#FBEBE0',
+  peachInk: '#99573A',
+  // 旧的板块色名，映射回同一套颜色
+  butter: '#FBEBE0',
+  butterInk: '#99573A',
+  lilac: '#FCE7ED',
+  lilacInk: '#B04468',
+  sky: '#F6EEEF',
+  skyInk: '#8E5E68',
+  sage: '#F2EEEA',
+  sageInk: '#7D6A5F',
 };
 
 /** 小人的颜色：她是草莓粉，他是蜜桃奶油 */
@@ -48,7 +48,7 @@ export const mascot = {
   leaf: '#8FC488',
 };
 
-export const radius = { sm: 14, md: 20, lg: 26, xl: 34, pill: 999 };
+export const radius = { sm: 12, md: 16, lg: 22, xl: 28, pill: 999 };
 export const space = (n: number) => n * 4;
 
 export const fonts = {
@@ -63,12 +63,14 @@ export const fonts = {
 
 export const type: Record<string, TextStyle> = {
   display: { fontFamily: fonts.displayBold, fontSize: 64, lineHeight: 72, color: colors.ink },
-  title: { fontFamily: fonts.round, fontSize: 28, lineHeight: 36, color: colors.ink },
-  heading: { fontFamily: fonts.round, fontSize: 19, lineHeight: 26, color: colors.ink },
-  body: { fontSize: 16, lineHeight: 23, color: colors.ink },
-  bodyStrong: { fontFamily: fonts.roundMedium, fontSize: 16, lineHeight: 23, color: colors.ink },
+  title: { fontFamily: fonts.round, fontSize: 30, lineHeight: 38, color: colors.ink },
+  heading: { fontFamily: fonts.round, fontSize: 18, lineHeight: 26, color: colors.ink },
+  body: { fontSize: 16, lineHeight: 24, color: colors.ink },
+  bodyStrong: { fontFamily: fonts.roundMedium, fontSize: 16, lineHeight: 24, color: colors.ink },
+  /** 次要信息：时间、数量、当前值 */
+  secondary: { fontSize: 14, lineHeight: 20, color: colors.muted },
   caption: { fontSize: 13, lineHeight: 18, color: colors.muted },
-  label: { fontFamily: fonts.roundMedium, fontSize: 12, lineHeight: 16, letterSpacing: 0.3, color: colors.muted },
+  label: { fontFamily: fonts.roundMedium, fontSize: 13, lineHeight: 18, color: colors.muted },
 };
 
 /** 可爱风的弹簧都更“Q”一点 */
@@ -79,9 +81,9 @@ export const springs = {
 };
 
 export const shadow = Platform.select({
-  ios: { shadowColor: '#D99AA8', shadowOpacity: 0.14, shadowRadius: 14, shadowOffset: { width: 0, height: 6 } },
-  android: { elevation: 2, shadowColor: '#D99AA8' },
-  default: { boxShadow: '0 6px 18px rgba(217,154,168,0.16)' },
+  ios: { shadowColor: '#2A1F23', shadowOpacity: 0.06, shadowRadius: 14, shadowOffset: { width: 0, height: 4 } },
+  android: { elevation: 1, shadowColor: '#2A1F23' },
+  default: { boxShadow: '0 1px 2px rgba(42,31,35,0.04), 0 6px 20px rgba(42,31,35,0.05)' },
 }) as object;
 
 export const sectionTheme = {

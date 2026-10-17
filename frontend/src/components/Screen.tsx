@@ -70,7 +70,7 @@ export function Screen({
             <Row style={{ justifyContent: 'space-between', alignItems: 'flex-end' }}>
               <View style={{ flex: 1 }}>
                 {subtitle && <Txt v="label">{subtitle}</Txt>}
-                <Txt v="title" style={{ fontSize: 34, lineHeight: 40 }}>
+                <Txt v="title" style={{ fontSize: 32, lineHeight: 40 }}>
                   {title}
                 </Txt>
               </View>

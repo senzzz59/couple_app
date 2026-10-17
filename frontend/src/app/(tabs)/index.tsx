@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
-import { ArrowUpRight, Dices, MessageCircleQuestion } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { ChevronRight, Dices, MoreHorizontal } from 'lucide-react-native';
+import { ReactNode, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, {
   FadeIn,
@@ -18,28 +18,40 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Envelope } from '@/components/Envelope';
-import { MediaThumb } from '@/components/Media';
 import { BlobCouple, FlatHeart } from '@/components/Mascot';
+import { MediaThumb } from '@/components/Media';
 import { RollingNumber, toast, useBurst } from '@/components/motion';
 import { usePullRefresh } from '@/components/PullRefresh';
-import { Sheet } from '@/components/Sheet';
 import { CENTERED } from '@/components/Screen';
+import { Sheet } from '@/components/Sheet';
 import { TAB_BAR_HEIGHT } from '@/components/TabBar';
 import { TodoRow } from '@/components/TodoRow';
 import { Avatar, Button, Card, enter, PressScale, Row, Txt } from '@/components/ui';
 import { api } from '@/lib/api';
-import { daysTogether, diffDays, fmtDate, fmtFullDate, greeting, parseDay, timeAgo, toDay, today } from '@/lib/dates';
+import { daysTogether, diffDays, fmtDate, greeting, parseDay, timeAgo, toDay, today } from '@/lib/dates';
 import { upcomingEvents } from '@/lib/events';
 import { haptic } from '@/lib/haptics';
 import { MOODS, NUDGES } from '@/lib/nudge';
 import { questionOfDay } from '@/lib/questions';
-import { usePendingDeletes } from '@/lib/undo';
 import { useCouple } from '@/lib/session';
 import { invalidate, useQuery } from '@/lib/store';
 import type { Anniversary, Answer, Capsule, GallerySummary, Moment, Place, Todo } from '@/lib/types';
+import { usePendingDeletes } from '@/lib/undo';
 import { colors, fonts, radius, springs } from '@/theme';
 
-// ---------------- 在一起天数大卡片
+/** 卡片标题：一个词说清楚是什么，右边是数量 / 箭头 */
+function CardTitle({ children, right, color = colors.ink }: { children: ReactNode; right?: ReactNode; color?: string }) {
+  return (
+    <Row style={{ justifyContent: 'space-between', marginBottom: 12 }}>
+      <Txt v="bodyStrong" color={color}>
+        {children}
+      </Txt>
+      {right ?? <ChevronRight size={18} color={colors.faint} />}
+    </Row>
+  );
+}
+
+// ---------------- 在一起天数
 function HeroCard() {
   const { space, me, partner } = useCouple();
   const anns = useQuery<Anniversary[]>('/api/anniversaries');
@@ -49,35 +61,35 @@ function HeroCard() {
   return (
     <PressScale onPress={() => router.push('/anniversaries')} style={styles.hero}>
       <View style={styles.heroBlobs} pointerEvents="none">
-        <BlobCouple size={150} me={me} partner={partner} />
+        <BlobCouple size={140} me={me} partner={partner} />
       </View>
-      <Txt v="label" color={colors.pinkInk}>
-        我们在一起
-      </Txt>
       {space?.startDate ? (
         <>
-          <Row gap={4} style={{ alignItems: 'flex-end', marginTop: 2 }}>
-            <RollingNumber value={n} style={{ fontFamily: fonts.displayBold, fontSize: 76, lineHeight: 84, color: colors.ink }} />
-            <Txt v="heading" style={{ marginBottom: 14 }}>
+          <Txt v="bodyStrong" color={colors.pinkInk} style={{ fontSize: 15 }}>
+            在一起
+          </Txt>
+          <Row gap={6} style={{ alignItems: 'flex-end' }}>
+            <RollingNumber value={n} style={{ fontFamily: fonts.displayBold, fontSize: 80, lineHeight: 88, color: colors.ink }} />
+            <Txt v="heading" style={{ marginBottom: 16 }}>
               天
             </Txt>
           </Row>
-          <Txt v="caption" color={colors.pinkInk}>
-            since {fmtFullDate(space.startDate)}
-          </Txt>
           {next && (
             <View style={styles.heroPill}>
-              <Txt v="caption" color={colors.ink} style={{ fontWeight: '700' }}>
-                {next.emoji} {next.title} · {next.daysLeft === 0 ? '就是今天' : `${next.daysLeft} 天后`}
+              <Txt v="secondary" color={colors.ink}>
+                {next.title}
+                <Txt v="secondary" color={colors.pinkInk}>
+                  {next.daysLeft === 0 ? '  今天' : `  ${next.daysLeft} 天后`}
+                </Txt>
               </Txt>
             </View>
           )}
         </>
       ) : (
-        <View style={{ marginTop: 12, gap: 6 }}>
-          <Text style={{ fontFamily: fonts.displayBold, fontSize: 36, color: colors.ink }}>Day one?</Text>
-          <Txt v="caption" color={colors.pinkInk}>
-            点这里设置在一起的日子 →
+        <View style={{ gap: 8, paddingVertical: 12 }}>
+          <Txt v="title">设置在一起的日子</Txt>
+          <Txt v="secondary" color={colors.pinkInk}>
+            从第一天开始数
           </Txt>
         </View>
       )}
@@ -85,7 +97,7 @@ function HeroCard() {
   );
 }
 
-// ---------------- 想你按钮：会呼吸的爱心，点了冒爱心，长按选别的
+// ---------------- 想你：会呼吸的爱心，点了冒爱心；右上角可以选别的
 function NudgeCard() {
   const { partner } = useCouple();
   const { fire, node } = useBurst();
@@ -104,27 +116,27 @@ function NudgeCard() {
     setMore(false);
     try {
       await api.post('/api/nudges', { kind });
-      toast(`已发送「${NUDGES[kind].text}」`, NUDGES[kind].emoji, partner ? `${partner.name} 会立刻收到` : undefined);
+      toast(`已发送「${NUDGES[kind].text}」`, NUDGES[kind].emoji, undefined, { showEmoji: true });
     } catch (e) {
       toast((e as Error).message, '⚠️');
     }
   };
 
   return (
-    <Card style={{ flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 168 }}>
-      <Pressable onPress={() => send('miss')} onLongPress={() => (haptic.medium(), setMore(true))} delayLongPress={300} style={{ alignItems: 'center' }}>
+    <Card style={{ flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 164 }}>
+      <Pressable onPress={() => send('miss')} onLongPress={() => (haptic.medium(), setMore(true))} delayLongPress={300} style={{ alignItems: 'center' }} accessibilityLabel={`想${partner?.name ?? 'TA'}了`}>
         <View style={{ alignItems: 'center', justifyContent: 'center' }}>
           {node}
           <Animated.View style={heart}>
-            <FlatHeart size={64} />
+            <FlatHeart size={60} />
           </Animated.View>
         </View>
-        <Txt v="bodyStrong" style={{ marginTop: 6 }}>
+        <Txt v="bodyStrong" style={{ marginTop: 10 }}>
           想{partner?.name ?? 'TA'}了
         </Txt>
-        <Txt v="caption" style={{ fontSize: 11 }}>
-          点一下 · 长按更多
-        </Txt>
+      </Pressable>
+      <Pressable hitSlop={10} onPress={() => (haptic.tick(), setMore(true))} style={styles.moreBtn} accessibilityLabel="更多">
+        <MoreHorizontal size={18} color={colors.faint} />
       </Pressable>
       {more && (
         <Animated.View entering={FadeIn.duration(150)} exiting={FadeOut.duration(120)} style={styles.nudgeMore}>
@@ -133,8 +145,8 @@ function NudgeCard() {
             .map(([k, n], i) => (
               <Animated.View key={k} entering={FadeInDown.delay(i * 40).springify().damping(14)}>
                 <PressScale onPress={() => send(k)} style={styles.nudgeChip}>
-                  <Text style={{ fontSize: 18 }}>{n.emoji}</Text>
-                  <Txt v="caption" color={colors.ink} style={{ fontWeight: '600' }}>
+                  <Text style={{ fontSize: 17 }}>{n.emoji}</Text>
+                  <Txt v="secondary" color={colors.ink}>
                     {n.label}
                   </Txt>
                 </PressScale>
@@ -147,31 +159,32 @@ function NudgeCard() {
   );
 }
 
-// ---------------- 心情
+// ---------------- 心情：上面是 TA 的，下面一颗小按钮是自己的
 function MoodCard() {
   const { me, partner } = useCouple();
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Card onPress={() => setOpen(true)} style={{ flex: 1, minHeight: 168, justifyContent: 'space-between' }}>
-        <Row style={{ justifyContent: 'space-between' }}>
-          <Txt v="label">TA 的心情</Txt>
-          <Avatar user={partner} size={22} />
-        </Row>
-        <View>
-          <Animated.Text key={partner?.mood} entering={FadeInDown.springify()} style={{ fontSize: 40 }}>
-            {partner?.mood ?? '🫥'}
-          </Animated.Text>
-          <Txt v="bodyStrong" numberOfLines={2}>
-            {partner?.moodText || (partner?.mood ? '' : '还没设置')}
+      <Card onPress={() => setOpen(true)} style={{ flex: 1, minHeight: 164, justifyContent: 'space-between' }}>
+        <Row gap={8}>
+          <Avatar user={partner} size={24} />
+          <Txt v="secondary" numberOfLines={1} style={{ flex: 1 }}>
+            {partner?.name ?? 'TA'}
           </Txt>
           {partner?.moodAt && <Txt v="caption">{timeAgo(partner.moodAt)}</Txt>}
+        </Row>
+        <View>
+          <Animated.Text key={partner?.mood} entering={FadeInDown.springify()} style={{ fontSize: 38 }}>
+            {partner?.mood ?? '·'}
+          </Animated.Text>
+          <Txt v="bodyStrong" numberOfLines={1}>
+            {partner?.moodText || (partner?.mood ? ' ' : '还没有心情')}
+          </Txt>
         </View>
         <Row gap={6} style={styles.myMood}>
-          <Txt v="caption">我：</Txt>
-          <Text>{me?.mood ?? '＋'}</Text>
-          <Txt v="caption" numberOfLines={1} style={{ flex: 1 }}>
-            {me?.moodText ?? '更新心情'}
+          <Text style={{ fontSize: 15 }}>{me?.mood ?? '+'}</Text>
+          <Txt v="secondary" numberOfLines={1} style={{ flex: 1 }} color={colors.inkSoft}>
+            {me?.mood ? me.moodText || '我的心情' : '我的心情'}
           </Txt>
         </Row>
       </Card>
@@ -207,7 +220,7 @@ function MoodSheetBody({ onClose }: { onClose: () => void }) {
   };
   return (
     <>
-      <Txt v="heading">现在的心情</Txt>
+      <Txt v="heading">我现在的心情</Txt>
       <View style={styles.moodGrid}>
         {MOODS.map((m) => (
           <PressScale key={m} scaleTo={0.85} onPress={() => setMood(m)} style={[styles.moodItem, mood === m && { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}>
@@ -215,52 +228,40 @@ function MoodSheetBody({ onClose }: { onClose: () => void }) {
           </PressScale>
         ))}
       </View>
-      <TextInput value={text} onChangeText={setText} placeholder="说一句（可选）" placeholderTextColor={colors.faint} maxLength={60} style={styles.moodInput} />
+      <TextInput value={text} onChangeText={setText} placeholder="说一句" placeholderTextColor={colors.faint} maxLength={60} style={styles.moodInput} />
       <Button title="更新" onPress={save} />
     </>
   );
 }
 
-// ---------------- 下一个纪念日
+// ---------------- 接下来的日子
 function UpcomingCard() {
   const { space } = useCouple();
   const anns = useQuery<Anniversary[]>('/api/anniversaries');
   const list = upcomingEvents(anns.data, space?.startDate).slice(0, 3);
-  const t = { ink: colors.pinkInk };
+  if (!list.length) return null;
   return (
     <Card onPress={() => router.push('/anniversaries')}>
-      <Row style={{ justifyContent: 'space-between', marginBottom: 10 }}>
-        <Txt v="label" color={t.ink}>
-          接下来
-        </Txt>
-        <ArrowUpRight size={18} color={t.ink} />
-      </Row>
+      <CardTitle>接下来</CardTitle>
       {list.map((e, i) => (
-        <Row key={e.key} style={{ paddingVertical: 7 }} gap={12}>
-          <Text style={{ fontSize: 22 }}>{e.emoji}</Text>
+        <Row key={e.key} style={[{ paddingVertical: 10 }, i > 0 && styles.rowSep]} gap={12}>
+          <Text style={{ fontSize: 22, width: 28, textAlign: 'center' }}>{e.emoji}</Text>
           <View style={{ flex: 1 }}>
-            <Txt v="bodyStrong" style={i === 0 ? { fontSize: 17 } : undefined}>
+            <Txt v="body" numberOfLines={1}>
               {e.title}
             </Txt>
-            <Txt v="caption" color={t.ink}>
-              {fmtDate(toDay(e.date), true)}
-              {e.sub ? ` · ${e.sub}` : ''}
+            <Txt v="caption">{fmtDate(toDay(e.date), true)}</Txt>
+          </View>
+          {e.daysLeft === 0 ? (
+            <Txt v="bodyStrong" color={colors.accentStrong}>
+              今天
             </Txt>
-          </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            {e.daysLeft === 0 ? (
-              <Txt v="bodyStrong" color={t.ink}>
-                今天 🎉
-              </Txt>
-            ) : (
-              <Row gap={2} style={{ alignItems: 'baseline' }}>
-                <Text style={{ fontFamily: fonts.display, fontSize: i === 0 ? 34 : 24, color: colors.ink }}>{e.daysLeft}</Text>
-                <Txt v="caption" color={t.ink}>
-                  天
-                </Txt>
-              </Row>
-            )}
-          </View>
+          ) : (
+            <Row gap={3} style={{ alignItems: 'baseline' }}>
+              <Text style={{ fontFamily: fonts.display, fontSize: i === 0 ? 30 : 22, color: colors.ink }}>{e.daysLeft}</Text>
+              <Txt v="caption">天</Txt>
+            </Row>
+          )}
         </Row>
       ))}
     </Card>
@@ -276,22 +277,18 @@ function CapsuleCard() {
   const sealed = all.filter((c) => c.locked);
   const next = sealed[0];
   const days = next ? diffDays(parseDay(next.unlockAt), today()) : 0;
-  const go = () =>
-    ready ? router.push({ pathname: '/capsule/[id]', params: { id: ready.id } }) : router.push(all.length ? '/capsules' : '/capsule/new');
+  const go = () => (ready ? router.push({ pathname: '/capsule/[id]', params: { id: ready.id } }) : router.push(all.length ? '/capsules' : '/capsule/new'));
 
   return (
     <Card onPress={go} style={[{ flexDirection: 'row', alignItems: 'center', gap: 16 }, ready && { borderWidth: 1.5, borderColor: colors.accent }]}>
-      <Envelope width={70} />
+      <Envelope width={60} />
       <View style={{ flex: 1, gap: 2 }}>
-        <Txt v="label" color={ready ? colors.accent : colors.muted}>
-          时光胶囊
-        </Txt>
         <Txt v="bodyStrong" numberOfLines={1}>
-          {ready ? `「${ready.title}」可以打开了` : next ? `${sealed.length} 封信正在封存` : '给未来的你们写一封信'}
+          {ready ? `「${ready.title}」可以打开了` : next ? '时光胶囊' : '写一封给未来的信'}
         </Txt>
-        <Txt v="caption">{ready ? '轻点拆开 💌' : next ? `下一封还有 ${days} 天` : '选个日子封存，到那天才能打开'}</Txt>
+        <Txt v="secondary">{ready ? '现在拆开' : next ? `${sealed.length} 封封存中 · ${days} 天后打开` : '到那天才能打开'}</Txt>
       </View>
-      <ArrowUpRight size={18} color={colors.muted} />
+      <ChevronRight size={18} color={colors.faint} />
     </Card>
   );
 }
@@ -304,19 +301,19 @@ function QuestionCard() {
   const answers = useQuery<Answer[]>(`/api/answers?day=${day}`);
   const mine = answers.data?.find((a) => a.createdBy === me?.id);
   const theirs = answers.data?.find((a) => a.createdBy !== me?.id);
-  const status = mine && theirs ? '都答完啦，点开看看 👀' : mine ? '等 TA 回答后揭晓' : theirs ? 'TA 已经回答了，轮到你' : '回答后才能看到对方的答案';
+  const status = mine && theirs ? '都答完了，去看看' : mine ? '等 TA 回答' : theirs ? 'TA 答完了，轮到你' : '回答后才能看到对方的';
   return (
     <Card bg={colors.peach} onPress={() => router.push('/question')}>
-      <Row style={{ justifyContent: 'space-between' }}>
-        <Txt v="label" color={colors.peachInk}>
-          每日一问
-        </Txt>
-        <MessageCircleQuestion size={18} color={colors.peachInk} />
-      </Row>
-      <Text style={{ fontFamily: fonts.round, fontSize: 22, lineHeight: 30, color: colors.ink, marginVertical: 10 }}>{q.text}</Text>
-      <Txt v="caption" color={colors.peachInk} style={{ fontWeight: '600' }}>
-        {status}
+      <Txt v="secondary" color={colors.peachInk}>
+        今天的问题
       </Txt>
+      <Text style={{ fontFamily: fonts.round, fontSize: 21, lineHeight: 30, color: colors.ink, marginTop: 6, marginBottom: 12 }}>{q.text}</Text>
+      <Row gap={6}>
+        {(mine || theirs) && <View style={[styles.dot, { backgroundColor: mine && theirs ? colors.accentStrong : colors.peachInk }]} />}
+        <Txt v="secondary" color={colors.peachInk}>
+          {status}
+        </Txt>
+      </Row>
     </Card>
   );
 }
@@ -326,22 +323,15 @@ function EatsCard() {
   const places = useQuery<Place[]>('/api/places');
   const want = places.data?.filter((p) => p.status === 'want').length ?? 0;
   const visited = places.data?.filter((p) => p.status === 'visited').length ?? 0;
-  const t = { ink: colors.peachInk };
   return (
-    <Card onPress={() => router.push('/eats')} style={{ flex: 1, minHeight: 150, justifyContent: 'space-between' }}>
-      <Txt v="label" color={t.ink}>
-        美食地图
-      </Txt>
+    <Card onPress={() => router.push('/eats')} style={{ flex: 1, minHeight: 140, justifyContent: 'space-between' }}>
+      <Txt v="bodyStrong">美食</Txt>
       <View>
         <Row gap={4} style={{ alignItems: 'baseline' }}>
-          <Text style={{ fontFamily: fonts.display, fontSize: 44, color: colors.ink, lineHeight: 48 }}>{visited}</Text>
-          <Txt v="caption" color={t.ink}>
-            家吃过
-          </Txt>
+          <Text style={{ fontFamily: fonts.display, fontSize: 40, color: colors.ink, lineHeight: 46 }}>{visited}</Text>
+          <Txt v="secondary">家吃过</Txt>
         </Row>
-        <Txt v="caption" color={t.ink}>
-          还有 {want} 家想去
-        </Txt>
+        <Txt v="secondary">{want} 家想去</Txt>
       </View>
     </Card>
   );
@@ -356,12 +346,9 @@ function RouletteCard() {
         spin.set(withSpring(spin.value + 360, springs.bouncy));
         setTimeout(() => router.push('/roulette'), 200);
       }}
-      style={{ flex: 1, minHeight: 150, justifyContent: 'space-between' }}>
-      <Txt v="label" color={colors.pinkInk}>
-        选择困难？
-      </Txt>
+      style={{ flex: 1, minHeight: 140, justifyContent: 'space-between' }}>
       <Animated.View style={[{ alignSelf: 'flex-start' }, anim]}>
-        <Dices size={36} color={colors.accent} strokeWidth={2.2} />
+        <Dices size={34} color={colors.accent} strokeWidth={2} />
       </Animated.View>
       <Txt v="bodyStrong">今天吃什么</Txt>
     </Card>
@@ -373,18 +360,20 @@ function TodosCard() {
   const todos = useQuery<Todo[]>('/api/todos');
   const hidden = usePendingDeletes();
   const open = todos.data?.filter((t) => !t.done && !hidden.has(t.id)) ?? [];
-  const t = { ink: colors.muted };
   return (
     <Card onPress={() => router.push('/todos')}>
-      <Row style={{ justifyContent: 'space-between', marginBottom: 2 }}>
-        <Txt v="label" color={t.ink}>
-          我们的清单 · {open.length}
-        </Txt>
-        <ArrowUpRight size={18} color={t.ink} />
-      </Row>
+      <CardTitle
+        right={
+          <Row gap={6}>
+            {open.length > 0 && <Txt v="secondary">{open.length}</Txt>}
+            <ChevronRight size={18} color={colors.faint} />
+          </Row>
+        }>
+        清单
+      </CardTitle>
       {open.length === 0 ? (
-        <Txt v="body" style={{ paddingVertical: 10 }}>
-          全部完成，今天也很棒 ✨
+        <Txt v="secondary" style={{ paddingVertical: 6 }}>
+          都做完了
         </Txt>
       ) : (
         open.slice(0, 3).map((todo) => <TodoRow key={todo.id} todo={todo} compact />)
@@ -401,43 +390,49 @@ function LatestMoment() {
   const m = moments.data?.[0];
   if (!m || hidden.has(m.id)) return null;
   const first = m.media?.[0] ?? (m.photos[0] ? { kind: 'image' as const, image: m.photos[0] } : null);
+  const author = userById(m.createdBy);
   return (
     <Card onPress={() => router.push('/moments')}>
-      <Row style={{ justifyContent: 'space-between', marginBottom: 10 }}>
-        <Row>
-          <Avatar user={userById(m.createdBy)} size={28} />
-          <Txt v="caption">{timeAgo(m.createdAt)}</Txt>
-        </Row>
-        <Txt v="label">最新动态</Txt>
-      </Row>
+      <CardTitle>动态</CardTitle>
       <Row gap={12} style={{ alignItems: 'flex-start' }}>
-        <Txt v="body" numberOfLines={3} style={{ flex: 1 }}>
-          {m.mood ? `${m.mood} ` : ''}
-          {m.content || (first ? (first.kind === 'video' ? '分享了一段视频' : '分享了照片') : '')}
-        </Txt>
-        {first && <MediaThumb item={first} size={64} radius={12} />}
+        <View style={{ flex: 1, gap: 6 }}>
+          <Txt v="body" numberOfLines={3}>
+            {m.mood ? `${m.mood} ` : ''}
+            {m.content || (first ? (first.kind === 'video' ? '一段视频' : '照片') : '')}
+          </Txt>
+          <Row gap={6}>
+            <Avatar user={author} size={20} />
+            <Txt v="caption">
+              {author?.name} · {timeAgo(m.createdAt)}
+            </Txt>
+          </Row>
+        </View>
+        {first && <MediaThumb item={first} size={72} radius={12} />}
       </Row>
     </Card>
   );
 }
 
-/** 共享相册里最新的几张 */
+// ---------------- 相册里最新的几张
 function RecentPhotos() {
   const summary = useQuery<GallerySummary>('/api/gallery/summary');
   const s = summary.data;
   if (!s?.latest.length) return null;
   return (
     <Card onPress={() => router.navigate('/gallery')}>
-      <Row style={{ justifyContent: 'space-between', marginBottom: 12 }}>
-        <Txt v="label" color={colors.pinkInk}>
-          共享相册 · {s.total}
-        </Txt>
-        <ArrowUpRight size={18} color={colors.pinkInk} />
-      </Row>
+      <CardTitle
+        right={
+          <Row gap={6}>
+            <Txt v="secondary">{s.total}</Txt>
+            <ChevronRight size={18} color={colors.faint} />
+          </Row>
+        }>
+        相册
+      </CardTitle>
       <Row gap={6}>
         {s.latest.slice(0, 4).map((g) => (
           <View key={g.id} style={{ flex: 1 }}>
-            <MediaThumb item={{ kind: g.kind, image: g.image, video: g.video, duration: g.duration }} size="100%" radius={12} />
+            <MediaThumb item={{ kind: g.kind, image: g.image, video: g.video, duration: g.duration }} size="100%" radius={10} />
           </View>
         ))}
         {Array.from({ length: Math.max(0, 4 - s.latest.length) }, (_, i) => (
@@ -466,35 +461,35 @@ export default function Home() {
       <MoodCard />
     </Row>,
     <UpcomingCard key="up" />,
-    <CapsuleCard key="capsule" />,
     <QuestionCard key="q" />,
+    <RecentPhotos key="photos" />,
+    <LatestMoment key="moment" />,
     <Row key="r2" gap={12} style={{ alignItems: 'stretch' }}>
       <EatsCard />
       <RouletteCard />
     </Row>,
     <TodosCard key="todos" />,
-    <LatestMoment key="moment" />,
-    <RecentPhotos key="photos" />,
+    <CapsuleCard key="capsule" />,
   ];
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <Animated.ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[{ paddingTop: insets.top + 12, paddingHorizontal: 16, paddingBottom: insets.bottom + TAB_BAR_HEIGHT + 32, gap: 12 }, CENTERED]}
+        contentContainerStyle={[{ paddingTop: insets.top + 16, paddingHorizontal: 16, paddingBottom: insets.bottom + TAB_BAR_HEIGHT + 32, gap: 12 }, CENTERED]}
         onScroll={onScroll}
         scrollEventThrottle={16}
         {...pullRefresh.touchProps}
         refreshControl={pullRefresh.refreshControl}>
         <Animated.View entering={enter(0)}>
           <Row style={{ justifyContent: 'space-between', marginBottom: 8, paddingHorizontal: 4 }}>
-            <View>
-              <Txt v="label">{fmtDate(today(), true)}</Txt>
+            <View style={{ gap: 2 }}>
+              <Txt v="secondary">{fmtDate(today(), true)}</Txt>
               <Txt v="title">
                 {greeting()}，{me?.name ?? ''}
               </Txt>
             </View>
-            <Pressable onPress={() => router.push('/settings')}>
+            <Pressable onPress={() => router.push('/settings')} accessibilityLabel="设置">
               <Row gap={0}>
                 <Avatar user={me} size={40} ring={colors.bg} />
                 <View style={{ marginLeft: -12 }}>
@@ -516,9 +511,10 @@ export default function Home() {
 }
 
 const styles = StyleSheet.create({
-  hero: { borderRadius: radius.xl, padding: 22, paddingBottom: 20, overflow: 'hidden', minHeight: 200, borderCurve: 'continuous', backgroundColor: colors.pink },
-  heroBlobs: { position: 'absolute', right: 6, bottom: -4 },
-  heroPill: { alignSelf: 'flex-start', marginTop: 14, backgroundColor: 'rgba(255,255,255,0.75)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill },
+  hero: { borderRadius: radius.xl, padding: 22, overflow: 'hidden', minHeight: 196, borderCurve: 'continuous', backgroundColor: colors.pink, justifyContent: 'center' },
+  heroBlobs: { position: 'absolute', right: 4, bottom: -6 },
+  heroPill: { alignSelf: 'flex-start', marginTop: 10, backgroundColor: 'rgba(255,255,255,0.8)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill },
+  moreBtn: { position: 'absolute', top: 12, right: 12, width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
   nudgeMore: {
     position: 'absolute',
     top: 0,
@@ -526,7 +522,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     borderRadius: radius.lg,
-    backgroundColor: 'rgba(253,227,223,0.96)',
+    backgroundColor: 'rgba(255,255,255,0.97)',
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignContent: 'center',
@@ -534,8 +530,10 @@ const styles = StyleSheet.create({
     gap: 8,
     padding: 10,
   },
-  nudgeChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.surface, paddingHorizontal: 10, paddingVertical: 8, borderRadius: radius.pill },
+  nudgeChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.surfaceAlt, paddingHorizontal: 10, paddingVertical: 7, borderRadius: radius.pill },
   myMood: { backgroundColor: colors.surfaceAlt, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 6 },
+  rowSep: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line },
+  dot: { width: 6, height: 6, borderRadius: 3 },
   moodGrid: { flexDirection: 'row', flexWrap: 'wrap', rowGap: 10, justifyContent: 'space-between' },
   moodItem: { width: '15%', aspectRatio: 1, borderRadius: radius.md, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: 'transparent' },
   moodInput: { backgroundColor: colors.surface, borderRadius: radius.md, height: 50, paddingHorizontal: 16, fontSize: 16, color: colors.ink, borderWidth: 1, borderColor: colors.line },

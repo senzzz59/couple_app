@@ -84,7 +84,7 @@ export function CommentComposer({
       await api.post('/api/stickers', { file: m.image });
       haptic.success();
       invalidate('stickers');
-      toast('添加到表情包啦', '🎀', '你们俩都能用');
+      toast('已添加到表情');
     } catch (e) {
       toast((e as Error).message, '⚠️');
     } finally {
@@ -178,14 +178,8 @@ export function CommentComposer({
             ))}
             <PressScale scaleTo={0.9} onPress={addSticker} style={[styles.stickerCell, styles.addSticker]} accessibilityLabel="添加表情">
               <Plus size={22} color={colors.accentStrong} />
-              <Txt v="caption" color={colors.pinkInk} style={{ fontSize: 10 }}>
-                添加
-              </Txt>
             </PressScale>
           </ScrollView>
-          <Txt v="caption" style={{ fontSize: 10, textAlign: 'center', marginTop: 4 }}>
-            点一下直接发送 · 长按自己添加的表情可以删除
-          </Txt>
         </Animated.View>
       )}
     </Animated.View>

@@ -15,3 +15,4 @@ export const appUpdates = createUpdateController({
 export const useAppUpdates = () => useSyncExternalStore(appUpdates.subscribe, appUpdates.getState, appUpdates.getState);
 export const appVersion = Constants.nativeAppVersion ?? Constants.expoConfig?.version ?? '1.0.0';
 export const updateVersion = Updates.updateId?.slice(0, 8);
+export const buildInfo = { commit: null as string | null, builtAt: null as string | null };

@@ -77,7 +77,7 @@ export default function Roulette() {
   };
 
   return (
-    <Screen back title="今天吃什么" subtitle="LET FATE DECIDE">
+    <Screen back title="今天吃什么">
       <Row gap={8} style={{ marginBottom: 20 }}>
         <Chip label="只转想去的" active={pool === 'want'} onPress={() => setPool('want')} />
         <Chip label="全部" active={pool === 'all'} onPress={() => setPool('all')} />
@@ -85,7 +85,7 @@ export default function Roulette() {
       </Row>
 
       {places.data && n < 2 ? (
-        <Empty emoji="🎲" title="至少要两家店才能转" hint="先去「美食」里收藏几家想去的店吧" action={<Button title="去收藏" onPress={() => router.replace('/place/edit')} />} />
+        <Empty emoji="🎲" title="至少要两家店才能转" hint="先收藏几家想去的店" action={<Button title="去收藏" onPress={() => router.replace('/place/edit')} />} />
       ) : (
         <View style={{ alignItems: 'center' }}>
           <View style={styles.pointer} />

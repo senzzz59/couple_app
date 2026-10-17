@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -14,7 +15,19 @@ const icon = fs.readFileSync(path.join(root, 'assets/images/icon.png'));
 hash.update(icon);
 const id = hash.digest('hex').slice(0, 16);
 const { expo } = JSON.parse(fs.readFileSync(path.join(root, 'app.json'), 'utf8'));
-const metadata = { id, version: expo.version, assets };
+// 版本号：主.次 来自 app.json，第三位是提交数，每次发布自动递增；拿不到 git 信息时退回 app.json 的版本
+const git = (args) => {
+  try {
+    return execFileSync('git', args, { cwd: root, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  } catch {
+    return '';
+  }
+};
+const [major = '1', minor = '0'] = String(expo.version).split('.');
+const commits = git(['rev-list', '--count', 'HEAD']);
+const commit = git(['rev-parse', '--short=7', 'HEAD']);
+const version = /^\d+$/.test(commits) ? `${major}.${minor}.${commits}` : expo.version;
+const metadata = { id, version, commit: commit || null, builtAt: new Date().toISOString(), assets };
 fs.mkdirSync(path.join(output, 'icons'), { recursive: true });
 fs.writeFileSync(path.join(output, 'icons/icon.png'), icon);
 fs.writeFileSync(path.join(output, 'manifest.webmanifest'), JSON.stringify({
@@ -55,4 +68,4 @@ self.addEventListener('fetch', event => {
   }
 });
 `);
-console.log(`网页版已生成：v${expo.version} / ${id}，包含主屏幕图标、更新检查和离线提示。`);
+console.log(`网页版已生成：v${version}${commit ? ` (${commit})` : ''} / ${id}，包含主屏幕图标、更新检查和离线提示。`);

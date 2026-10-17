@@ -73,7 +73,7 @@ export function GalleryGrid({
               <Txt v="heading" style={{ fontSize: 17 }}>
                 {g.label}
               </Txt>
-              <Txt v="caption">{g.items.length} 项</Txt>
+              <Txt v="secondary">{g.items.length}</Txt>
             </Row>
           )}
           <View style={styles.grid}>
@@ -128,18 +128,13 @@ export function UploadBanner() {
     <Animated.View entering={FadeIn.duration(200)} style={styles.banner}>
       <Row style={{ justifyContent: 'space-between' }}>
         <Txt v="bodyStrong" style={{ fontSize: 14 }}>
-          {job.status === 'done' ? (job.failed ? `完成，${job.failed} 项失败` : `上传好了 ${job.total} 项 ✨`) : `正在上传 ${Math.min(job.done + 1, job.total)}/${job.total}`}
+          {job.status === 'done' ? (job.failed ? `${job.failed} 项上传失败` : `已上传 ${job.total} 项`) : `正在上传 ${Math.min(job.done + 1, job.total)}/${job.total}`}
         </Txt>
         <Txt v="caption">{pct}%</Txt>
       </Row>
       <View style={styles.track}>
         <View style={[styles.fill, { width: `${pct}%` }]} />
       </View>
-      {job.status === 'uploading' && (
-        <Txt v="caption" style={{ fontSize: 11 }}>
-          可以先去别的页面，传完会提醒你
-        </Txt>
-      )}
     </Animated.View>
   );
 }

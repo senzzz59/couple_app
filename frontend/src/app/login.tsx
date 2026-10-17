@@ -202,7 +202,6 @@ export default function Login() {
                   <Text style={{ fontSize: 28 }}>💑</Text>
                   <View style={{ flex: 1 }}>
                     <Txt v="bodyStrong">两个账号都已经注册啦</Txt>
-                    <Txt v="caption">这个空间只属于你们两个人，直接登录吧</Txt>
                   </View>
                 </Animated.View>
               ) : (
@@ -274,11 +273,6 @@ export default function Login() {
                       disabled={!canSubmit}
                       style={{ marginTop: 4 }}
                     />
-                  )}
-                  {mode !== 'login' && !codeSent && (
-                    <Txt v="caption" style={{ textAlign: 'center' }}>
-                      填好邮箱，点「发送验证码」
-                    </Txt>
                   )}
                 </>
               )}

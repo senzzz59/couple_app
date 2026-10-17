@@ -109,7 +109,7 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
       set(patch);
       haptic.success();
       setSourceOpen(false);
-      toast(patch.lat != null ? '已读取高德地点，保存后即可导航' : '已关联高德链接，保存后可打开原地点', '📍');
+      toast(patch.lat != null ? '已读取地点' : '已关联高德链接');
     } catch (e) {
       toast((e as Error).message, '📍');
     } finally {
@@ -120,7 +120,7 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
   const pasteXhs = async () => {
     const text = await Clipboard.getStringAsync();
     const { url, title } = parseXhsShare(text ?? '');
-    if (!url) return toast('剪贴板里没有找到链接', '🤔', '在小红书点「分享 → 复制链接」再来');
+    if (!url) return toast('剪贴板里没有链接', '⚠️', '在小红书点「分享」→「复制链接」');
     haptic.success();
     set({ xhsUrl: url, note: f.note || title || '' });
     toast('已粘贴小红书链接', '📕');
@@ -217,7 +217,6 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
       <View style={styles.intro}>
         <Txt style={styles.eyebrow}>OUR NEXT BITE</Txt>
         <Txt v="heading">把下一顿心动，收进口袋 ♡</Txt>
-        <Txt v="caption">先找到那家店，再记下我们的小期待</Txt>
       </View>
 
       <View style={styles.card}>
@@ -252,31 +251,31 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
       {(linked || f.lat != null) && <LivePlaceInfo key={`${f.amapUrl}:${f.lat}:${f.lng}`} destination={{ name: f.name, lat: f.lat, lng: f.lng, city: f.city, address: f.address, amapUrl: f.amapUrl || null }} />}
 
       <View style={{ gap: 10 }}>
-        <Row style={{ justifyContent: 'space-between', paddingHorizontal: 4 }}><Txt v="bodyStrong">我的收藏</Txt><Txt v="caption">留一点期待给下次见面</Txt></Row>
+        <Row style={{ justifyContent: 'space-between', paddingHorizontal: 4 }}><Txt v="bodyStrong">我的收藏</Txt></Row>
         <View style={styles.card}>
           <View style={styles.statusRow}>{([{ value: 'want', label: '想去尝尝', Icon: Heart }, { value: 'visited', label: '已经吃过', Icon: Check }] as const).map(({ value, label, Icon }) => <PressScale key={value} accessibilityRole="radio" accessibilityState={{ checked: f.status === value }} onPress={() => set({ status: value })} style={[styles.statusOption, f.status === value && styles.statusActive]}><Icon size={17} color={f.status === value ? colors.accentStrong : colors.muted} /><Txt v="bodyStrong" style={{ fontSize: 14 }} color={f.status === value ? colors.accentStrong : colors.muted}>{label}</Txt></PressScale>)}</View>
           <PressScale accessibilityLabel="选择我的店铺类型" onPress={() => setCategoryOpen(true)} style={styles.settingRow}><Row gap={8}><Txt style={{ fontSize: 19 }}>{categoryEmoji(f.category)}</Txt><Txt v="bodyStrong" style={{ fontSize: 14 }}>类型</Txt></Row><Row gap={5}><Txt v="caption" color={f.category ? colors.ink : colors.muted}>{f.category || '选一个喜欢的分类'}</Txt><ChevronRight size={16} color={colors.muted} /></Row></PressScale>
           <Field label="我的备注" value={f.note} editable={!saving} onChangeText={(note) => set({ note })} placeholder="想点的菜、约好的人，或一个想去的理由…" multiline />
-          <Field label="收藏人均 · 元" value={f.price} editable={!busy} onChangeText={(price) => set({ price: price.replace(/[^\d]/g, '') })} keyboardType="number-pad" placeholder="可手动填写或修改" />
+          <Field label="人均（元）" value={f.price} editable={!busy} onChangeText={(price) => set({ price: price.replace(/[^\d]/g, '') })} keyboardType="number-pad" placeholder="可手动填写或修改" />
           {f.status === 'visited' && <View style={{ gap: 8 }}><Txt v="label">我们的评分</Txt><StarRating value={f.rating} onChange={(rating) => set({ rating })} size={30} /></View>}
         </View>
       </View>
 
       <View style={styles.card}>
-        <PressScale onPress={() => setExtrasOpen(!extrasOpen)} style={styles.settingRow}><View style={{ gap: 3 }}><Txt v="bodyStrong" style={{ fontSize: 14 }}>再添一点小细节</Txt><Txt v="caption">小红书笔记 · 自选封面{!linked ? ' · 手动地址' : ''}</Txt></View><ChevronDown size={17} color={colors.muted} /></PressScale>
+        <PressScale onPress={() => setExtrasOpen(!extrasOpen)} style={styles.settingRow}><Txt v="bodyStrong" style={{ fontSize: 15 }}>更多</Txt><ChevronDown size={17} color={colors.muted} /></PressScale>
         {extrasOpen && <View style={{ gap: 16 }}>
           {!linked && <View style={{ gap: 12 }}><Field label="城市" value={f.city} maxLength={40} onChangeText={(city) => set({ city })} placeholder="帮助找到正确的分店" /><Field label="地址" value={f.address} maxLength={200} editable={!busy} onChangeText={(address) => set({ address })} placeholder="街道、商场、楼层" /><PressScale onPress={locate} disabled={busy} style={styles.inline}>{locating ? <ActivityIndicator size="small" /> : <LocateFixed size={15} color={colors.sageInk} />}<Txt v="caption" color={colors.sageInk}>我就在店里，用当前位置标记店铺</Txt></PressScale></View>}
           <PressScale onPress={pasteXhs} disabled={busy} style={styles.extraLink}><View style={styles.xhsBadge}><Txt color={colors.white} style={{ fontSize: 10, fontWeight: '700' }}>小红书</Txt></View><View style={{ flex: 1 }}><Txt v="bodyStrong" style={{ fontSize: 14 }}>{f.xhsUrl ? '已关联小红书笔记' : '粘贴小红书笔记'}</Txt><Txt v="caption">{f.xhsUrl ? '点击更换' : '先复制笔记分享链接'}</Txt></View><ClipboardPaste size={16} color={colors.muted} /></PressScale>
           {!!f.xhsUrl && <Field label="小红书链接" value={f.xhsUrl} onChangeText={(xhsUrl) => set({ xhsUrl })} autoCapitalize="none" />}
-          <View style={{ gap: 8 }}><Txt v="label">我的封面 · 可选</Txt><PhotoPicker value={cover} onChange={setCover} max={1} size={90} /></View>
+          <View style={{ gap: 8 }}><Txt v="label">封面</Txt><PhotoPicker value={cover} onChange={setCover} max={1} size={90} /></View>
         </View>}
       </View>
       {params.id && <Button title="删除这家店" variant="ghost" onPress={remove} disabled={busy} />}
 
       <Sheet visible={categoryOpen} onClose={() => setCategoryOpen(false)} dragAnywhere={false} style={{ gap: 14 }}>
-        <Row style={{ justifyContent: 'space-between' }}><View style={{ gap: 3 }}><Txt v="heading">我的美食类型</Txt><Txt v="caption">每个人都有自己的口味 ♡</Txt></View><PressScale accessibilityLabel="关闭类型面板" onPress={() => setCategoryOpen(false)} style={styles.smallAction}><X size={20} color={colors.ink} /></PressScale></Row>
+        <Row style={{ justifyContent: 'space-between' }}><Txt v="heading">类型</Txt><PressScale accessibilityLabel="关闭类型面板" onPress={() => setCategoryOpen(false)} style={styles.smallAction}><X size={20} color={colors.ink} /></PressScale></Row>
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 16, paddingBottom: 32 }}>
-          <Row style={{ justifyContent: 'space-between' }}><Txt v="caption">只管理自己的类型，不影响已有收藏</Txt><PressScale onPress={() => setManaging(!managing)} style={styles.smallAction}><Txt v="caption" color={colors.accentStrong}>{managing ? '完成管理' : '管理'}</Txt></PressScale></Row>
+          <Row style={{ justifyContent: 'flex-end' }}><PressScale onPress={() => setManaging(!managing)} style={styles.smallAction}><Txt v="caption" color={colors.accentStrong}>{managing ? '完成管理' : '管理'}</Txt></PressScale></Row>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             {[...new Set([...categories, ...(f.category && !categories.includes(f.category) ? [f.category] : [])])].map((c) => <Row key={c} gap={0}><Chip label={`${categoryEmoji(c)} ${c}`} active={f.category === c} onPress={() => { set({ category: f.category === c ? '' : c }); if (!managing) setCategoryOpen(false); }} />{managing && categories.includes(c) && <PressScale accessibilityLabel={`删除类型${c}`} disabled={categorySaving || !preferences.data} onPress={async () => { if (await updateCategories(categories.filter((name) => name !== c)) && f.category === c) set({ category: '' }); }} style={styles.smallAction}><X size={14} color={colors.muted} /></PressScale>}</Row>)}
           </View>

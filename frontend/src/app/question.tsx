@@ -42,7 +42,7 @@ function PartnerAnswer({ answer, revealed }: { answer?: Answer; revealed: boolea
           {!revealed && (
             <BlurView intensity={Platform.OS === 'web' ? 20 : 40} tint="light" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', borderRadius: 8 }]}>
               <Txt v="caption" style={{ fontWeight: '600' }}>
-                🔒 你回答之后才能看到
+                回答后可见
               </Txt>
             </BlurView>
           )}

@@ -99,7 +99,7 @@ function TodoForm({ id, initial: t }: { id?: string; initial?: Todo }) {
         </Txt>
         <Row gap={8} style={{ flexWrap: 'wrap' }}>
           {TODO_CATEGORIES.map((c) => (
-            <Chip key={c} label={c} active={category === c} onPress={() => setCategory(category === c ? null : c)} color={colors.sageInk} />
+            <Chip key={c} label={c} active={category === c} onPress={() => setCategory(category === c ? null : c)} />
           ))}
         </Row>
       </View>

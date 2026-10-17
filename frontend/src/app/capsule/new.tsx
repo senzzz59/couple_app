@@ -86,7 +86,7 @@ export default function NewCapsule() {
   }, [anns.data, space?.startDate]);
 
   const seal = async () => {
-    if (!title.trim() || !content.trim()) return toast('标题和信的内容都要写哦', '✏️');
+    if (!title.trim() || !content.trim()) return toast('标题和内容都要写');
     if (!unlockAt) return toast('选一个打开的日子', '📅');
     setSaving(true);
     try {
@@ -146,7 +146,7 @@ export default function NewCapsule() {
           <Animated.View entering={FadeIn} style={styles.notice}>
             <Lock size={16} color={colors.inkSoft} />
             <Txt v="caption" color={colors.inkSoft} style={{ flex: 1 }}>
-              封存后不能修改。{fmtDate(unlockAt)}之前谁都打不开，包括你自己。
+              封存后不能修改，{fmtDate(unlockAt)} 才能打开
             </Txt>
           </Animated.View>
         )}

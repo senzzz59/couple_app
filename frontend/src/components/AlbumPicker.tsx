@@ -90,10 +90,10 @@ export function AlbumPicker({ visible, onClose, ids, exclude, onAdded }: { visib
               </Txt>
               <Txt v="caption">{a.count} 项</Txt>
             </View>
-            {busy === a.id ? <Txt v="caption">放进去…</Txt> : <Check size={18} color={colors.faint} />}
+            {busy === a.id ? <Txt v="secondary">…</Txt> : <Check size={18} color={colors.faint} />}
           </PressScale>
         ))}
-        {albums.data && !list.length && !creating && <Txt v="caption" style={{ textAlign: 'center', paddingVertical: 12 }}>还没有相册，先建一个吧</Txt>}
+        {albums.data && !list.length && !creating && <Txt v="caption" style={{ textAlign: 'center', paddingVertical: 12 }}>还没有相册</Txt>}
       </ScrollView>
     </Sheet>
   );

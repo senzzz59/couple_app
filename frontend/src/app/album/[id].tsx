@@ -27,10 +27,10 @@ import type { Album, GalleryItem } from '@/lib/types';
 import { galleryEntry, openViewer } from '@/lib/viewer';
 import { colors, radius } from '@/theme';
 
-const SMART: Record<string, { title: string; emoji: string; query: string; empty: string }> = {
-  favorites: { title: '收藏', emoji: '❤️', query: '&favorite=1', empty: '打开照片点「收藏」，喜欢的都会出现在这里' },
-  videos: { title: '视频', emoji: '🎬', query: '&kind=video', empty: '上传的视频都会出现在这里' },
-  live: { title: 'Live 图', emoji: '◎', query: '&kind=live', empty: '安卓动态照片、或同时选中同名的照片和视频，都会变成 Live 图' },
+const SMART: Record<string, { title: string; emoji: string; query: string }> = {
+  favorites: { title: '收藏', emoji: '❤️', query: '&favorite=1' },
+  videos: { title: '视频', emoji: '🎬', query: '&kind=video' },
+  live: { title: 'Live 图', emoji: '◎', query: '&kind=live' },
 };
 const HERO = 260;
 
@@ -123,7 +123,7 @@ export default function AlbumScreen() {
               <UploadBanner />
               <QueryFallback q={list} kind="grid" count={6} />
               {list.data && items.length === 0 ? (
-                <Empty emoji={emoji} title="这里还空空的" hint={smart?.empty ?? '上传新照片，或者把已有的照片放进来'} />
+                <Empty emoji={emoji} title="这里还空空的"  />
               ) : (
                 <GalleryGrid
                   items={items}
@@ -167,13 +167,10 @@ export default function AlbumScreen() {
               removeAlbum();
             }}
             style={[styles.menuItem, styles.menuSep]}>
-            <Trash2 size={19} color={colors.pinkInk} />
-            <View>
-              <Txt v="bodyStrong" color={colors.pinkInk}>
-                删除相册
-              </Txt>
-              <Txt v="caption">照片不会被删除</Txt>
-            </View>
+            <Trash2 size={19} color={colors.danger} />
+            <Txt v="bodyStrong" color={colors.danger}>
+              删除相册
+            </Txt>
           </PressScale>
         </View>
         <Button title="取消" variant="secondary" onPress={() => setMenu(false)} />

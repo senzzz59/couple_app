@@ -78,7 +78,7 @@ export default function Viewer() {
     setSaving(true);
     try {
       const r = await saveEntry(item);
-      if (r === 'downloaded') toast('开始下载', '⬇️', item.original ? '原图' : undefined);
+      if (r === 'downloaded') toast(item.original ? '开始下载原图' : '开始下载');
     } catch (e) {
       toast((e as Error).message, '⚠️');
     } finally {
@@ -117,7 +117,7 @@ export default function Viewer() {
     try {
       await api.post('/api/gallery/import', { media: [{ kind: item.kind, image: item.image, video: item.video, w: item.w, h: item.h, duration: item.duration }], takenAt: session?.takenAt });
       haptic.success();
-      toast('已存进共享相册', '🖼️');
+      toast('已存入相册', '✓');
       invalidate('gallery');
     } catch (e) {
       toast((e as Error).message, '⚠️');

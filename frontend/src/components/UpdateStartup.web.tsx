@@ -11,7 +11,7 @@ export function useUpdateStartup() {
       const pending = await appUpdates.check();
       if (alive && pending && !announced) {
         announced = true;
-        toast('网页有新版本，到「我的」页面刷新即可更新', '✨');
+        toast('有新版本了，去设置里更新');
       }
     };
     void check();
