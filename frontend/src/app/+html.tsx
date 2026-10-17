@@ -18,7 +18,7 @@ export default function Root({ children }: PropsWithChildren) {
         <link rel="manifest" href="/manifest.webmanifest" />
         <link rel="apple-touch-icon" href="/icons/icon.png" />
         <ScrollViewStyleReset />
-        <style dangerouslySetInnerHTML={{ __html: 'html,body{background:#FFF7F5;margin:0;overscroll-behavior:none}#root{min-height:100dvh}input,textarea{font-size:16px}*{box-sizing:border-box}' }} />
+        <style dangerouslySetInnerHTML={{ __html: 'html,body{background:#FFF7F5;margin:0;overscroll-behavior:none}#root{min-height:100dvh}input,textarea{font-size:16px}input:focus,textarea:focus{outline:none}input:focus-visible,textarea:focus-visible{outline:none}*{box-sizing:border-box}' }} />
         <script src="/web-build.js" />
         {headNodes}
       </head>

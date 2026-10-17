@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { LucideIcon } from 'lucide-react-native';
-import { forwardRef, ReactNode } from 'react';
+import { forwardRef, ReactNode, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -149,16 +149,20 @@ export function Chip({ label, active, onPress, color = colors.accentStrong }: { 
 export function Avatar({ user, size = 40, ring }: { user?: User | null; size?: number; ring?: string }) {
   const who = mascotFor(user);
   const tint = who === 'him' ? colors.peach : who === 'her' ? colors.pink : colors.surfaceAlt;
+  // 头像图片加载失败（文件丢了 / 网络不好）时退回团子或首字，不留一个空圆
+  const [failed, setFailed] = useState<string | null>(null);
+  const showPhoto = !!user?.avatar && failed !== user.avatar;
   return (
     <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: tint, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderWidth: ring ? 2.5 : 0, borderColor: ring }}>
-      {user?.avatar ? (
-        <Image source={fileUrl(user.avatar, true)} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} />
-      ) : who ? (
+      {who && !showPhoto ? (
         <Blob who={who} size={size * 0.9} bob={false} />
-      ) : (
+      ) : !showPhoto ? (
         <Txt style={{ fontSize: size * 0.42, fontWeight: '700' }} color={colors.inkSoft}>
-          {user?.name?.slice(0, 1) ?? '·'}
+          {user?.name?.slice(0, 1) || '·'}
         </Txt>
+      ) : null}
+      {showPhoto && (
+        <Image source={fileUrl(user!.avatar, true)} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} onError={() => setFailed(user!.avatar)} />
       )}
     </View>
   );
@@ -166,6 +170,7 @@ export function Avatar({ user, size = 40, ring }: { user?: User | null; size?: n
 
 // ---------- 输入框
 export const Field = forwardRef<TextInput, TextInputProps & { label?: string; style?: StyleProp<ViewStyle> }>(function Field({ label, style, ...p }, ref) {
+  const [focused, setFocused] = useState(false);
   return (
     <View style={style}>
       {label && (
@@ -173,7 +178,20 @@ export const Field = forwardRef<TextInput, TextInputProps & { label?: string; st
           {label}
         </Txt>
       )}
-      <TextInput ref={ref} placeholderTextColor={colors.faint} {...p} style={[styles.input, p.multiline && { minHeight: 96, textAlignVertical: 'top', paddingTop: 14 }]} />
+      <TextInput
+        ref={ref}
+        placeholderTextColor={colors.faint}
+        {...p}
+        onFocus={(e) => {
+          setFocused(true);
+          p.onFocus?.(e);
+        }}
+        onBlur={(e) => {
+          setFocused(false);
+          p.onBlur?.(e);
+        }}
+        style={[styles.input, p.multiline && { minHeight: 96, textAlignVertical: 'top', paddingTop: 14 }, focused && { borderColor: colors.accent }]}
+      />
     </View>
   );
 });
