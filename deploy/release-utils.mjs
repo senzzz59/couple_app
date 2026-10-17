@@ -28,6 +28,18 @@ export async function capture(command, args, cwd) {
   });
 }
 
+// Finds a working Docker Compose: the v2 plugin (`docker compose`) or the standalone `docker-compose`.
+// Without the plugin, `docker compose -p` fails as "unknown shorthand flag: 'p'", so check first.
+export async function findCompose(probe = (command, args) => new Promise((resolve) => {
+  const child = spawn(command, args, { stdio: 'ignore' });
+  child.on('error', () => resolve(false));
+  child.on('exit', (code) => resolve(code === 0));
+})) {
+  if (await probe('docker', ['compose', 'version'])) return ['docker', 'compose'];
+  if (await probe('docker-compose', ['version'])) return ['docker-compose'];
+  throw new Error('未找到 Docker Compose：请安装 Compose v2 插件（如 apt install docker-compose-plugin，或在宝塔 Docker 管理中安装 Compose），安装后 `docker compose version` 应能输出版本');
+}
+
 export async function withLock(kind, action) {
   if (process.platform !== 'linux' || Number(process.versions.node.split('.')[0]) < 24) throw new Error('Deployment requires Linux and Node.js 24+');
   const state = path.join(root, 'state');
