@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Heart, MapPin, MessageCircle, MoreHorizontal, Plus, Send } from 'lucide-react-native';
+import { Heart, MapPin, MessageCircle, MoreHorizontal, Plus, Send, Trash2 } from 'lucide-react-native';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -8,12 +8,14 @@ import { scheduleOnRN } from 'react-native-worklets';
 
 import { PhotoGrid } from '@/components/Photos';
 import { Screen } from '@/components/Screen';
+import { Sheet } from '@/components/Sheet';
+import { QueryFallback, SkeletonList } from '@/components/Skeleton';
 import { toast } from '@/components/motion';
-import { Avatar, Button, Empty, enter, IconButton, Row, Txt } from '@/components/ui';
+import { Avatar, Button, Empty, enter, IconButton, PressScale, Row, Txt } from '@/components/ui';
 import { api } from '@/lib/api';
-import { confirm } from '@/lib/confirm';
 import { timeAgo } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
+import { undoable, usePendingDeletes } from '@/lib/undo';
 import { useCouple } from '@/lib/session';
 import { invalidate, setQueryData, useQuery } from '@/lib/store';
 import type { Moment, Place } from '@/lib/types';
@@ -33,6 +35,7 @@ function MomentCard({ m, i, queryKey }: { m: Moment; i: number; queryKey: string
   const places = useQuery<Place[]>('/api/places');
   const { width } = useWindowDimensions();
   const [commenting, setCommenting] = useState(false);
+  const [menu, setMenu] = useState(false);
   const [text, setText] = useState('');
   const author = userById(m.createdBy);
   const liked = !!me && m.likedBy.includes(me.id);
@@ -68,10 +71,24 @@ function MomentCard({ m, i, queryKey }: { m: Moment; i: number; queryKey: string
     invalidate('moments');
   };
 
-  const more = async () => {
-    if (m.createdBy !== me?.id || !(await confirm('删除这条动态？', '删除后两个人都看不到了'))) return;
-    await api.del(`/api/moments/${m.id}`);
-    invalidate('moments');
+  const remove = () => {
+    setMenu(false);
+    if (m.createdBy !== me?.id) return;
+    let index = 0;
+    undoable({
+      id: m.id,
+      message: '删掉了这条动态',
+      apply: () =>
+        setQueryData<Moment[]>(queryKey, (prev = []) => {
+          index = Math.max(0, prev.findIndex((x) => x.id === m.id));
+          return prev.filter((x) => x.id !== m.id);
+        }),
+      revert: () => setQueryData<Moment[]>(queryKey, (prev = []) => (prev.some((x) => x.id === m.id) ? prev : [...prev.slice(0, index), m, ...prev.slice(index)])),
+      commit: async () => {
+        await api.del(`/api/moments/${m.id}`);
+        await invalidate('moments');
+      },
+    });
   };
 
   const contentWidth = width - 32 - 36;
@@ -88,7 +105,7 @@ function MomentCard({ m, i, queryKey }: { m: Moment; i: number; queryKey: string
           </View>
         </Row>
         {m.createdBy === me?.id && (
-          <Pressable hitSlop={10} onPress={more}>
+          <Pressable hitSlop={10} accessibilityLabel="更多操作" onPress={() => (haptic.tick(), setMenu(true))}>
             <MoreHorizontal size={20} color={colors.muted} />
           </Pressable>
         )}
@@ -143,6 +160,18 @@ function MomentCard({ m, i, queryKey }: { m: Moment; i: number; queryKey: string
           ))}
         </View>
       )}
+      <Sheet visible={menu} onClose={() => setMenu(false)}>
+        <PressScale onPress={remove} style={styles.menuItem}>
+          <Trash2 size={20} color={colors.pinkInk} />
+          <View style={{ flex: 1 }}>
+            <Txt v="bodyStrong" color={colors.pinkInk}>
+              删除这条动态
+            </Txt>
+            <Txt v="caption">删除后几秒内还可以撤销</Txt>
+          </View>
+        </PressScale>
+        <Button title="取消" variant="secondary" onPress={() => setMenu(false)} />
+      </Sheet>
       {commenting && (
         <Animated.View entering={FadeIn.duration(150)}>
           <Row style={styles.commentBox}>
@@ -165,6 +194,7 @@ export default function Moments() {
 
 function MomentPage({ queryKey, seen }: { queryKey: string; seen: string[] }) {
   const moments = useQuery<Moment[]>(queryKey);
+  const hidden = usePendingDeletes();
   const [next, setNext] = useState<string | null>(null);
   const rows = moments.data ?? [];
   const last = rows.at(-1);
@@ -173,11 +203,11 @@ function MomentPage({ queryKey, seen }: { queryKey: string; seen: string[] }) {
       {queryKey === KEY && moments.data && rows.length === 0 && (
         <Empty emoji="📷" title="发第一条动态吧" hint="只有你们两个人能看到，想发什么就发什么" action={<Button title="写点什么" onPress={() => router.push('/moment/new')} />} />
       )}
-      {rows.filter((m) => !seen.includes(m.id)).map((m, i) => (
+      {rows.filter((m) => !seen.includes(m.id) && !hidden.has(m.id)).map((m, i) => (
         <MomentCard key={m.id} m={m} i={i} queryKey={queryKey} />
       ))}
-      {moments.loading && <Txt v="caption">正在加载动态…</Txt>}
-      {moments.error && <Button title="加载失败，点此重试" variant="ghost" onPress={() => void moments.refresh()} />}
+      {queryKey === KEY ? <QueryFallback q={moments} count={2} /> : !moments.data && !moments.error && <SkeletonList count={1} />}
+      {moments.error && (moments.data || queryKey !== KEY) && <Button title="加载失败，点此重试" variant="ghost" onPress={() => void moments.refresh()} />}
       {next ? <MomentPage queryKey={next} seen={[...seen, ...rows.map((m) => m.id)]} /> : last && rows.length === 30 ? (
         <Button title="查看更早的动态" variant="ghost" onPress={() => setNext(`${KEY}?before=${encodeURIComponent(`${last.createdAt}|${last.id}`)}`)} />
       ) : moments.data && (rows.length > 0 || queryKey !== KEY) && !moments.error ? <Txt v="caption" style={{ textAlign: 'center' }}>已经看到第一条动态了</Txt> : null}
@@ -191,5 +221,6 @@ const styles = StyleSheet.create({
   place: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', backgroundColor: colors.butter, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4, marginTop: 10 },
   comments: { marginTop: 12, backgroundColor: colors.surfaceAlt, borderRadius: radius.sm, padding: 12, gap: 6 },
   commentBox: { marginTop: 10, backgroundColor: colors.surfaceAlt, borderRadius: radius.pill, paddingLeft: 14, paddingRight: 4, height: 42 },
+  menuItem: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: colors.surface, borderRadius: radius.lg, padding: 16 },
   commentInput: { flex: 1, fontSize: 15, color: colors.ink, height: 42 },
 });

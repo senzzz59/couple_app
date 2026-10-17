@@ -7,6 +7,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { DatePicker } from '@/components/DatePicker';
 import { RollingNumber, toast } from '@/components/motion';
 import { Screen } from '@/components/Screen';
+import { QueryFallback } from '@/components/Skeleton';
 import { Card, enter, IconButton, PressScale, Row, Txt } from '@/components/ui';
 import { api } from '@/lib/api';
 import { daysTogether, diffDays, fmtDate, fmtFullDate, lunarLabel, parseDay, toDay, today } from '@/lib/dates';
@@ -94,7 +95,8 @@ export default function Anniversaries() {
       <Txt v="label" style={{ marginTop: 26, marginBottom: 10, marginLeft: 4 }}>
         我们的日子
       </Txt>
-      <View style={styles.list}>
+      <QueryFallback q={anns} kind="row" count={3} />
+      <View style={[styles.list, !anns.data && { display: 'none' }]}>
         {anns.data?.map((a, i) => {
           const since = diffDays(today(), parseDay(a.date));
           return (

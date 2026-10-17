@@ -1,12 +1,14 @@
 import { router } from 'expo-router';
 import { ArrowUpRight, Dices, MessageCircleQuestion } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, {
   FadeIn,
   FadeInDown,
   FadeOut,
+  useAnimatedScrollHandler,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withRepeat,
   withSequence,
@@ -18,6 +20,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Envelope } from '@/components/Envelope';
 import { BlobCouple, FlatHeart } from '@/components/Mascot';
 import { RollingNumber, toast, useBurst } from '@/components/motion';
+import { usePullRefresh } from '@/components/PullRefresh';
+import { Sheet } from '@/components/Sheet';
 import { TAB_BAR_HEIGHT } from '@/components/TabBar';
 import { TodoRow } from '@/components/TodoRow';
 import { Avatar, Button, Card, enter, PressScale, Row, Txt } from '@/components/ui';
@@ -27,6 +31,7 @@ import { upcomingEvents } from '@/lib/events';
 import { haptic } from '@/lib/haptics';
 import { MOODS, NUDGES } from '@/lib/nudge';
 import { questionOfDay } from '@/lib/questions';
+import { usePendingDeletes } from '@/lib/undo';
 import { useCouple } from '@/lib/session';
 import { invalidate, useQuery } from '@/lib/store';
 import type { Anniversary, Answer, Capsule, Moment, Place, Todo } from '@/lib/types';
@@ -84,9 +89,11 @@ function NudgeCard() {
   const { fire, node } = useBurst();
   const [more, setMore] = useState(false);
   const beat = useSharedValue(1);
+  const reduceMotion = useReducedMotion();
   useEffect(() => {
+    if (reduceMotion) return;
     beat.set(withRepeat(withSequence(withTiming(1.08, { duration: 260 }), withTiming(1, { duration: 260 }), withTiming(1.05, { duration: 220 }), withTiming(1, { duration: 900 })), -1));
-  }, [beat]);
+  }, [beat, reduceMotion]);
   const heart = useAnimatedStyle(() => ({ transform: [{ scale: beat.value }] }));
 
   const send = async (kind: string) => {
@@ -173,16 +180,21 @@ function MoodCard() {
 
 function MoodSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   // 每次打开都重新挂载，用当前心情做初始值
+  const [session, setSession] = useState(0);
+  const [prev, setPrev] = useState(visible);
+  if (visible !== prev) {
+    setPrev(visible);
+    if (visible) setSession((n) => n + 1);
+  }
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      {visible && <MoodSheetBody onClose={onClose} />}
-    </Modal>
+    <Sheet visible={visible} onClose={onClose}>
+      <MoodSheetBody key={session} onClose={onClose} />
+    </Sheet>
   );
 }
 
 function MoodSheetBody({ onClose }: { onClose: () => void }) {
   const { me } = useCouple();
-  const insets = useSafeAreaInsets();
   const [mood, setMood] = useState(me?.mood ?? '🥰');
   const [text, setText] = useState(me?.moodText ?? '');
   const save = async () => {
@@ -193,19 +205,16 @@ function MoodSheetBody({ onClose }: { onClose: () => void }) {
   };
   return (
     <>
-      <Pressable style={styles.backdrop} onPress={onClose} />
-      <Animated.View entering={FadeInDown.springify().damping(18)} style={[styles.sheet, { paddingBottom: insets.bottom + 20 }]}>
-        <Txt v="heading">现在的心情</Txt>
-        <View style={styles.moodGrid}>
-          {MOODS.map((m) => (
-            <PressScale key={m} scaleTo={0.85} onPress={() => setMood(m)} style={[styles.moodItem, mood === m && { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}>
-              <Text style={{ fontSize: 28 }}>{m}</Text>
-            </PressScale>
-          ))}
-        </View>
-        <TextInput value={text} onChangeText={setText} placeholder="说一句（可选）" placeholderTextColor={colors.faint} maxLength={60} style={styles.moodInput} />
-        <Button title="更新" onPress={save} />
-      </Animated.View>
+      <Txt v="heading">现在的心情</Txt>
+      <View style={styles.moodGrid}>
+        {MOODS.map((m) => (
+          <PressScale key={m} scaleTo={0.85} onPress={() => setMood(m)} style={[styles.moodItem, mood === m && { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}>
+            <Text style={{ fontSize: 28 }}>{m}</Text>
+          </PressScale>
+        ))}
+      </View>
+      <TextInput value={text} onChangeText={setText} placeholder="说一句（可选）" placeholderTextColor={colors.faint} maxLength={60} style={styles.moodInput} />
+      <Button title="更新" onPress={save} />
     </>
   );
 }
@@ -360,7 +369,8 @@ function RouletteCard() {
 // ---------------- 清单
 function TodosCard() {
   const todos = useQuery<Todo[]>('/api/todos');
-  const open = todos.data?.filter((t) => !t.done) ?? [];
+  const hidden = usePendingDeletes();
+  const open = todos.data?.filter((t) => !t.done && !hidden.has(t.id)) ?? [];
   const t = { ink: colors.muted };
   return (
     <Card onPress={() => router.push('/todos')}>
@@ -384,9 +394,10 @@ function TodosCard() {
 // ---------------- 最新动态
 function LatestMoment() {
   const moments = useQuery<Moment[]>('/api/moments?limit=1');
+  const hidden = usePendingDeletes();
   const { userById } = useCouple();
   const m = moments.data?.[0];
-  if (!m) return null;
+  if (!m || hidden.has(m.id)) return null;
   return (
     <Card onPress={() => router.push('/moments')}>
       <Row style={{ justifyContent: 'space-between', marginBottom: 10 }}>
@@ -408,9 +419,12 @@ export default function Home() {
   const insets = useSafeAreaInsets();
   const { me, partner } = useCouple();
 
-  const refresh = async () => {
-    for (const c of ['me', 'space', 'anniversaries', 'places', 'todos', 'moments', 'answers', 'capsules']) invalidate(c);
-  };
+  const refresh = () => Promise.all(['me', 'space', 'anniversaries', 'places', 'todos', 'moments', 'answers', 'capsules'].map(invalidate));
+  const y = useSharedValue(0);
+  const onScroll = useAnimatedScrollHandler((e) => {
+    y.set(e.contentOffset.y);
+  });
+  const pullRefresh = usePullRefresh(refresh, y, insets.top + 8);
 
   const blocks = [
     <HeroCard key="hero" />,
@@ -434,7 +448,10 @@ export default function Home() {
       <Animated.ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingTop: insets.top + 12, paddingHorizontal: 16, paddingBottom: insets.bottom + TAB_BAR_HEIGHT + 32, gap: 12 }}
-        onScrollEndDrag={(e) => e.nativeEvent.contentOffset.y < -80 && refresh()}>
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        {...pullRefresh.touchProps}
+        refreshControl={pullRefresh.refreshControl}>
         <Animated.View entering={enter(0)}>
           <Row style={{ justifyContent: 'space-between', marginBottom: 8, paddingHorizontal: 4 }}>
             <View>
@@ -459,6 +476,7 @@ export default function Home() {
           </Animated.View>
         ))}
       </Animated.ScrollView>
+      {pullRefresh.indicator}
     </View>
   );
 }
@@ -484,8 +502,6 @@ const styles = StyleSheet.create({
   },
   nudgeChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.surface, paddingHorizontal: 10, paddingVertical: 8, borderRadius: radius.pill },
   myMood: { backgroundColor: colors.surfaceAlt, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 6 },
-  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(31,26,23,0.35)' },
-  sheet: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: colors.bg, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: 20, gap: 16 },
   moodGrid: { flexDirection: 'row', flexWrap: 'wrap', rowGap: 10, justifyContent: 'space-between' },
   moodItem: { width: '15%', aspectRatio: 1, borderRadius: radius.md, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: 'transparent' },
   moodInput: { backgroundColor: colors.surface, borderRadius: radius.md, height: 50, paddingHorizontal: 16, fontSize: 16, color: colors.ink, borderWidth: 1, borderColor: colors.line },

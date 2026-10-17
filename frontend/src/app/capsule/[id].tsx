@@ -18,6 +18,7 @@ import { Envelope } from '@/components/Envelope';
 import { celebrate, toast } from '@/components/motion';
 import { PhotoGrid } from '@/components/Photos';
 import { Screen } from '@/components/Screen';
+import { QueryFallback } from '@/components/Skeleton';
 import { Button, PressScale, Txt } from '@/components/ui';
 import { api } from '@/lib/api';
 import { confirm } from '@/lib/confirm';
@@ -74,7 +75,12 @@ export default function CapsuleView() {
     transform: [{ translateX: shake.value }, { translateY: -6 * hint.value }, { rotate: `${shake.value * 0.4}deg` }],
   }));
 
-  if (!c) return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
+  if (!c)
+    return (
+      <Screen back title="时光胶囊">
+        <QueryFallback q={capsule} count={1} />
+      </Screen>
+    );
   const author = c.createdBy === me?.id;
   const showLetter = !c.locked && (revealed || !ready);
 

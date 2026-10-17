@@ -7,10 +7,12 @@ import Animated, { FadeOut, LinearTransition, useAnimatedStyle, useSharedValue, 
 
 import { Segmented, toast } from '@/components/motion';
 import { Screen } from '@/components/Screen';
+import { QueryFallback } from '@/components/Skeleton';
 import { TodoRow } from '@/components/TodoRow';
 import { Chip, Empty, enter, IconButton, PressScale, Row, Txt } from '@/components/ui';
 import { api } from '@/lib/api';
 import { haptic } from '@/lib/haptics';
+import { undoable, usePendingDeletes } from '@/lib/undo';
 import { useCouple } from '@/lib/session';
 import { invalidate, setQueryData, useQuery } from '@/lib/store';
 import type { Todo } from '@/lib/types';
@@ -41,11 +43,23 @@ function Progress({ done, total }: { done: number; total: number }) {
 }
 
 function SwipeRow({ todo }: { todo: Todo }) {
-  const remove = async () => {
-    haptic.warn();
-    setQueryData<Todo[]>('/api/todos', (prev = []) => prev.filter((t) => t.id !== todo.id));
-    await api.del(`/api/todos/${todo.id}`).catch((e) => toast(e.message, '⚠️'));
-    invalidate('todos');
+  const remove = () => {
+    let index = 0;
+    undoable({
+      id: todo.id,
+      message: `删掉了「${todo.title.length > 12 ? `${todo.title.slice(0, 12)}…` : todo.title}」`,
+      apply: () =>
+        setQueryData<Todo[]>('/api/todos', (prev = []) => {
+          index = Math.max(0, prev.findIndex((t) => t.id === todo.id));
+          return prev.filter((t) => t.id !== todo.id);
+        }),
+      revert: () =>
+        setQueryData<Todo[]>('/api/todos', (prev = []) => (prev.some((t) => t.id === todo.id) ? prev : [...prev.slice(0, index), todo, ...prev.slice(index)])),
+      commit: async () => {
+        await api.del(`/api/todos/${todo.id}`);
+        await invalidate('todos');
+      },
+    });
   };
   return (
     <ReanimatedSwipeable
@@ -66,14 +80,15 @@ function SwipeRow({ todo }: { todo: Todo }) {
 
 export default function Todos() {
   const todos = useQuery<Todo[]>('/api/todos');
+  const hidden = usePendingDeletes();
   const { me, partner } = useCouple();
   const [tab, setTab] = useState<'open' | 'done'>('open');
   const [who, setWho] = useState<'all' | 'me' | 'partner'>('all');
   const [title, setTitle] = useState('');
 
   const filtered = useMemo(
-    () => (todos.data ?? []).filter((t) => (who === 'all' ? true : who === 'me' ? t.assigneeId === me?.id : t.assigneeId === partner?.id)),
-    [todos.data, who, me?.id, partner?.id]
+    () => (todos.data ?? []).filter((t) => !hidden.has(t.id) && (who === 'all' ? true : who === 'me' ? t.assigneeId === me?.id : t.assigneeId === partner?.id)),
+    [todos.data, who, me?.id, partner?.id, hidden]
   );
   const list = filtered.filter((t) => (tab === 'open' ? !t.done : t.done));
   const done = filtered.filter((t) => t.done).length;
@@ -123,7 +138,8 @@ export default function Todos() {
       </Animated.View>
 
       <View style={{ marginTop: 14 }}>
-        {todos.data && list.length === 0 ? (
+        <QueryFallback q={todos} kind="row" count={4} />
+        {!todos.data ? null : list.length === 0 ? (
           <Empty emoji={tab === 'open' ? '🌿' : '📝'} title={tab === 'open' ? '没有待办啦' : '还没有完成的事'} hint={tab === 'open' ? '去约会吧，或者在上面加一件新的事' : undefined} />
         ) : (
           <View style={styles.listCard}>

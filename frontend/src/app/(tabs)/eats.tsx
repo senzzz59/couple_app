@@ -7,6 +7,7 @@ import Animated, { FadeOut, LinearTransition } from 'react-native-reanimated';
 
 import { Segmented, StarRating } from '@/components/motion';
 import { Screen } from '@/components/Screen';
+import { QueryFallback } from '@/components/Skeleton';
 import { Button, Chip, Empty, enter, IconButton, PressScale, Row, Txt } from '@/components/ui';
 import { fileUrl } from '@/lib/api';
 import { invalidate, useQuery } from '@/lib/store';
@@ -134,6 +135,7 @@ export default function Eats() {
       )}
 
       <View style={{ marginTop: 16 }}>
+        <QueryFallback q={places} kind={tab === 'want' ? 'grid' : 'cover'} count={tab === 'want' ? 4 : 2} />
         {places.data && shown.length === 0 ? (
           tab === 'want' ? (
             <Empty emoji="🍜" title="还没有想去的店" hint="在小红书刷到好吃的？复制分享链接，来这里存一下" action={<Button title="收藏一家店" onPress={() => router.push('/place/edit')} />} />

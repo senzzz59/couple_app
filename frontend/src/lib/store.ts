@@ -67,16 +67,19 @@ export function useQuery<T>(key: string | null) {
 }
 
 /** 让某个集合相关的所有缓存失效：正在显示的立刻刷新，其它的下次进入再拉 */
-export function invalidate(collection: string) {
+export function invalidate(collection: string): Promise<void> {
   const prefix = `/api/${collection}`;
+  const running: Promise<void>[] = [];
   for (const key of cache.keys()) {
     if (key === prefix || key.startsWith(prefix + '?') || key.startsWith(prefix + '/')) {
       const e = cache.get(key)!;
       cache.set(key, { ...e, fetchedAt: 0 });
       if (e.promise) pendingInvalidations.add(key);
-      if (listeners.get(key)?.size) fetchKey(key);
+      if (listeners.get(key)?.size) running.push(fetchKey(key));
     }
   }
+  // 返回正在显示的数据重新拉取完成的时机，下拉刷新可以等它
+  return Promise.all(running).then(() => {});
 }
 
 /** 乐观更新：先改本地缓存，让动画立刻生效 */

@@ -6,6 +6,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withSequence, w
 
 import { Envelope } from '@/components/Envelope';
 import { Screen } from '@/components/Screen';
+import { QueryFallback } from '@/components/Skeleton';
 import { Button, Empty, enter, IconButton, PressScale, Row, Txt } from '@/components/ui';
 import { diffDays, fmtFullDate, parseDay, today } from '@/lib/dates';
 import { useCouple } from '@/lib/session';
@@ -80,6 +81,7 @@ export default function Capsules() {
       subtitle="LETTERS TO OUR FUTURE"
       onRefresh={async () => invalidate('capsules')}
       right={<IconButton icon={Plus} onPress={() => router.push('/capsule/new')} />}>
+      <QueryFallback q={list} count={2} />
       {list.data && all.length === 0 && (
         <Empty
           emoji="💌"
