@@ -1,15 +1,19 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Animated, { Easing, FadeIn, useAnimatedReaction, useAnimatedStyle, useSharedValue, withTiming, ZoomIn } from 'react-native-reanimated';
 import Svg, { G, Path, Text as SvgText } from 'react-native-svg';
 import { scheduleOnRN } from 'react-native-worklets';
 
-import { celebrate } from '@/components/motion';
+import { FoodFilters } from '@/components/FoodFilters';
+import { celebrate, Segmented, toast } from '@/components/motion';
 import { Screen } from '@/components/Screen';
-import { Button, Chip, Empty, Row, Txt } from '@/components/ui';
-import { categoryEmoji } from '@/lib/food';
+import { Button, Empty, PressScale, Row, Txt } from '@/components/ui';
+import { categoryEmoji, categoryTone, placeArea } from '@/lib/food';
+import { applyFoodFilter, DEFAULT_FILTER, type FilteredPlace, type FoodFilter } from '@/lib/foodFilter';
+import { openInMaps } from '@/lib/geo';
 import { haptic } from '@/lib/haptics';
+import { fmtKm, useMyLocation } from '@/lib/location';
 import { useQuery } from '@/lib/store';
 import type { Place } from '@/lib/types';
 import { colors, fonts, radius, shadow } from '@/theme';
@@ -31,15 +35,25 @@ export default function Roulette() {
   const { width } = useWindowDimensions();
   const [pool, setPool] = useState<'want' | 'all'>('want');
   const [seed, setSeed] = useState(0);
-  const [result, setResult] = useState<Place | null>(null);
+  const [filter, setFilter] = useState<FoodFilter>(DEFAULT_FILTER);
+  const [result, setResult] = useState<FilteredPlace | null>(null);
   const [spinning, setSpinning] = useState(false);
+  const { pos } = useMyLocation();
 
-  const items = useMemo(() => {
-    const src = (places.data ?? []).filter((p) => pool === 'all' || p.status === 'want');
-    return shuffle(src).slice(0, MAX);
+  const inPool = useMemo(() => (places.data ?? []).filter((p) => pool === 'all' || p.status === 'want'), [places.data, pool]);
+  const candidates = useMemo(() => applyFoodFilter(inPool, filter, pos), [inPool, filter, pos]);
+  const items = useMemo(
+    () => shuffle(candidates).slice(0, MAX),
     // seed：每次“换一批”重新洗牌
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [places.data, pool, seed]);
+    [candidates, seed]
+  );
+  const scoped = filter.where !== 'all' || !!filter.category;
+  const change = (f: FoodFilter) => {
+    if (spinning) return;
+    setFilter(f);
+    setResult(null);
+  };
 
   const size = Math.min(width - 48, 340);
   const r = size / 2;
@@ -74,18 +88,49 @@ export default function Roulette() {
     setResult(items[pick]);
     haptic.success();
     celebrate();
+    // 结果卡片在转盘下面，滚过去让人一眼看到
+    if (Platform.OS === 'web') setTimeout(() => document.getElementById('roulette-result')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 350);
   };
 
   return (
     <Screen back title="今天吃什么">
-      <Row gap={8} style={{ marginBottom: 20 }}>
-        <Chip label="只转想去的" active={pool === 'want'} onPress={() => setPool('want')} />
-        <Chip label="全部" active={pool === 'all'} onPress={() => setPool('all')} />
-        <Chip label="换一批" onPress={() => setSeed((s) => s + 1)} />
+      <Segmented
+        options={[
+          { key: 'want', label: '想去的' },
+          { key: 'all', label: '想去 + 吃过' },
+        ]}
+        value={pool}
+        onChange={(k) => {
+          if (spinning) return;
+          setPool(k);
+          setResult(null);
+        }}
+      />
+      <View style={{ marginTop: 14 }}>
+        <FoodFilters places={inPool} value={filter} onChange={change} showSort={false} />
+      </View>
+      <Row style={styles.countRow}>
+        <Txt v="secondary">
+          {candidates.length > MAX ? `${candidates.length} 家里随机抽 ${MAX} 家上转盘` : `从 ${candidates.length} 家里抽`}
+        </Txt>
+        {candidates.length > MAX && (
+          <PressScale onPress={() => !spinning && (setSeed((s) => s + 1), setResult(null))} style={styles.reshuffle}>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.accentStrong }}>换一批</Text>
+          </PressScale>
+        )}
       </Row>
 
       {places.data && n < 2 ? (
-        <Empty emoji="🎲" title="至少要两家店才能转" hint="先收藏几家想去的店" action={<Button title="去收藏" onPress={() => router.replace('/place/edit')} />} />
+        inPool.length >= 2 && scoped ? (
+          <Empty
+            emoji="🔍"
+            title={filter.where === 'near' ? `${filter.radius}km 内不到两家` : '这个范围里不到两家'}
+            hint="换个城市或者放大范围试试"
+            action={<Button title="不限范围" variant="secondary" onPress={() => change(DEFAULT_FILTER)} />}
+          />
+        ) : (
+          <Empty emoji="🎲" title="至少要两家店才能转" hint="先收藏几家想去的店" action={<Button title="去收藏" onPress={() => router.replace('/place/edit')} />} />
+        )
       ) : (
         <View style={{ alignItems: 'center' }}>
           <View style={styles.pointer} />
@@ -119,11 +164,13 @@ export default function Roulette() {
       )}
 
       {result && (
-        <Animated.View entering={ZoomIn.springify().damping(12)} style={styles.result}>
+        <Animated.View nativeID="roulette-result" entering={ZoomIn.springify().damping(12)} style={styles.result}>
           <Txt v="label">今天就吃</Txt>
-          <Text style={{ fontFamily: fonts.round, fontSize: 34, color: colors.ink, textAlign: 'center' }}>{result.name}</Text>
-          <Animated.View entering={FadeIn.delay(300)}>
-            <Button title="就它了，看看详情" variant="accent" onPress={() => router.replace({ pathname: '/place/[id]', params: { id: result.id } })} />
+          <Text style={{ fontFamily: fonts.round, fontSize: 34, lineHeight: 44, color: colors.ink, textAlign: 'center' }}>{result.name}</Text>
+          <ResultMeta p={result} />
+          <Animated.View entering={FadeIn.delay(300)} style={{ flexDirection: 'row', gap: 10, alignSelf: 'stretch' }}>
+            <Button title="导航过去" variant="secondary" style={{ flex: 1 }} onPress={() => openInMaps(result).catch(() => toast('打不开高德地图', '⚠️'))} />
+            <Button title="看看详情" variant="accent" style={{ flex: 1 }} onPress={() => router.replace({ pathname: '/place/[id]', params: { id: result.id } })} />
           </Animated.View>
         </Animated.View>
       )}
@@ -131,7 +178,27 @@ export default function Roulette() {
   );
 }
 
+function ResultMeta({ p }: { p: FilteredPlace }) {
+  const tone = categoryTone(p.category ?? p.name);
+  const meta = [p.price ? `¥${p.price}/人` : null, p.km != null ? `离你 ${fmtKm(p.km)}` : (placeArea(p) ?? p.city)].filter(Boolean).join(' · ');
+  return (
+    <Row gap={8} style={{ flexWrap: 'wrap', justifyContent: 'center' }}>
+      {!!p.category && (
+        <View style={[styles.cat, { backgroundColor: tone.bg }]}>
+          <Text style={{ fontSize: 13, fontWeight: '600', color: tone.ink }}>
+            {categoryEmoji(p.category)} {p.category}
+          </Text>
+        </View>
+      )}
+      {!!meta && <Txt v="secondary">{meta}</Txt>}
+    </Row>
+  );
+}
+
 const styles = StyleSheet.create({
+  countRow: { justifyContent: 'space-between', marginTop: 14, marginBottom: 18, minHeight: 32 },
+  reshuffle: { paddingHorizontal: 12, height: 32, borderRadius: 16, justifyContent: 'center', backgroundColor: colors.accentSoft },
+  cat: { paddingHorizontal: 10, height: 28, borderRadius: 14, justifyContent: 'center' },
   pointer: {
     width: 0,
     height: 0,

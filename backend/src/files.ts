@@ -7,11 +7,12 @@ import sharp, { type Metadata } from 'sharp';
 
 import { env } from './env.ts';
 import { exifTakenAt, findEmbeddedVideo, videoExt } from './media.ts';
+import { displaySize, enqueueVideo, ffmpegAvailable, makePoster, probeVideo, videoIsMp4, videoPlan, videoSettled } from './transcode.ts';
 
 const THUMB_DIR = path.join(env.uploadDir, 'thumb');
 const ORIG_DIR = path.join(env.uploadDir, 'orig');
 export const FILE_NAME_RE = /^[0-9a-f-]{36}\.(jpg|png|gif|webp|mp4|mov|webm|m4v|3gp)$/;
-const ORIG_RE = /^[0-9a-f-]{36}\.(jpg|jpeg|png|gif|webp|heic|heif|avif|tif|tiff|dng)$/;
+const ORIG_RE = /^[0-9a-f-]{36}\.(jpg|jpeg|png|gif|webp|heic|heif|avif|tif|tiff|dng|mp4|mov|webm|m4v|3gp)$/;
 const IMAGE_LIMIT = 60 * 1024 * 1024;
 const VIDEO_LIMIT = 500 * 1024 * 1024;
 
@@ -24,6 +25,7 @@ export type UploadedItem = {
   fileName: string;
   width: number | null;
   height: number | null;
+  duration: number | null;
   size: number;
   takenAt: string | null;
 };
@@ -56,8 +58,31 @@ export async function fileRoutes(app: FastifyInstance) {
           await pipeline(part.file, createWriteStream(target));
           if (part.file.truncated) return reply.code(413).send({ message: `视频太大了（最大 500MB）：${part.filename}` });
           const { size } = await fs.stat(target);
+          const item: UploadedItem = { kind: 'video', image: null, video: name, original: null, fileName: part.filename, width: null, height: null, duration: null, size, takenAt: null };
+          if (await ffmpegAvailable()) {
+            const probe = await probeVideo(target);
+            if (probe) {
+              Object.assign(item, displaySize(probe), { duration: probe.duration });
+              // 要转码的视频，相册上传时先留一份原片供下载
+              if (keepOriginal && videoPlan(probe) !== 'ok') {
+                const original = `${crypto.randomUUID()}.${vext}`;
+                await fs.link(target, path.join(ORIG_DIR, original)).catch(() => fs.copyFile(target, path.join(ORIG_DIR, original)));
+                written.push(path.join(ORIG_DIR, original));
+                item.original = original;
+              }
+            }
+            // 服务器截封面：浏览器解不了 HEVC 时前端截不到，这里兜底
+            const poster = `${crypto.randomUUID()}.jpg`;
+            if (await makePoster(target, path.join(env.uploadDir, poster))) {
+              written.push(path.join(env.uploadDir, poster));
+              await sharp(path.join(env.uploadDir, poster)).resize({ width: 600, withoutEnlargement: true }).jpeg({ quality: 78 }).toFile(path.join(THUMB_DIR, poster));
+              written.push(path.join(THUMB_DIR, poster));
+              item.image = poster;
+            }
+            enqueueVideo(name, req.log);
+          }
           names.push(name);
-          items.push({ kind: 'video', image: null, video: name, original: null, fileName: part.filename, width: null, height: null, size, takenAt: null });
+          items.push(item);
           continue;
         }
 
@@ -97,6 +122,8 @@ export async function fileRoutes(app: FastifyInstance) {
           video = `${id}.mp4`;
           await fs.writeFile(path.join(env.uploadDir, video), buf.subarray(embedded));
           written.push(path.join(env.uploadDir, video));
+          // 三星等机型的动态照片是 HEVC，转成 iPhone 也能播的格式
+          if (await ffmpegAvailable()) enqueueVideo(video, req.log);
         }
 
         const swap = (meta.orientation ?? 1) >= 5;
@@ -109,6 +136,7 @@ export async function fileRoutes(app: FastifyInstance) {
           fileName: part.filename,
           width: (swap ? meta.height : meta.width) ?? null,
           height: (swap ? meta.width : meta.height) ?? null,
+          duration: null,
           size: buf.length,
           takenAt: exifTakenAt(meta.exif, env.tz)?.toISOString() ?? null,
         });
@@ -129,6 +157,16 @@ export async function fileRoutes(app: FastifyInstance) {
     if (dl) {
       const safe = dl.replace(/[\r\n"\\/]/g, '_').slice(0, 150) || name;
       reply.header('Content-Disposition', `attachment; filename="${encodeURIComponent(safe)}"; filename*=UTF-8''${encodeURIComponent(safe)}`);
+    }
+    const isVideo = /\.(mp4|mov|webm|m4v|3gp)$/.test(name);
+    if (isVideo && dir === env.uploadDir) {
+      // 转码后内容是 MP4（扩展名不变）；转码完成前不长期缓存，免得浏览器一直留着播不了的旧版本
+      // 文件不在了要先返回 404：提前设好的 video/mp4 头会让默认的 404 响应出错
+      if (!(await fs.stat(path.join(dir, name)).catch(() => null))) return reply.code(404).send();
+      const contentType = !videoIsMp4(name);
+      if (!contentType) reply.header('Content-Type', 'video/mp4');
+      if (!videoSettled(name)) return reply.sendFile(name, dir, { maxAge: 0, contentType });
+      return reply.sendFile(name, dir, { maxAge: '365d', immutable: true, contentType });
     }
     // 文件名是随机的、内容永不改变：让浏览器长期缓存
     return reply.sendFile(name, dir, { maxAge: '365d', immutable: true });

@@ -30,15 +30,44 @@ const version = /^\d+$/.test(commits) ? `${major}.${minor}.${commits}` : expo.ve
 const metadata = { id, version, commit: commit || null, builtAt: new Date().toISOString(), assets };
 fs.mkdirSync(path.join(output, 'icons'), { recursive: true });
 fs.writeFileSync(path.join(output, 'icons/icon.png'), icon);
+// 主屏幕图标、启动画面（assets/pwa 里预先生成好的各种尺寸）
+const pwaDir = path.join(root, 'assets/pwa');
+const pwaFiles = fs.readdirSync(pwaDir).filter((f) => f.endsWith('.png'));
+for (const f of pwaFiles) fs.copyFileSync(path.join(pwaDir, f), path.join(output, 'icons', f));
+// 安卓 Chrome 需要 192 和 512 的图标（以及可裁成圆形的 maskable 图标）才会把网页安装成真正的应用：
+// 桌面图标不带 Chrome 角标、出现在应用列表里、全屏打开
 fs.writeFileSync(path.join(output, 'manifest.webmanifest'), JSON.stringify({
-  id: '/', name: 'us. — 只属于我们两个人', short_name: 'us.', lang: 'zh-CN', description: '记录一起吃过的店、重要的日子和日常的小瞬间。',
-  start_url: '/', scope: '/', display: 'standalone', orientation: 'portrait', theme_color: '#FFF7F5', background_color: '#FFF7F5',
-  icons: [{ src: '/icons/icon.png', sizes: `${icon.readUInt32BE(16)}x${icon.readUInt32BE(20)}`, type: 'image/png', purpose: 'any' }],
+  id: '/',
+  name: 'us.',
+  short_name: 'us.',
+  description: '只属于我们两个人。',
+  lang: 'zh-CN',
+  dir: 'ltr',
+  start_url: '/',
+  scope: '/',
+  display: 'standalone',
+  display_override: ['standalone'],
+  orientation: 'portrait',
+  theme_color: '#FAF7F5',
+  background_color: '#FAF7F5',
+  categories: ['lifestyle', 'social'],
+  prefer_related_applications: false,
+  icons: [
+    { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+    { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+    { src: '/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+  ],
+  // 长按桌面图标出现的快捷入口
+  shortcuts: [
+    { name: '发动态', short_name: '发动态', url: '/moment/new', icons: [{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }] },
+    { name: '相册', short_name: '相册', url: '/gallery', icons: [{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }] },
+    { name: '今天吃什么', short_name: '吃什么', url: '/roulette', icons: [{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }] },
+  ],
 }, null, 2));
 fs.writeFileSync(path.join(output, 'version.json'), JSON.stringify(metadata));
 fs.writeFileSync(path.join(output, 'web-build.js'), `window.__US_BUILD__=${JSON.stringify(metadata)};\n`);
-fs.writeFileSync(path.join(output, 'offline.html'), `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#FFF7F5"><title>us. · 等网络回来</title><style>body{margin:0;background:#FFF7F5;color:#4B2E35;font-family:system-ui;min-height:100vh;display:grid;place-items:center}main{max-width:320px;padding:28px;text-align:center}button{background:#E5627F;color:white;border:0;border-radius:20px;padding:14px 28px;font-size:16px}</style></head><body><main><h1>等网络回来</h1><p>暂时连不上网络。你们的记录保存在服务器，联网后就能继续查看。</p><button onclick="location.reload()">重新连接</button></main><script>window.addEventListener('online',()=>setTimeout(()=>location.reload(),500))</script></body></html>`);
-const precache = ['/offline.html', '/icons/icon.png', ...assets];
+fs.writeFileSync(path.join(output, 'offline.html'), `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#FAF7F5"><title>us. · 等网络回来</title><style>body{margin:0;background:#FAF7F5;color:#4B2E35;font-family:system-ui;min-height:100vh;display:grid;place-items:center}main{max-width:320px;padding:28px;text-align:center}button{background:#E5627F;color:white;border:0;border-radius:20px;padding:14px 28px;font-size:16px}</style></head><body><main><h1>等网络回来</h1><p>暂时连不上网络。你们的记录保存在服务器，联网后就能继续查看。</p><button onclick="location.reload()">重新连接</button></main><script>window.addEventListener('online',()=>setTimeout(()=>location.reload(),500))</script></body></html>`);
+const precache = ['/offline.html', '/icons/icon.png', '/icons/icon-192.png', '/icons/icon-512.png', ...assets];
 fs.writeFileSync(path.join(output, 'sw.js'), `/* us. ${id} */
 const CACHE = 'us-static-${id}';
 const PRECACHE = ${JSON.stringify(precache)};
@@ -56,7 +85,7 @@ self.addEventListener('fetch', event => {
     event.respondWith(fetch(request, { cache: 'no-store' }).catch(async () => await caches.match('/offline.html') || new Response('暂时离线，请联网后刷新', { status: 503, headers: { 'Content-Type': 'text/plain;charset=utf-8' } })));
     return;
   }
-  if (url.pathname.startsWith('/_expo/') || url.pathname.startsWith('/assets/') || url.pathname === '/icons/icon.png') {
+  if (url.pathname.startsWith('/_expo/') || url.pathname.startsWith('/assets/') || url.pathname.startsWith('/icons/')) {
     event.respondWith((async () => {
       const cache = await caches.open(CACHE);
       const stored = await cache.match(request);

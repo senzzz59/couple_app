@@ -1,33 +1,42 @@
-import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { Dices, Map as MapIcon, MapPin, Plus } from 'lucide-react-native';
-import { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { FadeOut, LinearTransition } from 'react-native-reanimated';
 
+import { FoodFilters } from '@/components/FoodFilters';
 import { Segmented, StarRating } from '@/components/motion';
+import { VisitStamp } from '@/components/VisitStamp';
+import { PlaceArt, PlacePolaroid } from '@/components/PlacePolaroid';
+import { PlacePeek } from '@/components/PlacePeek';
 import { Screen } from '@/components/Screen';
-import { PlaceTicket, VisitStamp } from '@/components/PlaceTicket';
 import { QueryFallback } from '@/components/Skeleton';
-import { Button, Chip, Empty, enter, IconButton, PressScale, Row, Txt } from '@/components/ui';
-import { fileUrl } from '@/lib/api';
+import { Button, Empty, enter, IconButton, PressScale, Row, Txt } from '@/components/ui';
+import { api } from '@/lib/api';
+import { placeArea, placeImage } from '@/lib/food';
+import { applyFoodFilter, DEFAULT_FILTER, type FilteredPlace, type FoodFilter } from '@/lib/foodFilter';
+import { haptic } from '@/lib/haptics';
+import { fmtKm, useMyLocation } from '@/lib/location';
 import { invalidate, useQuery } from '@/lib/store';
-import { categoryEmoji, categoryTone, placeCover } from '@/lib/food';
 import type { Place, PlaceStatus, Visit } from '@/lib/types';
 import { colors, radius, shadow } from '@/theme';
 
-function VisitedCard({ p, cover, count, i }: { p: Place; cover: string | null; count: number; i: number }) {
+const open = (p: Place) => router.push({ pathname: '/place/[id]', params: { id: p.id } });
+
+function VisitedCard({ p, visits, count, i, onPeek }: { p: FilteredPlace; visits: Visit[]; count: number; i: number; onPeek: () => void }) {
+  const where = [p.km != null ? fmtKm(p.km) : null, placeArea(p) ?? p.city, p.address].filter(Boolean).join(' · ');
   return (
     <Animated.View entering={enter(i)} exiting={FadeOut.duration(150)} layout={LinearTransition.springify().damping(18)}>
-      <PressScale onPress={() => router.push({ pathname: '/place/[id]', params: { id: p.id } })} style={styles.bigCard}>
+      <PressScale
+        onPress={() => open(p)}
+        onLongPress={() => {
+          haptic.medium();
+          onPeek();
+        }}
+        delayLongPress={350}
+        style={styles.bigCard}>
         <View style={styles.coverWrap}>
-          {cover ? (
-            <Image source={fileUrl(cover)} placeholder={fileUrl(cover, true)} style={StyleSheet.absoluteFill} contentFit="cover" transition={300} />
-          ) : (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: categoryTone(p.category ?? p.name).bg, overflow: 'hidden' }]}>
-              <Text style={styles.coverEmoji}>{categoryEmoji(p.category)}</Text>
-            </View>
-          )}
+          <PlaceArt p={p} image={placeImage(p, visits)} emojiSize={110} thumb={false} />
           {count > 0 && <VisitStamp count={count} />}
         </View>
         <View style={{ padding: 16, gap: 6 }}>
@@ -41,11 +50,11 @@ function VisitedCard({ p, cover, count, i }: { p: Place; cover: string | null; c
             {p.rating ? <StarRating value={p.rating} size={14} /> : null}
             {p.category && <Txt v="secondary">{p.category}</Txt>}
           </Row>
-          {(p.address || p.city) && (
+          {!!where && (
             <Row gap={4}>
               <MapPin size={12} color={colors.muted} />
               <Txt v="caption" numberOfLines={1} style={{ flex: 1 }}>
-                {[p.city, p.address].filter(Boolean).join(' · ')}
+                {where}
               </Txt>
             </Row>
           )}
@@ -55,23 +64,37 @@ function VisitedCard({ p, cover, count, i }: { p: Place; cover: string | null; c
   );
 }
 
+// 每次打开 App 顺手给关联了高德、还没有照片的店补一张高德照片
+let backfilled = false;
+function useAmapPhotoBackfill(places: Place[] | undefined) {
+  useEffect(() => {
+    if (backfilled || !places?.some((p) => p.amapUrl && p.amapPhoto === null)) return;
+    backfilled = true;
+    api
+      .post<{ checked: number; updated: number }>('/api/places/amap-photos')
+      .then((r) => {
+        if (r.updated) invalidate('places');
+      })
+      .catch(() => {});
+  }, [places]);
+}
+
 export default function Eats() {
   const places = useQuery<Place[]>('/api/places');
   const visits = useQuery<Visit[]>('/api/visits');
   const [tab, setTab] = useState<PlaceStatus>('want');
-  const [cat, setCat] = useState<string | null>(null);
+  const [filters, setFilters] = useState<Record<PlaceStatus, FoodFilter>>({ want: DEFAULT_FILTER, visited: DEFAULT_FILTER });
+  const [peek, setPeek] = useState<FilteredPlace | null>(null);
+  const { pos } = useMyLocation();
+  useAmapPhotoBackfill(places.data);
 
+  const filter = filters[tab];
   const list = useMemo(() => (places.data ?? []).filter((p) => p.status === tab), [places.data, tab]);
-  const cats = useMemo(() => [...new Set(list.map((p) => p.category).filter(Boolean))] as string[], [list]);
-  const shown = cat ? list.filter((p) => p.category === cat) : list;
+  const shown = useMemo(() => applyFoodFilter(list, filter, pos), [list, filter, pos]);
+  const filtered = filter.where !== 'all' || !!filter.category;
   const visitCount = (id: string) => visits.data?.filter((v) => v.placeId === id).length ?? 0;
-  // 约会票的票号：按收藏的先后顺序编号
-  const ticketNo = useMemo(() => {
-    const sorted = [...(places.data ?? [])].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-    return new Map(sorted.map((p, i) => [p.id, i + 1]));
-  }, [places.data]);
   const { width } = useWindowDimensions();
-  const ticketW = Math.floor((Math.min(width, 720) - 32 - 12) / 2);
+  const polW = Math.floor((Math.min(width, 720) - 32 - 16) / 2);
 
   return (
     <Screen
@@ -83,9 +106,9 @@ export default function Eats() {
       }}
       right={
         <Row>
-          <IconButton icon={MapIcon} onPress={() => router.push('/footprints')} />
-          <IconButton icon={Dices} onPress={() => router.push('/roulette')} bg={colors.sky} color={colors.skyInk} />
-          <IconButton icon={Plus} onPress={() => router.push({ pathname: '/place/edit', params: { status: tab } })} />
+          <IconButton icon={MapIcon} label="足迹地图" onPress={() => router.push('/footprints')} />
+          <IconButton icon={Dices} label="今天吃什么" onPress={() => router.push('/roulette')} bg={colors.sky} color={colors.skyInk} />
+          <IconButton icon={Plus} label="收藏一家店" onPress={() => router.push({ pathname: '/place/edit', params: { status: tab } })} />
         </Row>
       }>
       <Segmented
@@ -94,50 +117,53 @@ export default function Eats() {
           { key: 'visited', label: `吃过 ${places.data?.filter((p) => p.status === 'visited').length ?? ''}` },
         ]}
         value={tab}
-        onChange={(k) => {
-          setTab(k);
-          setCat(null);
-        }}
+        onChange={setTab}
       />
-      {cats.length > 1 && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 14, marginHorizontal: -16 }} contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}>
-          <Chip label="全部" active={!cat} onPress={() => setCat(null)} />
-          {cats.map((c) => (
-            <Chip key={c} label={`${categoryEmoji(c)} ${c}`} active={cat === c} onPress={() => setCat(cat === c ? null : c)} />
-          ))}
-        </ScrollView>
+      {list.length > 1 && (
+        <View style={{ marginTop: 14 }}>
+          <FoodFilters key={tab} places={list} value={filter} onChange={(f) => setFilters((s) => ({ ...s, [tab]: f }))} allowRating={tab === 'visited'} />
+        </View>
       )}
 
-      <View style={{ marginTop: 16 }}>
+      <View style={{ marginTop: tab === 'want' ? 22 : 16 }}>
         <QueryFallback q={places} kind={tab === 'want' ? 'grid' : 'cover'} count={tab === 'want' ? 4 : 2} />
-        {places.data && shown.length === 0 ? (
+        {places.data && list.length === 0 ? (
           tab === 'want' ? (
             <Empty emoji="🍜" title="还没有想去的店" hint="复制小红书或高德的分享链接就能存" action={<Button title="收藏一家店" onPress={() => router.push('/place/edit')} />} />
           ) : (
             <Empty emoji="📸" title="还没有吃过的记录" />
           )
+        ) : places.data && shown.length === 0 && filtered ? (
+          <Empty
+            emoji="🔍"
+            title={filter.where === 'near' ? `${filter.radius}km 内没有` : '这里还没有'}
+            hint={filter.where === 'near' ? '换大一点的范围试试' : undefined}
+            action={<Button title="看全部" variant="secondary" onPress={() => setFilters((s) => ({ ...s, [tab]: DEFAULT_FILTER }))} />}
+          />
         ) : tab === 'visited' ? (
           <View style={{ gap: 14 }}>
             {shown.map((p, i) => (
-              <VisitedCard key={p.id} p={p} i={i} cover={placeCover(p, visits.data)} count={visitCount(p.id)} />
+              <VisitedCard key={p.id} p={p} i={i} visits={visits.data ?? []} count={visitCount(p.id)} onPeek={() => setPeek(p)} />
             ))}
           </View>
         ) : (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+          <View style={styles.wall}>
             {shown.map((p, i) => (
               <Animated.View key={p.id} entering={enter(i)} exiting={FadeOut.duration(150)} layout={LinearTransition.springify().damping(18)}>
-                <PlaceTicket p={p} no={ticketNo.get(p.id) ?? i + 1} cover={p.cover} width={ticketW} onPress={() => router.push({ pathname: '/place/[id]', params: { id: p.id } })} />
+                <PlacePolaroid p={p} image={placeImage(p, visits.data)} km={p.km} width={polW} onPress={() => open(p)} onLongPress={() => setPeek(p)} />
               </Animated.View>
             ))}
           </View>
         )}
       </View>
+
+      <PlacePeek place={peek} km={peek?.km} visits={visits.data ?? []} onClose={() => setPeek(null)} />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  wall: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 16, rowGap: 26 },
   bigCard: { backgroundColor: colors.surface, borderRadius: radius.lg, overflow: 'hidden', borderCurve: 'continuous', ...shadow },
   coverWrap: { height: 190, backgroundColor: colors.surfaceAlt },
-  coverEmoji: { position: 'absolute', right: 18, bottom: -20, fontSize: 120, transform: [{ rotate: '-14deg' }] },
 });

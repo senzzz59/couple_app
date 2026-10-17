@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import sharp from 'sharp';
 
 import { downloadName, exifTakenAt, galleryCursor, findEmbeddedVideo, mediaFiles, normalizeMedia, videoExt } from '../src/media.ts';
+import { displaySize, makePoster, probeVideo, transcodeArgs, videoPlan } from '../src/transcode.ts';
 import { crc32, uniqueNames, zipStream } from '../src/zip.ts';
 
 test('video uploads are recognised by mime type or by extension', () => {
@@ -52,7 +53,8 @@ test('gallery cursors and download names', () => {
   const row = { kind: 'image' as const, fileName: 'IMG_1234.HEIC', takenAt: new Date(2026, 0, 2, 3, 4, 5), image: `${id}.jpg`, video: null, original: `${id}.heic` };
   assert.equal(downloadName(row), 'IMG_1234.heic');
   assert.equal(downloadName({ ...row, fileName: null }), 'us-20260102-030405.heic');
-  assert.equal(downloadName({ ...row, kind: 'video', video: `${id}.mov`, fileName: 'a/b:c.mov' }), 'a_b_c.mov');
+  assert.equal(downloadName({ ...row, kind: 'video', video: `${id}.mov`, fileName: 'a/b:c.mov', original: null }), 'a_b_c.mov');
+  assert.equal(downloadName({ ...row, kind: 'video', video: `${id}.mov`, fileName: 'clip.mov', original: `${id}.mov` }), 'clip.mov');
   assert.deepEqual(uniqueNames(['a.jpg', 'A.jpg', 'a.jpg', 'b']), ['a.jpg', 'A (2).jpg', 'a (3).jpg', 'b']);
 });
 
@@ -73,6 +75,39 @@ test('zip archives stream valid files that standard tools can extract', async ()
     const listing = execFileSync('python3', ['-c', 'import sys,zipfile;z=zipfile.ZipFile(sys.argv[1]);print(z.testzip());print("|".join(i.filename+":"+str(i.file_size) for i in z.infolist()))', zipPath]).toString();
     assert.match(listing, /^None\n/);
     assert.match(listing, /照片\.jpg:5\|big\.bin:300000/);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('video plan: HEVC / 10-bit / WebM get converted, plain H.264 MP4 is left alone', () => {
+  const base = { codec: 'h264', pixFmt: 'yuv420p', width: 1920, height: 1080, rotation: 0, audio: 'aac', duration: 3, format: 'mov,mp4,m4a,3gp,3g2,mj2' };
+  assert.equal(videoPlan(base), 'ok');
+  assert.equal(videoPlan({ ...base, codec: 'hevc', pixFmt: 'yuv420p10le' }), 'transcode');
+  assert.equal(videoPlan({ ...base, pixFmt: 'yuv420p10le' }), 'transcode');
+  assert.equal(videoPlan({ ...base, codec: 'vp9', format: 'matroska,webm' }), 'transcode');
+  assert.equal(videoPlan({ ...base, format: 'matroska,webm' }), 'remux');
+  assert.equal(videoPlan({ ...base, audio: 'opus' }), 'transcode');
+  assert.deepEqual(displaySize({ ...base, rotation: 90 }), { width: 1080, height: 1920 });
+  assert.ok(transcodeArgs('in', 'out', 'transcode').includes('libx264'));
+  assert.ok(transcodeArgs('in', 'out', 'remux').includes('copy'));
+});
+
+test('an iPhone-style HEVC 10-bit video becomes H.264 that every browser plays', { skip: !execSync('command -v ffmpeg || true').toString().trim() }, async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'couple-video-'));
+  try {
+    const src = path.join(dir, 'clip.mov');
+    execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=duration=1:size=320x568:rate=15', '-c:v', 'libx265', '-pix_fmt', 'yuv420p10le', '-tag:v', 'hvc1', src]);
+    const before = await probeVideo(src);
+    assert.equal(before?.codec, 'hevc');
+    assert.equal(videoPlan(before!), 'transcode');
+    const out = path.join(dir, 'out.mp4');
+    execFileSync('ffmpeg', transcodeArgs(src, out, 'transcode'));
+    const after = await probeVideo(out);
+    assert.equal(after?.codec, 'h264');
+    assert.equal(after?.pixFmt, 'yuv420p');
+    assert.equal(videoPlan(after!), 'ok');
+    assert.ok(await makePoster(src, path.join(dir, 'poster.jpg')));
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

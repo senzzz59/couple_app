@@ -179,7 +179,7 @@ export async function galleryRoutes(app: FastifyInstance) {
     const rows = await db.select().from(g).where(inArray(g.id, list.length ? list : ['-']));
     const files = [];
     for (const r of rows) {
-      const p = r.kind === 'video' ? (r.video && filePath(r.video)) : r.original ? filePath(r.original, 'orig') : r.image && filePath(r.image);
+      const p = r.original ? filePath(r.original, 'orig') : r.kind === 'video' ? r.video && filePath(r.video) : r.image && filePath(r.image);
       if (!p) continue;
       const exists = await fs.stat(p).catch(() => null);
       if (exists) files.push({ path: p, name: downloadName(r), date: new Date(r.takenAt) });

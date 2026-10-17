@@ -89,7 +89,7 @@ type Downloadable = { kind: 'image' | 'video' | 'live'; fileName: string | null;
 
 /** 下载时的文件名：用户上传时的名字，没有就按拍摄时间起名 */
 export function downloadName(r: Downloadable) {
-  const file = r.kind === 'video' ? r.video : (r.original ?? r.image);
+  const file = r.original ?? (r.kind === 'video' ? r.video : r.image);
   const dot = file ? file.lastIndexOf('.') : -1;
   const extension = file && dot > 0 ? file.slice(dot) : '';
   if (r.fileName) {

@@ -170,7 +170,7 @@ export function releaseLocal(list: LocalMedia[]) {
   for (const m of list) for (const u of [m.uri, m.videoUri, m.posterUri]) if (u?.startsWith('blob:')) URL.revokeObjectURL(u);
 }
 
-type ServerItem = { kind: 'image' | 'video' | 'live'; image: string | null; video: string | null; original: string | null; fileName: string; width: number | null; height: number | null; size: number; takenAt: string | null };
+type ServerItem = { kind: 'image' | 'video' | 'live'; image: string | null; video: string | null; original: string | null; fileName: string; width: number | null; height: number | null; duration?: number | null; size: number; takenAt: string | null };
 type UploadResponse = { files: string[]; items?: ServerItem[] };
 
 export type UploadedMedia = MediaItem & { original?: string | null; fileName?: string; size?: number; takenAt?: string | null };
@@ -191,10 +191,12 @@ export async function uploadMedia(list: LocalMedia[], opts: { original?: boolean
       const it = res.items?.[0];
       out.push({ kind: it?.kind ?? 'image', image: it?.image ?? res.files[0], video: it?.video ?? null, w: it?.width ?? m.w, h: it?.height ?? m.h, original: it?.original, fileName: m.name, size: it?.size ?? m.size, takenAt: it?.takenAt ?? lastModified });
     } else if (m.kind === 'video') {
-      const v = await uploadFiles<UploadResponse>([{ uri: m.videoUri!, name: m.videoName, mime: m.videoMime }], { onProgress: step(m, 0.95) });
-      let image: string | null = null;
-      if (m.posterUri) image = (await uploadFiles<UploadResponse>([{ uri: m.posterUri, name: 'poster.jpg', mime: 'image/jpeg' } as UploadInput])).files[0];
-      out.push({ kind: 'video', image, video: v.items?.[0]?.video ?? v.files[0], w: m.w, h: m.h, duration: m.duration, fileName: m.videoName, size: v.items?.[0]?.size ?? m.size, takenAt: lastModified });
+      const v = await uploadFiles<UploadResponse>([{ uri: m.videoUri!, name: m.videoName, mime: m.videoMime }], { original: opts.original, onProgress: step(m, 0.95) });
+      const it = v.items?.[0];
+      // 服务器截的封面优先（iPhone 的 HEVC 视频在很多安卓浏览器里截不到）
+      let image: string | null = it?.image ?? null;
+      if (!image && m.posterUri) image = (await uploadFiles<UploadResponse>([{ uri: m.posterUri, name: 'poster.jpg', mime: 'image/jpeg' } as UploadInput])).files[0];
+      out.push({ kind: 'video', image, video: it?.video ?? v.files[0], w: it?.width ?? m.w, h: it?.height ?? m.h, duration: it?.duration ?? m.duration, original: it?.original ?? null, fileName: m.videoName, size: it?.size ?? m.size, takenAt: lastModified });
     } else {
       const still = await uploadFiles<UploadResponse>([{ uri: m.uri!, name: m.name, mime: m.mime }], { original: opts.original, onProgress: step(m, 0.4) });
       const vid = await uploadFiles<UploadResponse>([{ uri: m.videoUri!, name: m.videoName, mime: m.videoMime }], { onProgress: step(m, 0.6) });

@@ -40,6 +40,8 @@ export interface Place extends Base {
   amapUrl: string | null;
   note: string | null;
   cover: string | null;
+  /** 高德上的店铺照片；空字符串表示查过但没有 */
+  amapPhoto?: string | null;
 }
 
 export interface Dish {

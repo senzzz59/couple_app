@@ -13,7 +13,7 @@ import { Button, Chip, Field, PressScale, Row, Txt } from '@/components/ui';
 import { api, uploadImages } from '@/lib/api';
 import { amapShareUrl } from '@/lib/amap';
 import { confirm } from '@/lib/confirm';
-import { CATEGORIES, categoryEmoji } from '@/lib/food';
+import { CATEGORIES, categoryEmoji, firstAmapPhoto } from '@/lib/food';
 import { AMAP_KEY, currentPosition, parseXhsShare } from '@/lib/geo';
 import { type AmapPlace, poiUrl } from '@/lib/amapLive';
 import { haptic } from '@/lib/haptics';
@@ -47,6 +47,7 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
     lng: p?.lng ?? null,
     xhsUrl: p?.xhsUrl ?? '',
     amapUrl: p?.amapUrl ?? '',
+    amapPhoto: p?.amapPhoto ?? null,
     note: p?.note ?? '',
   });
   const [cover, setCover] = useState<PhotoItem[]>(p?.cover ? [{ remote: p.cover }] : []);
@@ -78,7 +79,7 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
   const searchMessage = searchEnabled && searchState?.key === searchKey ? searchState.message : '';
   const selectPoi = (place: AmapPlace) => {
     const url = poiUrl(place);
-    set({ name: place.name, address: place.address, city: place.city, lat: place.lat, lng: place.lng, amapUrl: url,
+    set({ name: place.name, address: place.address, city: place.city, lat: place.lat, lng: place.lng, amapUrl: url, amapPhoto: firstAmapPhoto(place),
       ...(place.price != null ? { price: String(place.price) } : {}), category: f.category || (categories.includes(place.category) ? place.category : '') });
     setImportedUrl(url);
     setSourceOpen(false);
@@ -94,6 +95,7 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
     setImportedUrl(urlToSave);
     return {
       amapUrl: urlToSave,
+      ...(place ? { amapPhoto: firstAmapPhoto(place) } : {}),
       ...((place?.price ?? result.price) != null ? { price: String(place?.price ?? result.price) } : {}),
       lat: place?.lat ?? result.location?.lat ?? null,
       lng: place?.lng ?? result.location?.lng ?? null,
@@ -157,6 +159,8 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
         lat: form.lat,
         lng: form.lng,
         amapUrl: form.amapUrl || null,
+        // 换了高德门店就重新取照片；手动清空关联时也清掉
+        amapPhoto: form.amapUrl ? (form.amapPhoto ?? null) : null,
         xhsUrl: f.xhsUrl || null,
         note: f.note || null,
         cover: newCover,
