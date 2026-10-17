@@ -109,6 +109,28 @@ cat /www/couple-app/state/deployment.json
 
 在 GitHub 的该 webhook → Recent Deliveries 中查看请求和响应：`ping` 应为 `200`，真实 `master` push 应为 `202`。成功日志应包含 `Frontend and backend deployed from master`，且 `deployment.json` 的 `commit` 与 GitHub master 对应。功能分支推送会返回 `200 ignored`，不会上线。
 
+### Webhook 返回 502
+
+GitHub 里看到 `502 Bad Gateway`（响应体是 nginx 的错误页、很快就失败）表示 Nginx 连不上 `127.0.0.1:8790`：部署接收器没有在运行，不是 Nginx 配置的问题。依次检查：
+
+```sh
+systemctl status couple-webhook --no-pager
+journalctl -u couple-webhook -n 100 --no-pager
+journalctl -k -n 100 --no-pager | grep -i -E "out of memory|killed process"
+ss -ltnp | grep 8790
+```
+
+常见原因是前端构建时内存不足：内核结束了构建进程，systemd 默认随之停掉整个服务，并在多次重启失败后不再尝试。更新服务文件（`Restart=always`、`OOMPolicy=continue`、`StartLimitIntervalSec=0`）后重新安装：
+
+```sh
+cp /www/couple-app/repo/deploy/couple-webhook.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl reset-failed couple-webhook
+systemctl restart couple-webhook
+```
+
+内存紧张时为服务器加 2GB 以上的 swap。接收器恢复后，在 GitHub 对最近一次 **master** 推送点 Redeliver，或在服务器上手动部署一次：`node /www/couple-app/repo/deploy/deploy-all.mjs`。
+
 连续推送会合并待执行任务并串行部署。若前端构建或后端检查失败，不切换前端；若后端更新后无法通过健康检查，存在上一版本时会尝试恢复旧后端服务。数据库迁移不会自动逆向回滚，因此涉及数据库的更改应向后兼容，并提前备份。
 
 ## 5. 手动部署和前端回退

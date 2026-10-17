@@ -2,18 +2,19 @@ import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { Dices, Map as MapIcon, MapPin, Plus } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Animated, { FadeOut, LinearTransition } from 'react-native-reanimated';
 
 import { Segmented, StarRating } from '@/components/motion';
 import { Screen } from '@/components/Screen';
+import { PlaceTicket, VisitStamp } from '@/components/PlaceTicket';
 import { QueryFallback } from '@/components/Skeleton';
 import { Button, Chip, Empty, enter, IconButton, PressScale, Row, Txt } from '@/components/ui';
 import { fileUrl } from '@/lib/api';
 import { invalidate, useQuery } from '@/lib/store';
-import { categoryEmoji, placeCover } from '@/lib/food';
+import { categoryEmoji, categoryTone, placeCover } from '@/lib/food';
 import type { Place, PlaceStatus, Visit } from '@/lib/types';
-import { colors, radius, sectionTheme, shadow } from '@/theme';
+import { colors, radius, shadow } from '@/theme';
 
 function VisitedCard({ p, cover, count, i }: { p: Place; cover: string | null; count: number; i: number }) {
   return (
@@ -23,28 +24,22 @@ function VisitedCard({ p, cover, count, i }: { p: Place; cover: string | null; c
           {cover ? (
             <Image source={fileUrl(cover)} placeholder={fileUrl(cover, true)} style={StyleSheet.absoluteFill} contentFit="cover" transition={300} />
           ) : (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: sectionTheme.eats.bg, alignItems: 'center', justifyContent: 'center' }]}>
-              <Text style={{ fontSize: 56 }}>{categoryEmoji(p.category)}</Text>
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: categoryTone(p.category ?? p.name).bg, overflow: 'hidden' }]}>
+              <Text style={styles.coverEmoji}>{categoryEmoji(p.category)}</Text>
             </View>
           )}
-          {count > 0 && (
-            <View style={styles.badge}>
-              <Txt v="caption" color={colors.white} style={{ fontWeight: '700' }}>
-                去过 {count} 次
-              </Txt>
-            </View>
-          )}
+          {count > 0 && <VisitStamp count={count} />}
         </View>
         <View style={{ padding: 16, gap: 6 }}>
           <Row style={{ justifyContent: 'space-between' }}>
             <Txt v="heading" numberOfLines={1} style={{ flex: 1 }}>
               {p.name}
             </Txt>
-            {p.price ? <Txt v="caption">¥{p.price}/人</Txt> : null}
+            {p.price ? <Txt v="secondary">¥{p.price}/人</Txt> : null}
           </Row>
           <Row gap={10}>
             {p.rating ? <StarRating value={p.rating} size={14} /> : null}
-            {p.category && <Txt v="caption">{p.category}</Txt>}
+            {p.category && <Txt v="secondary">{p.category}</Txt>}
           </Row>
           {(p.address || p.city) && (
             <Row gap={4}>
@@ -54,33 +49,6 @@ function VisitedCard({ p, cover, count, i }: { p: Place; cover: string | null; c
               </Txt>
             </Row>
           )}
-        </View>
-      </PressScale>
-    </Animated.View>
-  );
-}
-
-function WantCard({ p, i }: { p: Place; i: number }) {
-  return (
-    <Animated.View entering={enter(i)} exiting={FadeOut.duration(150)} layout={LinearTransition.springify().damping(18)} style={{ width: '48.5%' }}>
-      <PressScale onPress={() => router.push({ pathname: '/place/[id]', params: { id: p.id } })} style={styles.wantCard}>
-        <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <Text style={{ fontSize: 34 }}>{categoryEmoji(p.category)}</Text>
-          {p.xhsUrl && (
-            <View style={styles.xhs}>
-              <Txt style={{ fontSize: 10, fontWeight: '800' }} color={colors.white}>
-                小红书
-              </Txt>
-            </View>
-          )}
-        </Row>
-        <View style={{ gap: 2 }}>
-          <Txt v="bodyStrong" numberOfLines={2}>
-            {p.name}
-          </Txt>
-          <Txt v="caption" numberOfLines={1} color={sectionTheme.eats.ink}>
-            {[p.category, p.price ? `¥${p.price}` : null, p.city].filter(Boolean).join(' · ')}
-          </Txt>
         </View>
       </PressScale>
     </Animated.View>
@@ -97,12 +65,18 @@ export default function Eats() {
   const cats = useMemo(() => [...new Set(list.map((p) => p.category).filter(Boolean))] as string[], [list]);
   const shown = cat ? list.filter((p) => p.category === cat) : list;
   const visitCount = (id: string) => visits.data?.filter((v) => v.placeId === id).length ?? 0;
+  // 约会票的票号：按收藏的先后顺序编号
+  const ticketNo = useMemo(() => {
+    const sorted = [...(places.data ?? [])].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    return new Map(sorted.map((p, i) => [p.id, i + 1]));
+  }, [places.data]);
+  const { width } = useWindowDimensions();
+  const ticketW = Math.floor((Math.min(width, 720) - 32 - 12) / 2);
 
   return (
     <Screen
       tab
       title="美食"
-     
       onRefresh={async () => {
         invalidate('places');
         invalidate('visits');
@@ -149,9 +123,11 @@ export default function Eats() {
             ))}
           </View>
         ) : (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 12 }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
             {shown.map((p, i) => (
-              <WantCard key={p.id} p={p} i={i} />
+              <Animated.View key={p.id} entering={enter(i)} exiting={FadeOut.duration(150)} layout={LinearTransition.springify().damping(18)}>
+                <PlaceTicket p={p} no={ticketNo.get(p.id) ?? i + 1} cover={p.cover} width={ticketW} onPress={() => router.push({ pathname: '/place/[id]', params: { id: p.id } })} />
+              </Animated.View>
             ))}
           </View>
         )}
@@ -163,7 +139,5 @@ export default function Eats() {
 const styles = StyleSheet.create({
   bigCard: { backgroundColor: colors.surface, borderRadius: radius.lg, overflow: 'hidden', borderCurve: 'continuous', ...shadow },
   coverWrap: { height: 190, backgroundColor: colors.surfaceAlt },
-  badge: { position: 'absolute', left: 12, top: 12, backgroundColor: 'rgba(31,26,23,0.6)', borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4 },
-  wantCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 16, minHeight: 140, justifyContent: 'space-between', borderCurve: 'continuous', borderWidth: StyleSheet.hairlineWidth, borderColor: colors.line, ...shadow },
-  xhs: { backgroundColor: '#FF2442', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  coverEmoji: { position: 'absolute', right: 18, bottom: -20, fontSize: 120, transform: [{ rotate: '-14deg' }] },
 });
