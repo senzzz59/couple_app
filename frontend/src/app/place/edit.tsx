@@ -2,12 +2,13 @@ import * as Clipboard from 'expo-clipboard';
 import { router, useLocalSearchParams } from 'expo-router';
 import { ClipboardPaste, LocateFixed, MapPin, Search, Plus, X, ChevronRight, ChevronDown, Link2, Heart, Check, Pencil } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Modal, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 
 import { StarRating, toast } from '@/components/motion';
 import { LivePlaceInfo } from '@/components/LivePlaceInfo';
 import { PhotoItem, PhotoPicker } from '@/components/Photos';
 import { SheetScreen } from '@/components/Screen';
+import { Sheet } from '@/components/Sheet';
 import { Button, Chip, Field, PressScale, Row, Txt } from '@/components/ui';
 import { api, uploadImages } from '@/lib/api';
 import { amapShareUrl } from '@/lib/amap';
@@ -272,23 +273,17 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
       </View>
       {params.id && <Button title="删除这家店" variant="ghost" onPress={remove} disabled={busy} />}
 
-      <Modal visible={categoryOpen} transparent animationType="slide" onRequestClose={() => setCategoryOpen(false)}>
-        <View style={styles.modalWrap}>
-          <PressScale accessibilityLabel="关闭类型选择" onPress={() => setCategoryOpen(false)} style={StyleSheet.absoluteFill} />
-          <View style={styles.categorySheet}>
-            <View style={styles.handle} />
-            <Row style={{ justifyContent: 'space-between' }}><View style={{ gap: 3 }}><Txt v="heading">我的美食类型</Txt><Txt v="caption">每个人都有自己的口味 ♡</Txt></View><PressScale accessibilityLabel="关闭类型面板" onPress={() => setCategoryOpen(false)} style={styles.smallAction}><X size={20} color={colors.ink} /></PressScale></Row>
-            <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 16, paddingBottom: 32 }}>
-              <Row style={{ justifyContent: 'space-between' }}><Txt v="caption">只管理自己的类型，不影响已有收藏</Txt><PressScale onPress={() => setManaging(!managing)} style={styles.smallAction}><Txt v="caption" color={colors.accentStrong}>{managing ? '完成管理' : '管理'}</Txt></PressScale></Row>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                {[...new Set([...categories, ...(f.category && !categories.includes(f.category) ? [f.category] : [])])].map((c) => <Row key={c} gap={0}><Chip label={`${categoryEmoji(c)} ${c}`} active={f.category === c} onPress={() => { set({ category: f.category === c ? '' : c }); if (!managing) setCategoryOpen(false); }} />{managing && categories.includes(c) && <PressScale accessibilityLabel={`删除类型${c}`} disabled={categorySaving || !preferences.data} onPress={async () => { if (await updateCategories(categories.filter((name) => name !== c)) && f.category === c) set({ category: '' }); }} style={styles.smallAction}><X size={14} color={colors.muted} /></PressScale>}</Row>)}
-              </View>
-              {preferences.error && <PressScale onPress={preferences.refresh}><Txt v="caption">加载失败，点此重试</Txt></PressScale>}
-              <Row gap={8}><View style={{ flex: 1 }}><Field value={newCategory} onChangeText={setNewCategory} maxLength={20} placeholder="添加新类型，例如：私房菜" onSubmitEditing={addCategory} /></View><Button title="添加" icon={Plus} onPress={addCategory} loading={categorySaving} disabled={!newCategory.trim() || !preferences.data} /></Row>
-            </ScrollView>
+      <Sheet visible={categoryOpen} onClose={() => setCategoryOpen(false)} dragAnywhere={false} style={{ gap: 14 }}>
+        <Row style={{ justifyContent: 'space-between' }}><View style={{ gap: 3 }}><Txt v="heading">我的美食类型</Txt><Txt v="caption">每个人都有自己的口味 ♡</Txt></View><PressScale accessibilityLabel="关闭类型面板" onPress={() => setCategoryOpen(false)} style={styles.smallAction}><X size={20} color={colors.ink} /></PressScale></Row>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 16, paddingBottom: 32 }}>
+          <Row style={{ justifyContent: 'space-between' }}><Txt v="caption">只管理自己的类型，不影响已有收藏</Txt><PressScale onPress={() => setManaging(!managing)} style={styles.smallAction}><Txt v="caption" color={colors.accentStrong}>{managing ? '完成管理' : '管理'}</Txt></PressScale></Row>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {[...new Set([...categories, ...(f.category && !categories.includes(f.category) ? [f.category] : [])])].map((c) => <Row key={c} gap={0}><Chip label={`${categoryEmoji(c)} ${c}`} active={f.category === c} onPress={() => { set({ category: f.category === c ? '' : c }); if (!managing) setCategoryOpen(false); }} />{managing && categories.includes(c) && <PressScale accessibilityLabel={`删除类型${c}`} disabled={categorySaving || !preferences.data} onPress={async () => { if (await updateCategories(categories.filter((name) => name !== c)) && f.category === c) set({ category: '' }); }} style={styles.smallAction}><X size={14} color={colors.muted} /></PressScale>}</Row>)}
           </View>
-        </View>
-      </Modal>
+          {preferences.error && <PressScale onPress={preferences.refresh}><Txt v="caption">加载失败，点此重试</Txt></PressScale>}
+          <Row gap={8}><View style={{ flex: 1 }}><Field value={newCategory} onChangeText={setNewCategory} maxLength={20} placeholder="添加新类型，例如：私房菜" onSubmitEditing={addCategory} /></View><Button title="添加" icon={Plus} onPress={addCategory} loading={categorySaving} disabled={!newCategory.trim() || !preferences.data} /></Row>
+        </ScrollView>
+      </Sheet>
     </SheetScreen>
   );
 }
@@ -310,7 +305,4 @@ const styles = StyleSheet.create({
   settingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, minHeight: 40 },
   extraLink: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   xhsBadge: { width: 40, height: 40, borderRadius: 14, backgroundColor: '#FF526F', alignItems: 'center', justifyContent: 'center' },
-  modalWrap: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(65,35,44,0.24)' },
-  categorySheet: { backgroundColor: colors.bg, padding: 20, paddingBottom: 12, borderTopLeftRadius: 32, borderTopRightRadius: 32, maxHeight: '85%', gap: 14 },
-  handle: { width: 38, height: 4, borderRadius: 2, backgroundColor: colors.faint, alignSelf: 'center', marginTop: -8 },
 });

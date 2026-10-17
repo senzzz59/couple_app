@@ -6,6 +6,7 @@ import { useEffect, useRef } from 'react';
 import { AppState, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import { ConfirmHost } from '@/components/Confirm';
 import { ConfettiHost, toast, ToastHost } from '@/components/motion';
 import { useUpdateStartup } from '@/components/UpdateStartup';
 import { haptic } from '@/lib/haptics';
@@ -119,6 +120,7 @@ export default function RootLayout() {
           <RootStack fontsLoaded={fontsLoaded || !!fontError} />
         </View>
         <ConfettiHost />
+        <ConfirmHost />
         <ToastHost />
       </SessionProvider>
     </GestureHandlerRootView>

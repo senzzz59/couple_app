@@ -4,7 +4,7 @@ import { ScrollView, Switch, Text, View } from 'react-native';
 
 import { DatePicker } from '@/components/DatePicker';
 import { Segmented, toast } from '@/components/motion';
-import { SheetScreen } from '@/components/Screen';
+import { SheetLoading, SheetScreen } from '@/components/Screen';
 import { Button, Chip, Field, PressScale, Row, Txt } from '@/components/ui';
 import { api } from '@/lib/api';
 import { confirm } from '@/lib/confirm';
@@ -24,7 +24,7 @@ const REMINDS = [
 export default function EditAnniversary() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const existing = useQuery<Anniversary>(id ? `/api/anniversaries/${id}` : null);
-  if (id && !existing.data) return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
+  if (id && !existing.data) return <SheetLoading title="编辑纪念日" q={existing} />;
   return <AnniversaryForm id={id} initial={existing.data} />;
 }
 

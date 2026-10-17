@@ -5,7 +5,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { DatePicker } from '@/components/DatePicker';
 import { toast } from '@/components/motion';
-import { SheetScreen } from '@/components/Screen';
+import { SheetLoading, SheetScreen } from '@/components/Screen';
 import { Avatar, Button, Chip, Field, PressScale, Row, Txt } from '@/components/ui';
 import { api } from '@/lib/api';
 import { confirm } from '@/lib/confirm';
@@ -22,7 +22,7 @@ const TIMES = ['09:00', '12:00', '18:00', '21:00'];
 export default function EditTodo() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const existing = useQuery<Todo>(id ? `/api/todos/${id}` : null);
-  if (id && !existing.data) return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
+  if (id && !existing.data) return <SheetLoading title="编辑待办" q={existing} />;
   return <TodoForm id={id} initial={existing.data} />;
 }
 

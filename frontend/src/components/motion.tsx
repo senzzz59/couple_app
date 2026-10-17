@@ -11,7 +11,9 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { scheduleOnRN } from 'react-native-worklets';
 
 import { haptic } from '@/lib/haptics';
 import { colors, radius, shadow, springs, type } from '@/theme';
@@ -143,42 +145,112 @@ export function ConfettiHost() {
   );
 }
 
-// ================= 顶部提示条（戳一戳 / 出错）
-type ToastMsg = { id: number; emoji: string; title: string; body?: string };
+// ================= 顶部提示条（戳一戳 / 出错 / 撤销）
+// 点一下或往上划就收起；带操作按钮（比如「撤销」）的提示会多停留一会儿
+export type ToastAction = { label: string; onPress: () => void };
+type ToastMsg = { id: number; emoji: string; title: string; body?: string; action?: ToastAction; duration: number };
 const toastListeners = new Set<(t: ToastMsg) => void>();
-export const toast = (title: string, emoji = '💬', body?: string) => toastListeners.forEach((l) => l({ id: Date.now(), emoji, title, body }));
+const dismissListeners = new Set<(id: number) => void>();
+let toastSeq = 0;
+export function toast(title: string, emoji = '💬', body?: string, opts: { action?: ToastAction; duration?: number } = {}) {
+  const id = Date.now() * 100 + (toastSeq++ % 100);
+  const msg: ToastMsg = { id, emoji, title, body, action: opts.action, duration: opts.duration ?? (opts.action ? 4500 : 2600) };
+  toastListeners.forEach((l) => l(msg));
+  return id;
+}
+export const dismissToast = (id: number) => dismissListeners.forEach((l) => l(id));
 
-function ToastCard({ t, onDone }: { t: ToastMsg; onDone: () => void }) {
+function ToastCard({ t, onDone, gone }: { t: ToastMsg; onDone: () => void; gone: boolean }) {
   const y = useSharedValue(-140);
+  const drag = useSharedValue(0);
+  const [hiding, setHiding] = useState(false);
+  const hide = () => setHiding(true);
+
   useEffect(() => {
-    y.value = withSequence(withSpring(0, springs.bouncy), withDelay(2600, withTiming(-140, { duration: 260 })));
-    const timer = setTimeout(onDone, 3100);
+    y.set(withSpring(0, springs.bouncy));
+    const timer = setTimeout(() => setHiding(true), t.duration);
     return () => clearTimeout(timer);
-  }, [y, onDone]);
-  const anim = useAnimatedStyle(() => ({ transform: [{ translateY: y.value }] }));
+  }, [y, t.duration]);
+
+  useEffect(() => {
+    if (!hiding && !gone) return;
+    y.set(withTiming(-160, { duration: 220 }));
+    const timer = setTimeout(onDone, 240);
+    return () => clearTimeout(timer);
+  }, [hiding, gone, y, onDone]);
+
+  const pan = Gesture.Pan()
+    .activeOffsetY([-6, 6])
+    .onChange((e) => {
+      const next = drag.get() + e.changeY;
+      drag.set(next > 0 ? next * 0.25 : next);
+    })
+    .onEnd((e) => {
+      if (drag.get() < -30 || e.velocityY < -500) {
+        drag.set(withTiming(-160, { duration: 160 }));
+        scheduleOnRN(hide);
+      } else drag.set(withSpring(0, springs.snappy));
+    });
+
+  const anim = useAnimatedStyle(() => ({
+    transform: [{ translateY: y.value + drag.value }],
+    opacity: interpolate(y.value + drag.value, [-140, -40, 0], [0, 1, 1], 'clamp'),
+  }));
   return (
-    <Animated.View style={[styles.toast, anim]}>
-      <Text style={{ fontSize: 28 }}>{t.emoji}</Text>
-      <View style={{ flex: 1 }}>
-        <Txt v="bodyStrong">{t.title}</Txt>
-        {t.body ? <Txt v="caption">{t.body}</Txt> : null}
-      </View>
-    </Animated.View>
+    <GestureDetector gesture={pan}>
+      <Animated.View style={[styles.toast, anim]}>
+        <Pressable accessibilityRole="alert" onPress={hide} style={styles.toastMain}>
+          <Text style={{ fontSize: 26 }}>{t.emoji}</Text>
+          <View style={{ flex: 1 }}>
+            <Txt v="bodyStrong">{t.title}</Txt>
+            {t.body ? <Txt v="caption">{t.body}</Txt> : null}
+          </View>
+        </Pressable>
+        {t.action && (
+          <Pressable
+            hitSlop={8}
+            onPress={() => {
+              haptic.tap();
+              t.action?.onPress();
+              hide();
+            }}
+            style={({ pressed }) => [styles.toastAction, pressed && { opacity: 0.7 }]}>
+            <Txt v="bodyStrong" color={colors.white} style={{ fontSize: 14 }}>
+              {t.action.label}
+            </Txt>
+          </Pressable>
+        )}
+      </Animated.View>
+    </GestureDetector>
   );
 }
 
 export function ToastHost() {
   const insets = useSafeAreaInsets();
   const [items, setItems] = useState<ToastMsg[]>([]);
+  const [gone, setGone] = useState<number[]>([]);
   useEffect(() => {
     const l = (t: ToastMsg) => setItems((s) => [...s.slice(-1), t]);
+    const d = (id: number) => setGone((g) => [...g, id]);
     toastListeners.add(l);
-    return () => void toastListeners.delete(l);
+    dismissListeners.add(d);
+    return () => {
+      toastListeners.delete(l);
+      dismissListeners.delete(d);
+    };
   }, []);
   return (
-    <View pointerEvents="none" style={{ position: 'absolute', top: insets.top + 8, left: 16, right: 16 }}>
+    <View pointerEvents="box-none" style={{ position: 'absolute', top: insets.top + 8, left: 16, right: 16, alignItems: 'center' }}>
       {items.map((t) => (
-        <ToastCard key={t.id} t={t} onDone={() => setItems((s) => s.filter((x) => x.id !== t.id))} />
+        <ToastCard
+          key={t.id}
+          t={t}
+          gone={gone.includes(t.id)}
+          onDone={() => {
+            setItems((s) => s.filter((x) => x.id !== t.id));
+            setGone((g) => g.filter((x) => x !== t.id));
+          }}
+        />
       ))}
     </View>
   );
@@ -248,14 +320,19 @@ const styles = StyleSheet.create({
   toast: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
+    width: '100%',
+    maxWidth: 480,
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
-    padding: 14,
-    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingLeft: 16,
+    paddingRight: 12,
     marginBottom: 8,
     ...shadow,
   },
+  toastMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 36 },
+  toastAction: { backgroundColor: colors.ink, borderRadius: radius.pill, paddingHorizontal: 14, height: 34, justifyContent: 'center' },
   seg: { flexDirection: 'row', backgroundColor: colors.surfaceAlt, borderRadius: radius.pill, padding: 4, height: 44 },
   segThumb: { position: 'absolute', top: 4, left: 4, bottom: 4, borderRadius: radius.pill, backgroundColor: colors.surface, ...shadow },
   segItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },

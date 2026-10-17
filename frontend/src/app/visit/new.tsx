@@ -7,7 +7,7 @@ import Animated, { LinearTransition, ZoomIn, ZoomOut } from 'react-native-reanim
 import { DatePicker } from '@/components/DatePicker';
 import { celebrate, StarRating, toast } from '@/components/motion';
 import { PhotoItem, PhotoPicker } from '@/components/Photos';
-import { SheetScreen } from '@/components/Screen';
+import { SheetLoading, SheetScreen } from '@/components/Screen';
 import { Button, Field, IconButton, Row, Txt } from '@/components/ui';
 import { api, uploadImages } from '@/lib/api';
 import { confirm } from '@/lib/confirm';
@@ -21,7 +21,7 @@ import { colors, radius } from '@/theme';
 export default function NewVisit() {
   const { placeId, id } = useLocalSearchParams<{ placeId: string; id?: string }>();
   const existing = useQuery<Visit>(id ? `/api/visits/${id}` : null);
-  if (id && !existing.data) return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
+  if (id && !existing.data) return <SheetLoading title="编辑记录" q={existing} />;
   return <VisitForm placeId={placeId} id={id} initial={existing.data} />;
 }
 

@@ -1,13 +1,15 @@
 import { BlurView } from 'expo-blur';
 import { router } from 'expo-router';
 import { ChevronLeft, X } from 'lucide-react-native';
-import { ReactNode, useState } from 'react';
-import { KeyboardAvoidingView, Platform, RefreshControl, ScrollViewProps, StyleSheet, View } from 'react-native';
+import { ReactNode } from 'react';
+import { KeyboardAvoidingView, Platform, ScrollViewProps, StyleSheet, View } from 'react-native';
 import Animated, { interpolate, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors } from '@/theme';
 
+import { usePullRefresh } from './PullRefresh';
+import { LoadError, Skeleton } from './Skeleton';
 import { TAB_BAR_HEIGHT } from './TabBar';
 import { IconButton, Row, Txt } from './ui';
 
@@ -39,9 +41,9 @@ export function Screen({
 } & Omit<ScrollViewProps, 'children'>) {
   const insets = useSafeAreaInsets();
   const y = useSharedValue(0);
-  const [refreshing, setRefreshing] = useState(false);
+  const pullRefresh = usePullRefresh(onRefresh, y, insets.top + 8);
   const onScroll = useAnimatedScrollHandler((e) => {
-    y.value = e.contentOffset.y;
+    y.set(e.contentOffset.y);
   });
   const bar = useAnimatedStyle(() => ({ opacity: interpolate(y.value, [30, 70], [0, 1], 'clamp') }));
   const big = useAnimatedStyle(() => ({
@@ -57,19 +59,8 @@ export function Screen({
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        refreshControl={
-          onRefresh ? (
-            <RefreshControl
-              refreshing={refreshing}
-              tintColor={colors.muted}
-              onRefresh={async () => {
-                setRefreshing(true);
-                await onRefresh().catch(() => {});
-                setRefreshing(false);
-              }}
-            />
-          ) : undefined
-        }
+        {...pullRefresh.touchProps}
+        refreshControl={pullRefresh.refreshControl}
         contentContainerStyle={[{ paddingTop: insets.top + (back ? 56 : 12), paddingBottom: (tab ? TAB_BAR_HEIGHT + 24 : 24) + insets.bottom, paddingHorizontal: 16 }, contentStyle]}>
         {title && (
           <Animated.View style={[{ marginBottom: 16, paddingHorizontal: 4, transformOrigin: 'left' }, big]}>
@@ -87,6 +78,7 @@ export function Screen({
         {children}
       </Animated.ScrollView>
 
+      {pullRefresh.indicator}
       {/* 滚动后出现的毛玻璃顶栏 */}
       <Animated.View pointerEvents="none" style={[styles.topBar, { height: insets.top + 48 }, bar]}>
         <BlurView intensity={50} tint="light" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(250,246,240,0.75)' }]} />
@@ -118,6 +110,24 @@ export function SheetScreen({ title, children, action }: { title: string; childr
         {children}
       </Animated.ScrollView>
     </KeyboardAvoidingView>
+  );
+}
+
+/** 编辑页在读取已有内容时的占位：保留关闭按钮，失败时可以重试 */
+export function SheetLoading({ title, q }: { title: string; q: { error: string | null; refresh: () => Promise<unknown> } }) {
+  return (
+    <SheetScreen title={title}>
+      {q.error ? (
+        <LoadError message={q.error} onRetry={q.refresh} />
+      ) : (
+        <View style={{ gap: 14 }}>
+          <Skeleton w={80} h={12} />
+          <Skeleton h={52} r={20} />
+          <Skeleton w={80} h={12} style={{ marginTop: 8 }} />
+          <Skeleton h={96} r={20} />
+        </View>
+      )}
+    </SheetScreen>
   );
 }
 

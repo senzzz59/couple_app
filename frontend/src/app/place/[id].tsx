@@ -10,6 +10,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LivePlaceInfo } from '@/components/LivePlaceInfo';
 import { StarRating, toast } from '@/components/motion';
 import { openViewer } from '@/components/Photos';
+import { goBack } from '@/components/Screen';
+import { LoadError, Skeleton } from '@/components/Skeleton';
 import { Avatar, Button, enter, IconButton, PressScale, Row, Txt } from '@/components/ui';
 import { fileUrl } from '@/lib/api';
 import { fmtDate } from '@/lib/dates';
@@ -88,7 +90,30 @@ export default function PlaceDetail() {
   }));
   const topBar = useAnimatedStyle(() => ({ opacity: interpolate(y.value, [HEADER - 140, HEADER - 80], [0, 1], 'clamp') }));
 
-  if (!p) return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
+  if (!p) {
+    // 加载中 / 加载失败：也要能返回，不能是一片空白
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.bg }}>
+        {place.error ? (
+          <View style={{ flex: 1, justifyContent: 'center' }}>
+            <LoadError message={place.error} onRetry={place.refresh} />
+          </View>
+        ) : (
+          <>
+            <Skeleton h={HEADER} r={0} />
+            <View style={[styles.sheet, { marginTop: -32, gap: 12 }]}>
+              <Skeleton w="55%" h={26} r={9} />
+              <Skeleton w="35%" h={14} />
+              <Skeleton w="80%" h={14} style={{ marginTop: 8 }} />
+            </View>
+          </>
+        )}
+        <View style={{ position: 'absolute', top: insets.top + 6, left: 12 }}>
+          <IconButton icon={ChevronLeft} onPress={goBack} />
+        </View>
+      </View>
+    );
+  }
   const coverName = placeCover(p, visits.data);
   const visited = p.status === 'visited';
 
@@ -192,7 +217,7 @@ export default function PlaceDetail() {
         </Txt>
       </Animated.View>
       <Row style={{ position: 'absolute', top: insets.top + 6, left: 12, right: 12, justifyContent: 'space-between' }}>
-        <IconButton icon={ChevronLeft} onPress={() => router.back()} />
+        <IconButton icon={ChevronLeft} onPress={goBack} />
         <IconButton icon={Pencil} onPress={() => router.push({ pathname: '/place/edit', params: { id: p.id } })} />
       </Row>
 
