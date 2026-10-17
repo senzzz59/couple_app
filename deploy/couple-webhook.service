@@ -2,6 +2,8 @@
 Description=Couple frontend and backend deployment webhook
 After=network-online.target
 Wants=network-online.target
+# 不限制重启次数：部署失败或被打断后，接收器总能自己回来
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -12,8 +14,10 @@ Environment=NODE_ENV=production
 EnvironmentFile=/www/couple-app/shared/webhook.env
 EnvironmentFile=-/www/couple-app/shared/frontend.env
 ExecStart=/usr/bin/node /www/couple-app/repo/deploy/webhook.mjs
-Restart=on-failure
-RestartSec=5
+Restart=always
+RestartSec=3
+# 构建时内存不够、系统杀掉了构建进程，也不要连带停掉接收器（systemd 默认会停掉整个服务）
+OOMPolicy=continue
 UMask=0027
 
 [Install]
