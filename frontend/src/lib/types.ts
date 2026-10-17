@@ -69,11 +69,64 @@ export interface Anniversary extends Base {
 export interface Comment extends Base {
   momentId: string;
   content: string;
+  /** 回复的那条评论 */
+  replyToId?: string | null;
+  image?: string | null;
+  /** 内置表情 blob:xxx 或自定义表情文件名 */
+  sticker?: string | null;
+}
+
+/** 动态 / 相册里的一项媒体：image 是图片或视频封面，video 是视频或 Live 图的动态部分 */
+export interface MediaItem {
+  kind: 'image' | 'video' | 'live';
+  image?: string | null;
+  video?: string | null;
+  w?: number | null;
+  h?: number | null;
+  duration?: number | null;
+}
+
+export interface GalleryItem extends Base {
+  kind: 'image' | 'video' | 'live';
+  image: string | null;
+  video: string | null;
+  original: string | null;
+  fileName: string | null;
+  width: number | null;
+  height: number | null;
+  duration: number | null;
+  size: number | null;
+  takenAt: string;
+  favorite: boolean;
+}
+
+export interface Album extends Base {
+  title: string;
+  emoji: string | null;
+  description: string | null;
+  coverId: string | null;
+  count: number;
+  cover: GalleryItem | null;
+}
+
+export interface GallerySummary {
+  total: number;
+  videos: number;
+  live: number;
+  favorites: number;
+  latest: GalleryItem[];
+  covers: { favorites: GalleryItem | null; videos: GalleryItem | null; live: GalleryItem | null };
+}
+
+export interface Sticker extends Base {
+  file: string;
 }
 
 export interface Moment extends Base {
   content: string | null;
   photos: string[];
+  /** 服务器统一返回（旧动态由 photos 转换） */
+  media?: MediaItem[];
   mood: string | null;
   placeId: string | null;
   likedBy: string[];

@@ -126,9 +126,9 @@ export function Button({
   );
 }
 
-export function IconButton({ icon: Icon, onPress, bg = colors.surface, color = colors.ink, size = 44, style }: { icon: LucideIcon; onPress?: () => void; bg?: string; color?: string; size?: number; style?: StyleProp<ViewStyle> }) {
+export function IconButton({ icon: Icon, onPress, bg = colors.surface, color = colors.ink, size = 44, style, label }: { icon: LucideIcon; onPress?: () => void; bg?: string; color?: string; size?: number; style?: StyleProp<ViewStyle>; label?: string }) {
   return (
-    <PressScale onPress={onPress} scaleTo={0.9} style={[{ width: size, height: size, borderRadius: size / 2, backgroundColor: bg, alignItems: 'center', justifyContent: 'center' }, style]}>
+    <PressScale onPress={onPress} scaleTo={0.9} accessibilityRole="button" accessibilityLabel={label} style={[{ width: size, height: size, borderRadius: size / 2, backgroundColor: bg, alignItems: 'center', justifyContent: 'center' }, style]}>
       <Icon size={size * 0.45} color={color} strokeWidth={2.2} />
     </PressScale>
   );

@@ -29,6 +29,7 @@ export async function realtimeRoutes(app: FastifyInstance) {
     let userId: string;
     try {
       userId = app.jwt.verify<{ sub: string }>(token ?? '').sub;
+      if (!userId) throw new Error('not a session token');
     } catch {
       socket.close(4401, 'unauthorized');
       return;

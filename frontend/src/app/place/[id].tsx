@@ -109,7 +109,7 @@ export default function PlaceDetail() {
           </>
         )}
         <View style={{ position: 'absolute', top: insets.top + 6, left: 12 }}>
-          <IconButton icon={ChevronLeft} onPress={goBack} />
+          <IconButton icon={ChevronLeft} onPress={goBack} label="返回" />
         </View>
       </View>
     );
@@ -217,7 +217,7 @@ export default function PlaceDetail() {
         </Txt>
       </Animated.View>
       <Row style={{ position: 'absolute', top: insets.top + 6, left: 12, right: 12, justifyContent: 'space-between' }}>
-        <IconButton icon={ChevronLeft} onPress={goBack} />
+        <IconButton icon={ChevronLeft} onPress={goBack} label="返回" />
         <IconButton icon={Pencil} onPress={() => router.push({ pathname: '/place/edit', params: { id: p.id } })} />
       </Row>
 

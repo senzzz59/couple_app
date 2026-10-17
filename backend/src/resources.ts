@@ -4,7 +4,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { db, schema } from './db/index.ts';
-import { removeFiles } from './files.ts';
+import { FILE_NAME_RE, removeFiles } from './files.ts';
+import { mediaFiles, normalizeMedia } from './media.ts';
 import { broadcast } from './realtime.ts';
 import { visibleAnswers } from './answerPrivacy.ts';
 import { momentPagination } from './momentPagination.ts';
@@ -14,6 +15,21 @@ const s = schema;
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const file = z.string().max(100);
 const opt = <T extends z.ZodType>(t: T) => t.nullable().optional();
+const uploaded = z.string().regex(FILE_NAME_RE, '文件名不对');
+export const mediaItem = z.object({
+  kind: z.enum(['image', 'video', 'live']),
+  image: opt(uploaded),
+  video: opt(uploaded),
+  w: opt(z.number().int().min(0).max(100000)),
+  h: opt(z.number().int().min(0).max(100000)),
+  duration: opt(z.number().min(0).max(24 * 3600)),
+});
+// 内置表情（blob:xxx）或自定义表情图片
+const stickerRef = z.string().max(100).regex(/^(blob:[a-z0-9-]{1,40}|[0-9a-f-]{36}\.(jpg|png|gif|webp))$/, '表情不对');
+
+function badRequest(message: string): never {
+  throw Object.assign(new Error(message), { statusCode: 400 });
+}
 
 type Row = Record<string, unknown> & { id: string; createdBy?: string | null };
 
@@ -24,8 +40,8 @@ interface Resource {
   /** ?query 参数 -> 列 */
   filters?: Record<string, MySqlColumn>;
   order: SQL[];
-  /** 只有创建者能删除/修改 */
-  ownerOnly?: boolean;
+  /** 只有创建者能修改；true 时删除也只能创建者，'edit' 时两个人都能删除 */
+  ownerOnly?: boolean | 'edit';
   beforeSave?: (data: Record<string, unknown>, prev?: Row) => void;
   /** 删除前收集需要清理的文件 */
   filesOf?: (row: Row) => Promise<(string | null | undefined)[]>;
@@ -105,10 +121,28 @@ const resources: Resource[] = [
   {
     name: 'comments',
     table: s.comments,
-    body: z.object({ momentId: z.string().length(36), content: z.string().trim().min(1).max(500) }),
+    body: z.object({
+      momentId: z.string().length(36),
+      content: z.string().trim().max(500).default(''),
+      replyToId: opt(z.string().length(36)),
+      image: opt(uploaded),
+      sticker: opt(stickerRef),
+    }),
     filters: { moment: s.comments.momentId },
     order: [asc(s.comments.createdAt)],
-    ownerOnly: true,
+    ownerOnly: 'edit',
+    beforeSave: (data, prev) => {
+      const next = { ...prev, ...data };
+      if (!String(next.content ?? '').trim() && !next.image && !next.sticker) badRequest('说点什么，或者发个表情 / 图片');
+    },
+    filesOf: async (row) => [row.image as string | null],
+  },
+  {
+    name: 'stickers',
+    table: s.stickers,
+    body: z.object({ file: uploaded }),
+    order: [desc(s.stickers.createdAt)],
+    // 评论里还在用这个表情图，删除表情时不删文件
   },
   {
     name: 'moments',
@@ -116,12 +150,20 @@ const resources: Resource[] = [
     body: z.object({
       content: opt(z.string().max(3000)),
       photos: z.array(file).max(9).default([]),
+      media: opt(z.array(mediaItem).max(9)),
       mood: opt(z.string().max(16)),
       placeId: opt(z.string().length(36)),
     }),
     order: [desc(s.moments.createdAt)],
-    ownerOnly: true,
-    filesOf: async (row) => row.photos as string[],
+    ownerOnly: 'edit',
+    beforeSave: (data) => {
+      // 旧版 App 只认 photos：把图片 / 封面同步过去
+      if (Array.isArray(data.media)) data.photos = (data.media as { image?: string | null }[]).map((m) => m.image).filter(Boolean);
+    },
+    filesOf: async (row) => {
+      const cs = await db.select({ image: s.comments.image }).from(s.comments).where(eq(s.comments.momentId, row.id));
+      return [...new Set([...(row.photos as string[]), ...mediaFiles(row.media as never), ...cs.map((c) => c.image)])];
+    },
   },
 ];
 
@@ -185,7 +227,7 @@ export async function resourceRoutes(app: FastifyInstance) {
       const id = (req.params as { id: string }).id;
       const prev = await find(id);
       if (!prev) return { ok: true };
-      if (r.ownerOnly && prev.createdBy !== req.user.sub) return reply.code(403).send({ message: '只能删除自己发的内容' });
+      if (r.ownerOnly === true && prev.createdBy !== req.user.sub) return reply.code(403).send({ message: '只能删除自己发的内容' });
       const files = (await r.filesOf?.(prev)) ?? [];
       await db.delete(t).where(eq(t.id, id));
       await removeFiles(files);
@@ -209,6 +251,7 @@ export async function resourceRoutes(app: FastifyInstance) {
     const cmts = await db.select().from(s.comments).where(inArray(s.comments.momentId, ids)).orderBy(asc(s.comments.createdAt));
     return rows.map((m) => ({
       ...m,
+      media: normalizeMedia(m.photos, m.media),
       likedBy: likes.filter((l) => l.momentId === m.id).map((l) => l.userId),
       comments: cmts.filter((c) => c.momentId === m.id),
     }));

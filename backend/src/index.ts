@@ -14,6 +14,7 @@ import { capsuleRoutes } from './capsules.ts';
 import { runMigrations } from './db/index.ts';
 import { env } from './env.ts';
 import { fileRoutes } from './files.ts';
+import { galleryRoutes } from './gallery.ts';
 import { realtimeRoutes } from './realtime.ts';
 import { registerRoutes } from './register.ts';
 import { resourceRoutes } from './resources.ts';
@@ -62,6 +63,7 @@ await app.register(resourceRoutes);
 await app.register(amapRoutes);
 await app.register(foodCategoryRoutes);
 await app.register(capsuleRoutes);
+await app.register(galleryRoutes);
 await app.register(pushRoutes);
 
 await app.listen({ port: env.port, host: env.host });

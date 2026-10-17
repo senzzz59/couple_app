@@ -18,10 +18,12 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Envelope } from '@/components/Envelope';
+import { MediaThumb } from '@/components/Media';
 import { BlobCouple, FlatHeart } from '@/components/Mascot';
 import { RollingNumber, toast, useBurst } from '@/components/motion';
 import { usePullRefresh } from '@/components/PullRefresh';
 import { Sheet } from '@/components/Sheet';
+import { CENTERED } from '@/components/Screen';
 import { TAB_BAR_HEIGHT } from '@/components/TabBar';
 import { TodoRow } from '@/components/TodoRow';
 import { Avatar, Button, Card, enter, PressScale, Row, Txt } from '@/components/ui';
@@ -34,7 +36,7 @@ import { questionOfDay } from '@/lib/questions';
 import { usePendingDeletes } from '@/lib/undo';
 import { useCouple } from '@/lib/session';
 import { invalidate, useQuery } from '@/lib/store';
-import type { Anniversary, Answer, Capsule, Moment, Place, Todo } from '@/lib/types';
+import type { Anniversary, Answer, Capsule, GallerySummary, Moment, Place, Todo } from '@/lib/types';
 import { colors, fonts, radius, springs } from '@/theme';
 
 // ---------------- 在一起天数大卡片
@@ -398,6 +400,7 @@ function LatestMoment() {
   const { userById } = useCouple();
   const m = moments.data?.[0];
   if (!m || hidden.has(m.id)) return null;
+  const first = m.media?.[0] ?? (m.photos[0] ? { kind: 'image' as const, image: m.photos[0] } : null);
   return (
     <Card onPress={() => router.push('/moments')}>
       <Row style={{ justifyContent: 'space-between', marginBottom: 10 }}>
@@ -407,10 +410,40 @@ function LatestMoment() {
         </Row>
         <Txt v="label">最新动态</Txt>
       </Row>
-      <Txt v="body" numberOfLines={3}>
-        {m.mood ? `${m.mood} ` : ''}
-        {m.content}
-      </Txt>
+      <Row gap={12} style={{ alignItems: 'flex-start' }}>
+        <Txt v="body" numberOfLines={3} style={{ flex: 1 }}>
+          {m.mood ? `${m.mood} ` : ''}
+          {m.content || (first ? (first.kind === 'video' ? '分享了一段视频' : '分享了照片') : '')}
+        </Txt>
+        {first && <MediaThumb item={first} size={64} radius={12} />}
+      </Row>
+    </Card>
+  );
+}
+
+/** 共享相册里最新的几张 */
+function RecentPhotos() {
+  const summary = useQuery<GallerySummary>('/api/gallery/summary');
+  const s = summary.data;
+  if (!s?.latest.length) return null;
+  return (
+    <Card onPress={() => router.navigate('/gallery')}>
+      <Row style={{ justifyContent: 'space-between', marginBottom: 12 }}>
+        <Txt v="label" color={colors.pinkInk}>
+          共享相册 · {s.total}
+        </Txt>
+        <ArrowUpRight size={18} color={colors.pinkInk} />
+      </Row>
+      <Row gap={6}>
+        {s.latest.slice(0, 4).map((g) => (
+          <View key={g.id} style={{ flex: 1 }}>
+            <MediaThumb item={{ kind: g.kind, image: g.image, video: g.video, duration: g.duration }} size="100%" radius={12} />
+          </View>
+        ))}
+        {Array.from({ length: Math.max(0, 4 - s.latest.length) }, (_, i) => (
+          <View key={i} style={{ flex: 1 }} />
+        ))}
+      </Row>
     </Card>
   );
 }
@@ -419,7 +452,7 @@ export default function Home() {
   const insets = useSafeAreaInsets();
   const { me, partner } = useCouple();
 
-  const refresh = () => Promise.all(['me', 'space', 'anniversaries', 'places', 'todos', 'moments', 'answers', 'capsules'].map(invalidate));
+  const refresh = () => Promise.all(['me', 'space', 'anniversaries', 'places', 'todos', 'moments', 'answers', 'capsules', 'gallery'].map(invalidate));
   const y = useSharedValue(0);
   const onScroll = useAnimatedScrollHandler((e) => {
     y.set(e.contentOffset.y);
@@ -441,13 +474,14 @@ export default function Home() {
     </Row>,
     <TodosCard key="todos" />,
     <LatestMoment key="moment" />,
+    <RecentPhotos key="photos" />,
   ];
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <Animated.ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingTop: insets.top + 12, paddingHorizontal: 16, paddingBottom: insets.bottom + TAB_BAR_HEIGHT + 32, gap: 12 }}
+        contentContainerStyle={[{ paddingTop: insets.top + 12, paddingHorizontal: 16, paddingBottom: insets.bottom + TAB_BAR_HEIGHT + 32, gap: 12 }, CENTERED]}
         onScroll={onScroll}
         scrollEventThrottle={16}
         {...pullRefresh.touchProps}

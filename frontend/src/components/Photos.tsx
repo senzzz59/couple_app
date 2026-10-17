@@ -1,11 +1,11 @@
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { router } from 'expo-router';
 import { ImagePlus, X } from 'lucide-react-native';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { LinearTransition, ZoomIn, ZoomOut } from 'react-native-reanimated';
 
 import { fileUrl } from '@/lib/api';
+import { openViewer as openMedia } from '@/lib/viewer';
 import { colors, radius } from '@/theme';
 
 import { PressScale, Txt } from './ui';
@@ -55,7 +55,10 @@ export function PhotoPicker({ value, onChange, max = 9, size = 96 }: { value: Ph
 }
 
 export function openViewer(photos: string[], index: number) {
-  router.push({ pathname: '/viewer', params: { photos: photos.join(','), index: String(index) } });
+  openMedia(
+    photos.map((image) => ({ kind: 'image' as const, image })),
+    index
+  );
 }
 
 /** 朋友圈式九宫格：1 张大图，2/4 张两列，其余三列 */

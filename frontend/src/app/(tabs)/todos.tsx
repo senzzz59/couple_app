@@ -163,7 +163,7 @@ export default function Todos() {
 
 const styles = StyleSheet.create({
   addBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: radius.pill, paddingLeft: 18, paddingRight: 6, height: 52, marginBottom: 12, ...shadow },
-  addInput: { flex: 1, fontSize: 16, color: colors.ink, height: 52 },
+  addInput: { flex: 1, minWidth: 0, fontSize: 16, color: colors.ink, height: 52 },
   progressCard: { backgroundColor: sectionTheme.todos.bg, borderRadius: radius.lg, padding: 16, marginBottom: 14 },
   track: { height: 10, borderRadius: 5, backgroundColor: 'rgba(255,255,255,0.6)', overflow: 'hidden' },
   fill: { height: 10, borderRadius: 5, backgroundColor: colors.accent },

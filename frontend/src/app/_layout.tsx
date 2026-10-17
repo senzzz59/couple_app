@@ -82,6 +82,8 @@ function RootStack({ fontsLoaded }: { fontsLoaded: boolean }) {
           <Stack.Screen name="capsule/[id]" options={{ animation: 'fade_from_bottom' }} />
           <Stack.Screen name="capsule/new" options={modal} />
           <Stack.Screen name="footprints" />
+          <Stack.Screen name="album/[id]" />
+          <Stack.Screen name="album/add" options={modal} />
           <Stack.Screen name="question" options={modal} />
           <Stack.Screen name="place/edit" options={modal} />
           <Stack.Screen name="visit/new" options={modal} />
