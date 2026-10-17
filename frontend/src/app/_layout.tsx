@@ -7,6 +7,8 @@ import { AppState, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { ConfirmHost } from '@/components/Confirm';
+// 尽早监听浏览器的「安装应用」事件
+import '@/lib/install';
 import { ConfettiHost, toast, ToastHost } from '@/components/motion';
 import { useUpdateStartup } from '@/components/UpdateStartup';
 import { haptic } from '@/lib/haptics';
@@ -49,7 +51,7 @@ function NudgeListener() {
       const who = partner?.name || 'TA';
       haptic.heavy();
       setTimeout(() => haptic.heavy(), 180);
-      toast(`${who} ${n.text}`, n.emoji);
+      toast(`${who} ${n.text}`, n.emoji, undefined, { showEmoji: true });
       if (AppState.currentState !== 'active' && !e.remotePush) notifyNow(`${n.emoji} ${who}`, n.text);
     };
     const off = onNudge(receive);
@@ -76,7 +78,10 @@ function RootStack({ fontsLoaded }: { fontsLoaded: boolean }) {
           <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
           <Stack.Screen name="place/[id]" />
           <Stack.Screen name="anniversaries" />
-          <Stack.Screen name="settings" />
+          <Stack.Screen name="settings/index" />
+          <Stack.Screen name="settings/about" />
+          <Stack.Screen name="settings/profile" options={modal} />
+          <Stack.Screen name="settings/password" options={modal} />
           <Stack.Screen name="roulette" options={{ animation: 'fade_from_bottom' }} />
           <Stack.Screen name="capsules" />
           <Stack.Screen name="capsule/[id]" options={{ animation: 'fade_from_bottom' }} />

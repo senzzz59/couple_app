@@ -16,14 +16,13 @@ import { haptic } from '@/lib/haptics';
 import { useCouple } from '@/lib/session';
 import { invalidate, useQuery } from '@/lib/store';
 import type { Anniversary } from '@/lib/types';
-import { colors, fonts, radius, sectionTheme } from '@/theme';
+import { colors, fonts, radius } from '@/theme';
 
 export default function Anniversaries() {
   const { space } = useCouple();
   const anns = useQuery<Anniversary[]>('/api/anniversaries');
   const [editingStart, setEditingStart] = useState(false);
   const events = upcomingEvents(anns.data, space?.startDate).slice(0, 8);
-  const t = sectionTheme.days;
 
   const setStart = async (d: string) => {
     haptic.success();
@@ -33,7 +32,7 @@ export default function Anniversaries() {
   };
 
   return (
-    <Screen back title="纪念日" subtitle="DAYS THAT MATTER" right={<IconButton icon={Plus} onPress={() => router.push('/anniversary/edit')} />}>
+    <Screen back title="纪念日" right={<IconButton icon={Plus} onPress={() => router.push('/anniversary/edit')} />}>
       <Animated.View entering={enter(0)}>
         <Card bg={colors.pink} style={{ padding: 22 }}>
           <Txt v="label" color={colors.pinkInk}>
@@ -47,7 +46,7 @@ export default function Anniversaries() {
           </Row>
           <PressScale haptics={false} onPress={() => setEditingStart((e) => !e)}>
             <Txt v="caption" color={colors.pinkInk}>
-              {space?.startDate ? `${fmtFullDate(space.startDate)} 开始 · 点击修改` : '点击设置在一起的日子'}
+              {space?.startDate ? `${fmtFullDate(space.startDate)} 开始` : '设置在一起的日子'}
             </Txt>
           </PressScale>
         </Card>
@@ -69,7 +68,7 @@ export default function Anniversaries() {
               <PressScale
                 disabled={!isAnn}
                 onPress={() => isAnn && router.push({ pathname: '/anniversary/edit', params: { id: e.id } })}
-                style={[styles.event, { backgroundColor: e.kind === 'festival' ? colors.surface : e.kind === 'milestone' ? colors.accentSoft : t.bg }]}>
+                style={styles.event}>
                 <Text style={{ fontSize: 30 }}>{e.emoji}</Text>
                 <View style={{ flex: 1 }}>
                   <Txt v="bodyStrong">{e.title}</Txt>
@@ -124,7 +123,7 @@ export default function Anniversaries() {
 }
 
 const styles = StyleSheet.create({
-  event: { flexDirection: 'row', alignItems: 'center', gap: 14, borderRadius: radius.lg, paddingHorizontal: 18, paddingVertical: 14 },
+  event: { flexDirection: 'row', alignItems: 'center', gap: 14, borderRadius: radius.lg, paddingHorizontal: 18, paddingVertical: 14, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.line },
   list: { backgroundColor: colors.surface, borderRadius: radius.lg, overflow: 'hidden' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 },
   sep: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line },

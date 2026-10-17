@@ -70,7 +70,7 @@ async function run() {
   if (finished.failed) toast(`${finished.failed} 项没传上去`, '⚠️', finished.error);
   else {
     haptic.success();
-    toast(`上传好了 ${finished.total} 项`, '🖼️', '你们俩都能看到');
+    toast(`已上传 ${finished.total} 项`, '✓');
   }
   setTimeout(() => job?.status === 'done' && set(null), 2500);
 }

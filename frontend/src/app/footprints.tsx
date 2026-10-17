@@ -93,7 +93,7 @@ export default function Footprints() {
     <Screen
       back
       title="足迹"
-      subtitle="WHERE WE'VE BEEN"
+     
       onRefresh={async () => {
         invalidate('places');
         invalidate('visits');
@@ -131,9 +131,6 @@ export default function Footprints() {
             <Txt v="bodyStrong" color={useMap ? colors.ink : colors.white}>
               还没有带位置的店
             </Txt>
-            <Txt v="caption" color={useMap ? colors.muted : 'rgba(255,255,255,0.6)'}>
-              收藏店铺时点「用我现在的位置」或搜索店名
-            </Txt>
           </View>
         )}
         {!useMap && located.length > 0 && (
@@ -170,7 +167,7 @@ export default function Footprints() {
       {missing > 0 && (
         <Row gap={6} style={{ marginTop: 12, paddingHorizontal: 4 }}>
           <MapPin size={13} color={colors.muted} />
-          <Txt v="caption">{missing} 家店还没有位置，编辑店铺时可以补上</Txt>
+          <Txt v="caption">{missing} 家店没有位置</Txt>
         </Row>
       )}
 

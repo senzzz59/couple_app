@@ -62,7 +62,7 @@ export function LivePlaceInfo({ destination }: { destination: MapDestination }) 
       if (generation.current === version) setLocationError((error as Error).message || '暂时无法计算路线，请重试');
     } finally { if (generation.current === version) setLocating(false); }
   };
-  const openReviews = () => openAmapPlace({ ...destination, lat, lng }).catch(() => toast('暂时打不开高德，请稍后再试', '📍'));
+  const openReviews = () => openAmapPlace({ ...destination, lat, lng }).catch(() => toast('打不开高德地图', '⚠️'));
 
   return (
     <View style={{ gap: 14 }}>
@@ -73,7 +73,7 @@ export function LivePlaceInfo({ destination }: { destination: MapDestination }) 
             {loading ? <ActivityIndicator size="small" color={colors.muted} /> : <RefreshCw size={15} color={colors.muted} />}
           </PressScale>
         </Row>
-        {loading ? <Txt v="caption">正在读取这家店的最新资料…</Txt> : place ? <>
+        {loading ? <Txt v="caption">加载中…</Txt> : place ? <>
           <Row gap={0} style={{ alignItems: 'flex-start' }}>
             <View style={styles.stat}><Row gap={4}><Star size={15} color={colors.peachInk} fill={colors.peach} /><Txt style={styles.number}>{place.rating ?? '—'}</Txt></Row><Txt v="caption">高德评分</Txt></View>
             <View style={[styles.stat, styles.divider]}><Txt style={styles.number}>{place.price != null ? `¥${place.price}` : '—'}</Txt><Txt v="caption">参考人均</Txt></View>

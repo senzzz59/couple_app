@@ -58,9 +58,9 @@ function ActionSheet({ visible, onClose, items, title }: { visible: boolean; onC
               it.onPress();
             }}
             style={[styles.menuItem, i > 0 && styles.menuSep]}>
-            <it.icon size={20} color={it.danger ? colors.pinkInk : colors.inkSoft} />
+            <it.icon size={20} color={it.danger ? colors.danger : colors.inkSoft} strokeWidth={1.8} />
             <View style={{ flex: 1 }}>
-              <Txt v="bodyStrong" color={it.danger ? colors.pinkInk : colors.ink}>
+              <Txt v="body" color={it.danger ? colors.danger : colors.ink}>
                 {it.label}
               </Txt>
               {it.hint && <Txt v="caption">{it.hint}</Txt>}
@@ -183,7 +183,7 @@ function MomentCard({ m, i, queryKey }: { m: Moment; i: number; queryKey: string
     try {
       await api.post('/api/gallery/import', { media, takenAt: m.createdAt });
       haptic.success();
-      toast(`${media.length} 项已存进共享相册`, '🖼️');
+      toast(`已存入相册`, '✓');
       invalidate('gallery');
     } catch (e) {
       toast((e as Error).message, '⚠️');
@@ -192,16 +192,16 @@ function MomentCard({ m, i, queryKey }: { m: Moment; i: number; queryKey: string
 
   const contentWidth = Math.min(width, 720) - 32 - 36;
   const momentMenu: MenuItem[] = [
-    ...(media.length ? [{ icon: FolderPlus, label: '存进共享相册', hint: `${media.length} 张照片 / 视频`, onPress: saveToGallery }] : []),
+    ...(media.length ? [{ icon: FolderPlus, label: '存入相册', onPress: saveToGallery }] : []),
     ...(m.content ? [{ icon: Copy, label: '复制文字', onPress: () => Clipboard.setStringAsync(m.content ?? '').then(() => toast('已复制', '📋')) }] : []),
-    { icon: Trash2, label: '删除这条动态', hint: mine ? '删除后几秒内还可以撤销' : `这是${author?.name ?? 'TA'}发的，删除后两个人都看不到了`, danger: true, onPress: removeMoment },
+    { icon: Trash2, label: '删除', danger: true, onPress: removeMoment },
   ];
   const cm = commentMenu;
   const commentItems: MenuItem[] = cm
     ? [
         ...(cm.createdBy !== me?.id ? [{ icon: Reply, label: `回复 ${userName(cm.createdBy)}`, onPress: () => startReply(cm) }] : []),
         ...(cm.content ? [{ icon: Copy, label: '复制', onPress: () => Clipboard.setStringAsync(cm.content).then(() => toast('已复制', '📋')) }] : []),
-        { icon: Trash2, label: '删除评论', danger: true, onPress: () => removeComment(cm) },
+        { icon: Trash2, label: '删除', danger: true, onPress: () => removeComment(cm) },
       ]
     : [];
 
@@ -294,7 +294,7 @@ function MomentCard({ m, i, queryKey }: { m: Moment; i: number; queryKey: string
 
 export default function Moments() {
   return (
-    <Screen tab title="动态" subtitle="OUR LITTLE MOMENTS" onRefresh={async () => invalidate('moments')} right={<IconButton icon={Plus} onPress={() => router.push('/moment/new')} label="发动态" />}>
+    <Screen tab title="动态" onRefresh={async () => invalidate('moments')} right={<IconButton icon={Plus} onPress={() => router.push('/moment/new')} label="发动态" />}>
       <MomentPage queryKey={KEY} seen={[]} />
     </Screen>
   );
@@ -309,7 +309,7 @@ function MomentPage({ queryKey, seen }: { queryKey: string; seen: string[] }) {
   return (
     <View style={{ gap: 14 }}>
       {queryKey === KEY && moments.data && rows.length === 0 && (
-        <Empty emoji="📷" title="发第一条动态吧" hint="照片、视频、Live 图都可以，只有你们两个人能看到" action={<Button title="写点什么" onPress={() => router.push('/moment/new')} />} />
+        <Empty emoji="📷" title="发第一条动态吧" action={<Button title="写点什么" onPress={() => router.push('/moment/new')} />} />
       )}
       {rows
         .filter((m) => !seen.includes(m.id) && !hidden.has(m.id))
@@ -322,10 +322,6 @@ function MomentPage({ queryKey, seen }: { queryKey: string; seen: string[] }) {
         <MomentPage queryKey={next} seen={[...seen, ...rows.map((m) => m.id)]} />
       ) : last && rows.length === 30 ? (
         <Button title="查看更早的动态" variant="ghost" onPress={() => setNext(`${KEY}?before=${encodeURIComponent(`${last.createdAt}|${last.id}`)}`)} />
-      ) : moments.data && (rows.length > 0 || queryKey !== KEY) && !moments.error ? (
-        <Txt v="caption" style={{ textAlign: 'center' }}>
-          已经看到第一条动态了
-        </Txt>
       ) : null}
     </View>
   );

@@ -6,7 +6,7 @@ import { GalleryGrid } from '@/components/GalleryGrid';
 import { toast } from '@/components/motion';
 import { SheetScreen } from '@/components/Screen';
 import { QueryFallback } from '@/components/Skeleton';
-import { Button, Empty, Txt } from '@/components/ui';
+import { Button, Empty } from '@/components/ui';
 import { api } from '@/lib/api';
 import { haptic } from '@/lib/haptics';
 import { invalidate, useQuery } from '@/lib/store';
@@ -53,10 +53,9 @@ export default function AddToAlbum() {
     <SheetScreen title={album ? `添加到「${album.title}」` : '添加照片'} action={<Button title={selected.size ? `添加 ${selected.size}` : '添加'} onPress={save} loading={saving} disabled={!selected.size} style={{ height: 38, paddingHorizontal: 16 }} />}>
       <QueryFallback q={all} kind="grid" count={6} />
       {all.data && items.length === 0 ? (
-        <Empty emoji="🖼️" title="没有可以添加的照片" hint="全部照片都已经在这个相册里了，或者还没有上传照片" />
+        <Empty emoji="🖼️" title="没有可以添加的照片" />
       ) : (
         <View style={{ gap: 10 }}>
-          {items.length > 0 && <Txt v="caption">点按选择，可以多选</Txt>}
           <GalleryGrid items={items} selecting selected={selected} onToggle={toggle} onOpen={() => {}} onStartSelect={toggle} />
         </View>
       )}

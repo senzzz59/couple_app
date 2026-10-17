@@ -13,7 +13,7 @@ import { fileUrl } from '@/lib/api';
 import { invalidate, useQuery } from '@/lib/store';
 import { categoryEmoji, placeCover } from '@/lib/food';
 import type { Place, PlaceStatus, Visit } from '@/lib/types';
-import { colors, fonts, radius, sectionTheme, shadow } from '@/theme';
+import { colors, radius, sectionTheme, shadow } from '@/theme';
 
 function VisitedCard({ p, cover, count, i }: { p: Place; cover: string | null; count: number; i: number }) {
   return (
@@ -79,7 +79,7 @@ function WantCard({ p, i }: { p: Place; i: number }) {
             {p.name}
           </Txt>
           <Txt v="caption" numberOfLines={1} color={sectionTheme.eats.ink}>
-            {[p.category, p.price ? `¥${p.price}` : null, p.city].filter(Boolean).join(' · ') || '想去'}
+            {[p.category, p.price ? `¥${p.price}` : null, p.city].filter(Boolean).join(' · ')}
           </Txt>
         </View>
       </PressScale>
@@ -102,7 +102,7 @@ export default function Eats() {
     <Screen
       tab
       title="美食"
-      subtitle="OUR FOOD MAP"
+     
       onRefresh={async () => {
         invalidate('places');
         invalidate('visits');
@@ -138,9 +138,9 @@ export default function Eats() {
         <QueryFallback q={places} kind={tab === 'want' ? 'grid' : 'cover'} count={tab === 'want' ? 4 : 2} />
         {places.data && shown.length === 0 ? (
           tab === 'want' ? (
-            <Empty emoji="🍜" title="还没有想去的店" hint="在小红书刷到好吃的？复制分享链接，来这里存一下" action={<Button title="收藏一家店" onPress={() => router.push('/place/edit')} />} />
+            <Empty emoji="🍜" title="还没有想去的店" hint="复制小红书或高德的分享链接就能存" action={<Button title="收藏一家店" onPress={() => router.push('/place/edit')} />} />
           ) : (
-            <Empty emoji="📸" title="还没有吃过的记录" hint="去过一家店之后，记下吃了什么、拍几张照片" />
+            <Empty emoji="📸" title="还没有吃过的记录" />
           )
         ) : tab === 'visited' ? (
           <View style={{ gap: 14 }}>
@@ -156,16 +156,6 @@ export default function Eats() {
           </View>
         )}
       </View>
-      {tab === 'want' && shown.length > 1 && (
-        <Animated.View entering={enter(shown.length)}>
-          <PressScale onPress={() => router.push('/roulette')} style={styles.rouletteHint}>
-            <Text style={{ fontFamily: fonts.display, fontSize: 22, color: colors.ink }}>Can&apos;t decide?</Text>
-            <Txt v="bodyStrong" color={colors.skyInk}>
-              转一下 🎲
-            </Txt>
-          </PressScale>
-        </Animated.View>
-      )}
     </Screen>
   );
 }
@@ -174,7 +164,6 @@ const styles = StyleSheet.create({
   bigCard: { backgroundColor: colors.surface, borderRadius: radius.lg, overflow: 'hidden', borderCurve: 'continuous', ...shadow },
   coverWrap: { height: 190, backgroundColor: colors.surfaceAlt },
   badge: { position: 'absolute', left: 12, top: 12, backgroundColor: 'rgba(31,26,23,0.6)', borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4 },
-  wantCard: { backgroundColor: sectionTheme.eats.bg, borderRadius: radius.lg, padding: 16, minHeight: 150, justifyContent: 'space-between', borderCurve: 'continuous' },
+  wantCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 16, minHeight: 140, justifyContent: 'space-between', borderCurve: 'continuous', borderWidth: StyleSheet.hairlineWidth, borderColor: colors.line, ...shadow },
   xhs: { backgroundColor: '#FF2442', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
-  rouletteHint: { marginTop: 16, backgroundColor: colors.sky, borderRadius: radius.lg, padding: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
 });

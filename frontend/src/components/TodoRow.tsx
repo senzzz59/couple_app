@@ -93,7 +93,7 @@ export function TodoRow({ todo, onPress, compact }: { todo: Todo; onPress?: () =
           <Row gap={8}>
             {due && (
               <Txt v="caption" color={due.overdue ? colors.accent : colors.muted}>
-                ⏰ {due.text}
+                {due.text}
               </Txt>
             )}
             {todo.category && <Txt v="caption">#{todo.category}</Txt>}

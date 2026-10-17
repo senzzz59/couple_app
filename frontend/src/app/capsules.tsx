@@ -78,7 +78,7 @@ export default function Capsules() {
     <Screen
       back
       title="时光胶囊"
-      subtitle="LETTERS TO OUR FUTURE"
+     
       onRefresh={async () => invalidate('capsules')}
       right={<IconButton icon={Plus} onPress={() => router.push('/capsule/new')} />}>
       <QueryFallback q={list} count={2} />
@@ -86,7 +86,7 @@ export default function Capsules() {
         <Empty
           emoji="💌"
           title="给未来的你们写一封信"
-          hint="选一个日子封存起来，在那天之前谁都打不开，包括你自己"
+          hint="封存后，到那天才能打开"
           action={<Button title="写一封" onPress={() => router.push('/capsule/new')} />}
         />
       )}

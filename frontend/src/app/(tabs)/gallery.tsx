@@ -53,10 +53,10 @@ function SmartAlbum({ icon: Icon, label, count, cover, onPress }: { icon: typeof
         </View>
       </View>
       <View style={{ paddingHorizontal: 2 }}>
-        <Txt v="bodyStrong" style={{ fontSize: 14 }}>
+        <Txt v="bodyStrong" style={{ fontSize: 15 }}>
           {label}
         </Txt>
-        <Txt v="caption">{count}</Txt>
+        <Txt v="secondary">{count}</Txt>
       </View>
     </PressScale>
   );
@@ -114,7 +114,6 @@ export default function Gallery() {
   const [limit, setLimit] = useState(PAGE);
   const [picker, setPicker] = useState(false);
   const list = useQuery<GalleryItem[]>(`/api/gallery?limit=${limit}${filterQuery(filter)}`);
-  const summary = useQuery<GallerySummary>('/api/gallery/summary');
   const items = list.data ?? [];
   const sel = useGallerySelection(items, { onPickAlbum: () => setPicker(true) });
 
@@ -131,13 +130,11 @@ export default function Gallery() {
     </Row>
   );
 
-  const total = summary.data?.total;
   return (
     <View style={{ flex: 1 }}>
       <Screen
         tab
         title={sel.selecting ? (sel.selected.size ? `已选 ${sel.selected.size} 项` : '选择照片') : '相册'}
-        subtitle={sel.selecting ? '长按或点按选择' : total ? `${total} 张照片和视频 · 两个人共享` : 'OUR SHARED ALBUM'}
         right={right}
         onRefresh={async () => {
           await Promise.all([invalidate('gallery'), invalidate('albums')]);
@@ -162,17 +159,17 @@ export default function Gallery() {
               {!sel.selecting && (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -16, marginBottom: 14 }} contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}>
                   <Chip label="全部" active={filter === 'all'} onPress={() => setFilter('all')} />
-                  <Chip label="❤️ 收藏" active={filter === 'favorite'} onPress={() => setFilter('favorite')} />
-                  <Chip label="▶︎ 视频" active={filter === 'video'} onPress={() => setFilter('video')} />
-                  <Chip label="◎ Live 图" active={filter === 'live'} onPress={() => setFilter('live')} />
+                  <Chip label="收藏" active={filter === 'favorite'} onPress={() => setFilter('favorite')} />
+                  <Chip label="视频" active={filter === 'video'} onPress={() => setFilter('video')} />
+                  <Chip label="Live 图" active={filter === 'live'} onPress={() => setFilter('live')} />
                 </ScrollView>
               )}
               <QueryFallback q={list} kind="grid" count={6} />
               {list.data && items.length === 0 ? (
                 filter === 'all' ? (
-                  <Empty emoji="🖼️" title="还没有照片" hint="你们俩上传的照片和视频都会放在这里，原图也会保存，随时可以下载" action={<Button title="上传照片 / 视频" icon={ImagePlus} onPress={upload} />} />
+                  <Empty emoji="🖼️" title="还没有照片" action={<Button title="上传照片和视频" icon={ImagePlus} onPress={upload} />} />
                 ) : (
-                  <Empty emoji={filter === 'favorite' ? '❤️' : '🎞️'} title={filter === 'favorite' ? '还没有收藏' : filter === 'video' ? '还没有视频' : '还没有 Live 图'} hint={filter === 'favorite' ? '打开照片点「收藏」，喜欢的都会在这里' : undefined} />
+                  <Empty emoji={filter === 'favorite' ? '❤️' : '🎞️'} title={filter === 'favorite' ? '还没有收藏' : filter === 'video' ? '还没有视频' : '还没有 Live 图'} />
                 )
               ) : (
                 <GalleryGrid

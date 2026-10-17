@@ -16,7 +16,7 @@ import { undoable, usePendingDeletes } from '@/lib/undo';
 import { useCouple } from '@/lib/session';
 import { invalidate, setQueryData, useQuery } from '@/lib/store';
 import type { Todo } from '@/lib/types';
-import { colors, radius, sectionTheme, shadow, springs } from '@/theme';
+import { colors, radius, shadow, springs } from '@/theme';
 
 function Progress({ done, total }: { done: number; total: number }) {
   const [w, setW] = useState(0);
@@ -28,11 +28,9 @@ function Progress({ done, total }: { done: number; total: number }) {
   return (
     <View style={styles.progressCard}>
       <Row style={{ justifyContent: 'space-between', marginBottom: 10 }}>
-        <Txt v="bodyStrong" color={sectionTheme.todos.ink}>
-          完成 {done} / {total}
-        </Txt>
-        <Txt v="caption" color={sectionTheme.todos.ink}>
-          {total && done === total ? '全部搞定 🎉' : `还剩 ${total - done} 件`}
+        <Txt v="bodyStrong">{total && done === total ? '全部完成' : '进度'}</Txt>
+        <Txt v="secondary" style={{ fontVariant: ['tabular-nums'] }}>
+          {done}/{total}
         </Txt>
       </Row>
       <View style={styles.track} onLayout={(e) => setW(e.nativeEvent.layout.width)}>
@@ -105,7 +103,7 @@ export default function Todos() {
   };
 
   return (
-    <Screen tab title="清单" subtitle="THINGS TO DO TOGETHER" onRefresh={async () => invalidate('todos')}>
+    <Screen tab title="清单" onRefresh={async () => invalidate('todos')}>
       <Animated.View entering={enter(0)} style={styles.addBar}>
         <TextInput value={title} onChangeText={setTitle} placeholder="加一件要一起做的事…" placeholderTextColor={colors.faint} style={styles.addInput} onSubmitEditing={add} returnKeyType="done" blurOnSubmit={false} />
         {title.trim() ? (
@@ -140,7 +138,7 @@ export default function Todos() {
       <View style={{ marginTop: 14 }}>
         <QueryFallback q={todos} kind="row" count={4} />
         {!todos.data ? null : list.length === 0 ? (
-          <Empty emoji={tab === 'open' ? '🌿' : '📝'} title={tab === 'open' ? '没有待办啦' : '还没有完成的事'} hint={tab === 'open' ? '去约会吧，或者在上面加一件新的事' : undefined} />
+          <Empty emoji={tab === 'open' ? '🌿' : '📝'} title={tab === 'open' ? '没有待办啦' : '还没有完成的事'} />
         ) : (
           <View style={styles.listCard}>
             {list.map((t, i) => (
@@ -151,11 +149,6 @@ export default function Todos() {
             ))}
           </View>
         )}
-        {list.length > 0 && (
-          <Txt v="caption" style={{ textAlign: 'center', marginTop: 12, color: colors.faint }}>
-            左滑删除 · 点击编辑
-          </Txt>
-        )}
       </View>
     </Screen>
   );
@@ -164,9 +157,9 @@ export default function Todos() {
 const styles = StyleSheet.create({
   addBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: radius.pill, paddingLeft: 18, paddingRight: 6, height: 52, marginBottom: 12, ...shadow },
   addInput: { flex: 1, minWidth: 0, fontSize: 16, color: colors.ink, height: 52 },
-  progressCard: { backgroundColor: sectionTheme.todos.bg, borderRadius: radius.lg, padding: 16, marginBottom: 14 },
-  track: { height: 10, borderRadius: 5, backgroundColor: 'rgba(255,255,255,0.6)', overflow: 'hidden' },
-  fill: { height: 10, borderRadius: 5, backgroundColor: colors.accent },
+  progressCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 16, marginBottom: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.line },
+  track: { height: 6, borderRadius: 3, backgroundColor: colors.surfaceAlt, overflow: 'hidden' },
+  fill: { height: 6, borderRadius: 3, backgroundColor: colors.accent },
   listCard: { backgroundColor: colors.surface, borderRadius: radius.lg, overflow: 'hidden', ...shadow },
   sep: { height: StyleSheet.hairlineWidth, backgroundColor: colors.line, marginLeft: 52 },
   delete: { width: 76, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },

@@ -39,7 +39,7 @@ function AnniversaryForm({ id, initial: a }: { id?: string; initial?: Anniversar
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
-    if (!title.trim() || !date) return toast('名字和日期都要填哦', '✏️');
+    if (!title.trim() || !date) return toast('名字和日期都要填');
     setSaving(true);
     const body = { title: title.trim(), emoji, kind, date, lunar, yearly, remind };
     try {
@@ -82,7 +82,6 @@ function AnniversaryForm({ id, initial: a }: { id?: string; initial?: Anniversar
         <Row style={{ justifyContent: 'space-between', paddingVertical: 12 }}>
           <View>
             <Txt v="body">按农历过</Txt>
-            <Txt v="caption">长辈的生日、七夕这类</Txt>
           </View>
           <Switch value={lunar} onValueChange={setLunar} trackColor={{ true: colors.lilacInk }} />
         </Row>
@@ -97,7 +96,7 @@ function AnniversaryForm({ id, initial: a }: { id?: string; initial?: Anniversar
         </Txt>
         <Row gap={8} style={{ flexWrap: 'wrap' }}>
           {REMINDS.map((r) => (
-            <Chip key={r.d} label={r.label} active={remind.includes(r.d)} color={colors.lilacInk} onPress={() => setRemind(remind.includes(r.d) ? remind.filter((x) => x !== r.d) : [...remind, r.d].sort())} />
+            <Chip key={r.d} label={r.label} active={remind.includes(r.d)} onPress={() => setRemind(remind.includes(r.d) ? remind.filter((x) => x !== r.d) : [...remind, r.d].sort())} />
           ))}
         </Row>
       </View>
