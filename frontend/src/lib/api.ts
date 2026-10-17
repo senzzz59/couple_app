@@ -103,23 +103,7 @@ export const api = {
 
 type AuthResult = { token: string; user: import('./types').User };
 
-/** 上传本地图片，返回服务器上的文件名 */
-export async function uploadImages(uris: string[]): Promise<string[]> {
-  if (!uris.length) return [];
-  const form = new FormData();
-  for (const [i, uri] of uris.entries()) {
-    if (Platform.OS === 'web') {
-      const blob = await (await fetch(uri)).blob();
-      form.append('file', blob, `photo-${i}.jpg`);
-    } else {
-      form.append('file', { uri, name: `photo-${i}.jpg`, type: 'image/jpeg' } as unknown as Blob);
-    }
-  }
-  const res = await fetch(`${baseUrl}/api/files`, { method: 'POST', body: form, headers: { Authorization: `Bearer ${token}` } });
-  const data = await res.json().catch(() => null);
-  if (!res.ok) throw new ApiError(data?.message ?? '图片上传失败', res.status);
-  return data.files;
-}
+export { uploadImages } from './upload';
 
 export const fileUrl = (name: string | null | undefined, thumb = false) =>
   name ? `${baseUrl}/files/${thumb ? 'thumb/' : ''}${name}` : undefined;
