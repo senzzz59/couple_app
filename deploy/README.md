@@ -10,7 +10,7 @@
 
 ## 1. 服务器准备
 
-服务器需要 Git、Node.js 24+、npm、Docker Compose v2、宝塔 Nginx。Node 如果由宝塔安装，先确认 `node -v`、`npm -v` 在终端可用。
+服务器需要 Git、Node.js 24+、npm、Docker Compose（优先 v2 插件 `docker compose`，也兼容独立的 `docker-compose`）、宝塔 Nginx。部署前用 `docker compose version` 或 `docker-compose version` 确认可用；都没有时部署会在构建和迁移前停止。Node 如果由宝塔安装，先确认 `node -v`、`npm -v` 在终端可用。
 
 ```sh
 mkdir -p /www/couple-app/shared
