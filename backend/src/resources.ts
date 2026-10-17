@@ -65,6 +65,7 @@ const resources: Resource[] = [
       amapUrl: opt(z.string().max(2000).refine(validAmapUrl, '请使用高德地图的地点分享链接')),
       note: opt(z.string().max(2000)),
       cover: opt(file),
+      amapPhoto: opt(z.string().max(600).refine((u) => u === '' || /^https:\/\/[^\s"'<>]+$/.test(u), '图片地址不对')),
     }),
     filters: { status: s.places.status },
     order: [desc(s.places.updatedAt)],

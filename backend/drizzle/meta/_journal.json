@@ -71,6 +71,13 @@
       "when": 1792258618975,
       "tag": "0009_skinny_nebula",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1792264091608,
+      "tag": "0010_omniscient_mikhail_rasputin",
+      "breakpoints": true
     }
   ]
 }

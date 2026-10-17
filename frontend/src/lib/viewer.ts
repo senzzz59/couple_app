@@ -81,7 +81,8 @@ export async function saveEntry(e: ViewerEntry): Promise<'shared' | 'downloaded'
     targets.push({ url, name: fileNameOf(e, url, 'image') });
   }
   if ((e.kind === 'video' || e.kind === 'live') && e.video) {
-    const url = mediaUrl(e.video)!;
+    // 视频下载原片（如果有）：转码后的版本画质会低一些
+    const url = e.kind === 'video' && e.original ? mediaUrl(e.original, 'orig')! : mediaUrl(e.video)!;
     targets.push({ url, name: fileNameOf(e, url, 'video') });
   }
   if (!targets.length) return 'cancelled';

@@ -1,0 +1,1 @@
+ALTER TABLE `places` ADD `amap_photo` varchar(600);

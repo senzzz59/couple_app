@@ -75,6 +75,8 @@ export const places = mysqlTable(
     amapUrl: varchar('amap_url', { length: 2000 }),
     note: text('note'),
     cover: varchar('cover', { length: 100 }),
+    /** 高德上这家店的第一张照片（卡片和预览用）；空字符串表示查过但没有 */
+    amapPhoto: varchar('amap_photo', { length: 600 }),
     createdBy: userRef('created_by'),
     ...timestamps,
   },
