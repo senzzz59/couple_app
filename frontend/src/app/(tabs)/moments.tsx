@@ -1,24 +1,30 @@
+import * as Clipboard from 'expo-clipboard';
+import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { Heart, MapPin, MessageCircle, MoreHorizontal, Plus, Send, Trash2 } from 'lucide-react-native';
+import { Copy, FolderPlus, Heart, MapPin, MessageCircle, MoreHorizontal, Plus, Reply, Trash2 } from 'lucide-react-native';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { FadeIn, FadeOut, LinearTransition, useAnimatedStyle, useSharedValue, withSequence, withSpring, withTiming } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
-import { PhotoGrid } from '@/components/Photos';
+import { CommentComposer } from '@/components/CommentComposer';
+import { MediaGrid } from '@/components/Media';
+import { toast } from '@/components/motion';
 import { Screen } from '@/components/Screen';
 import { Sheet } from '@/components/Sheet';
 import { QueryFallback, SkeletonList } from '@/components/Skeleton';
-import { toast } from '@/components/motion';
+import { Sticker } from '@/components/Sticker';
 import { Avatar, Button, Empty, enter, IconButton, PressScale, Row, Txt } from '@/components/ui';
 import { api } from '@/lib/api';
 import { timeAgo } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
-import { undoable, usePendingDeletes } from '@/lib/undo';
+import { mediaUrl } from '@/lib/media';
 import { useCouple } from '@/lib/session';
 import { invalidate, setQueryData, useQuery } from '@/lib/store';
-import type { Moment, Place } from '@/lib/types';
+import type { Comment, MediaItem, Moment, Place } from '@/lib/types';
+import { undoable, usePendingDeletes } from '@/lib/undo';
+import { openViewer } from '@/lib/viewer';
 import { colors, radius, shadow, springs } from '@/theme';
 
 const KEY = '/api/moments';
@@ -30,16 +36,92 @@ async function toggleLike(m: Moment, me: string, key: string) {
   invalidate('moments');
 }
 
+const mediaOf = (m: Moment): MediaItem[] => (m.media?.length ? m.media : m.photos.map((image) => ({ kind: 'image' as const, image })));
+
+type MenuItem = { icon: typeof Trash2; label: string; hint?: string; danger?: boolean; onPress: () => void };
+
+/** 底部操作菜单 */
+function ActionSheet({ visible, onClose, items, title }: { visible: boolean; onClose: () => void; items: MenuItem[]; title?: string }) {
+  return (
+    <Sheet visible={visible} onClose={onClose}>
+      {title && (
+        <Txt v="caption" numberOfLines={2} style={{ textAlign: 'center', marginTop: -4 }}>
+          {title}
+        </Txt>
+      )}
+      <View style={styles.menu}>
+        {items.map((it, i) => (
+          <PressScale
+            key={it.label}
+            onPress={() => {
+              onClose();
+              it.onPress();
+            }}
+            style={[styles.menuItem, i > 0 && styles.menuSep]}>
+            <it.icon size={20} color={it.danger ? colors.pinkInk : colors.inkSoft} />
+            <View style={{ flex: 1 }}>
+              <Txt v="bodyStrong" color={it.danger ? colors.pinkInk : colors.ink}>
+                {it.label}
+              </Txt>
+              {it.hint && <Txt v="caption">{it.hint}</Txt>}
+            </View>
+          </PressScale>
+        ))}
+      </View>
+      <Button title="取消" variant="secondary" onPress={onClose} />
+    </Sheet>
+  );
+}
+
+/** 一条评论：「森：好美」「雨 回复 森：下次一起去」，表情包 / 图片显示在下面 */
+function CommentLine({ c, byId, onPress, onLongPress }: { c: Comment; byId: Map<string, Comment>; onPress: () => void; onLongPress: () => void }) {
+  const { userName } = useCouple();
+  const target = c.replyToId ? byId.get(c.replyToId) : undefined;
+  return (
+    <Animated.View entering={FadeIn} exiting={FadeOut.duration(150)} layout={LinearTransition.springify().damping(20)}>
+      <Pressable onPress={onPress} onLongPress={onLongPress} delayLongPress={350} style={({ pressed }) => [styles.comment, pressed && { backgroundColor: 'rgba(75,46,53,0.06)' }]}>
+        <Text style={styles.commentText}>
+          <Text style={styles.commentName}>{userName(c.createdBy)}</Text>
+          {target && (
+            <>
+              <Text style={{ color: colors.muted }}> 回复 </Text>
+              <Text style={styles.commentName}>{userName(target.createdBy)}</Text>
+            </>
+          )}
+          <Text style={styles.commentName}>：</Text>
+          {c.content}
+        </Text>
+        {c.sticker && (
+          <View style={{ marginTop: 4 }}>
+            <Sticker id={c.sticker} size={76} />
+          </View>
+        )}
+        {c.image && (
+          <Pressable onPress={() => openViewer([{ kind: 'image', image: c.image }], 0, { mode: 'plain' })} style={{ marginTop: 6, alignSelf: 'flex-start' }}>
+            <Image source={mediaUrl(c.image, 'thumb')} style={styles.commentImage} contentFit="cover" transition={150} />
+          </Pressable>
+        )}
+      </Pressable>
+    </Animated.View>
+  );
+}
+
 function MomentCard({ m, i, queryKey }: { m: Moment; i: number; queryKey: string }) {
   const { me, userById, userName } = useCouple();
   const places = useQuery<Place[]>('/api/places');
+  const hidden = usePendingDeletes();
   const { width } = useWindowDimensions();
   const [commenting, setCommenting] = useState(false);
+  const [replyTo, setReplyTo] = useState<Comment | null>(null);
   const [menu, setMenu] = useState(false);
-  const [text, setText] = useState('');
+  const [commentMenu, setCommentMenu] = useState<Comment | null>(null);
   const author = userById(m.createdBy);
+  const mine = m.createdBy === me?.id;
   const liked = !!me && m.likedBy.includes(me.id);
   const place = places.data?.find((p) => p.id === m.placeId);
+  const media = mediaOf(m);
+  const comments = m.comments.filter((c) => !hidden.has(c.id));
+  const byId = new Map(m.comments.map((c) => [c.id, c]));
 
   // 双击出现大爱心
   const big = useSharedValue(0);
@@ -61,23 +143,17 @@ function MomentCard({ m, i, queryKey }: { m: Moment; i: number; queryKey: string
     .numberOfTaps(2)
     .onEnd(() => scheduleOnRN(like, true));
 
-  const sendComment = async () => {
-    const content = text.trim();
-    if (!content) return;
-    setText('');
-    setCommenting(false);
-    haptic.success();
-    await api.post('/api/comments', { momentId: m.id, content }).catch((e) => toast(e.message, '⚠️'));
-    invalidate('moments');
+  const startReply = (c: Comment | null) => {
+    haptic.tick();
+    setReplyTo(c);
+    setCommenting(true);
   };
 
-  const remove = () => {
-    setMenu(false);
-    if (m.createdBy !== me?.id) return;
+  const removeMoment = () => {
     let index = 0;
     undoable({
       id: m.id,
-      message: '删掉了这条动态',
+      message: mine ? '删掉了这条动态' : `删掉了${author?.name ?? 'TA'}的动态`,
       apply: () =>
         setQueryData<Moment[]>(queryKey, (prev = []) => {
           index = Math.max(0, prev.findIndex((x) => x.id === m.id));
@@ -91,12 +167,49 @@ function MomentCard({ m, i, queryKey }: { m: Moment; i: number; queryKey: string
     });
   };
 
-  const contentWidth = width - 32 - 36;
+  const removeComment = (c: Comment) =>
+    undoable({
+      id: c.id,
+      message: '删掉了一条评论',
+      apply: () => {},
+      revert: () => {},
+      commit: async () => {
+        await api.del(`/api/comments/${c.id}`);
+        await invalidate('moments');
+      },
+    });
+
+  const saveToGallery = async () => {
+    try {
+      await api.post('/api/gallery/import', { media, takenAt: m.createdAt });
+      haptic.success();
+      toast(`${media.length} 项已存进共享相册`, '🖼️');
+      invalidate('gallery');
+    } catch (e) {
+      toast((e as Error).message, '⚠️');
+    }
+  };
+
+  const contentWidth = Math.min(width, 720) - 32 - 36;
+  const momentMenu: MenuItem[] = [
+    ...(media.length ? [{ icon: FolderPlus, label: '存进共享相册', hint: `${media.length} 张照片 / 视频`, onPress: saveToGallery }] : []),
+    ...(m.content ? [{ icon: Copy, label: '复制文字', onPress: () => Clipboard.setStringAsync(m.content ?? '').then(() => toast('已复制', '📋')) }] : []),
+    { icon: Trash2, label: '删除这条动态', hint: mine ? '删除后几秒内还可以撤销' : `这是${author?.name ?? 'TA'}发的，删除后两个人都看不到了`, danger: true, onPress: removeMoment },
+  ];
+  const cm = commentMenu;
+  const commentItems: MenuItem[] = cm
+    ? [
+        ...(cm.createdBy !== me?.id ? [{ icon: Reply, label: `回复 ${userName(cm.createdBy)}`, onPress: () => startReply(cm) }] : []),
+        ...(cm.content ? [{ icon: Copy, label: '复制', onPress: () => Clipboard.setStringAsync(cm.content).then(() => toast('已复制', '📋')) }] : []),
+        { icon: Trash2, label: '删除评论', danger: true, onPress: () => removeComment(cm) },
+      ]
+    : [];
+
   return (
     <Animated.View entering={enter(i)} exiting={FadeOut} layout={LinearTransition.springify().damping(18)} style={styles.card}>
       <Row style={{ justifyContent: 'space-between' }}>
         <Row gap={10}>
-          <Avatar user={author} size={36} />
+          <Avatar user={author} size={38} />
           <View>
             <Txt v="bodyStrong">
               {author?.name ?? ''} {m.mood ?? ''}
@@ -104,17 +217,15 @@ function MomentCard({ m, i, queryKey }: { m: Moment; i: number; queryKey: string
             <Txt v="caption">{timeAgo(m.createdAt)}</Txt>
           </View>
         </Row>
-        {m.createdBy === me?.id && (
-          <Pressable hitSlop={10} accessibilityLabel="更多操作" onPress={() => (haptic.tick(), setMenu(true))}>
-            <MoreHorizontal size={20} color={colors.muted} />
-          </Pressable>
-        )}
+        <Pressable hitSlop={10} accessibilityLabel="更多操作" onPress={() => (haptic.tick(), setMenu(true))} style={styles.more}>
+          <MoreHorizontal size={20} color={colors.muted} />
+        </Pressable>
       </Row>
 
       <GestureDetector gesture={doubleTap}>
         <View collapsable={false} style={{ marginTop: 12, gap: 10 }}>
           {!!m.content && <Txt v="body">{m.content}</Txt>}
-          <PhotoGrid photos={m.photos} width={contentWidth} />
+          <MediaGrid items={media} width={contentWidth} takenAt={m.createdAt} />
           <Animated.View pointerEvents="none" style={[styles.bigHeart, bigStyle]}>
             <Text style={{ fontSize: 90 }}>❤️</Text>
           </Animated.View>
@@ -131,62 +242,59 @@ function MomentCard({ m, i, queryKey }: { m: Moment; i: number; queryKey: string
       )}
 
       <Row gap={18} style={{ marginTop: 12 }}>
-        <Pressable hitSlop={8} onPress={() => like()}>
+        <Pressable hitSlop={8} onPress={() => like()} accessibilityLabel={liked ? '取消点赞' : '点赞'}>
           <Row gap={6}>
             <Animated.View style={heartStyle}>
               <Heart size={22} color={liked ? colors.accent : colors.inkSoft} fill={liked ? colors.accent : 'transparent'} strokeWidth={2} />
             </Animated.View>
-            {m.likedBy.length > 0 && (
-              <Txt v="caption">{m.likedBy.map((u) => userName(u)).join('、')}</Txt>
-            )}
+            {m.likedBy.length > 0 && <Txt v="caption">{m.likedBy.map((u) => userName(u)).join('、')}</Txt>}
           </Row>
         </Pressable>
-        <Pressable hitSlop={8} onPress={() => setCommenting((c) => !c)}>
-          <MessageCircle size={21} color={colors.inkSoft} strokeWidth={2} />
+        <Pressable hitSlop={8} onPress={() => (commenting && !replyTo ? setCommenting(false) : startReply(null))} accessibilityLabel="评论">
+          <Row gap={5}>
+            <MessageCircle size={21} color={commenting ? colors.accentStrong : colors.inkSoft} strokeWidth={2} />
+            {comments.length > 0 && <Txt v="caption">{comments.length}</Txt>}
+          </Row>
         </Pressable>
       </Row>
 
-      {m.comments.length > 0 && (
+      {comments.length > 0 && (
         <View style={styles.comments}>
-          {m.comments.map((c) => (
-            <Animated.View key={c.id} entering={FadeIn}>
-              <Txt v="body" style={{ fontSize: 14, lineHeight: 20 }}>
-                <Txt v="bodyStrong" style={{ fontSize: 14 }}>
-                  {userName(c.createdBy)}：
-                </Txt>
-                {c.content}
-              </Txt>
-            </Animated.View>
+          {comments.map((c) => (
+            <CommentLine
+              key={c.id}
+              c={c}
+              byId={byId}
+              // 点别人的评论 = 回复 TA；点自己的 = 操作菜单（和微信一样）
+              onPress={() => (c.createdBy === me?.id ? setCommentMenu(c) : startReply(c))}
+              onLongPress={() => (haptic.medium(), setCommentMenu(c))}
+            />
           ))}
         </View>
       )}
-      <Sheet visible={menu} onClose={() => setMenu(false)}>
-        <PressScale onPress={remove} style={styles.menuItem}>
-          <Trash2 size={20} color={colors.pinkInk} />
-          <View style={{ flex: 1 }}>
-            <Txt v="bodyStrong" color={colors.pinkInk}>
-              删除这条动态
-            </Txt>
-            <Txt v="caption">删除后几秒内还可以撤销</Txt>
-          </View>
-        </PressScale>
-        <Button title="取消" variant="secondary" onPress={() => setMenu(false)} />
-      </Sheet>
+
       {commenting && (
-        <Animated.View entering={FadeIn.duration(150)}>
-          <Row style={styles.commentBox}>
-            <TextInput autoFocus value={text} onChangeText={setText} placeholder="说点什么…" placeholderTextColor={colors.faint} style={styles.commentInput} onSubmitEditing={sendComment} returnKeyType="send" maxLength={500} />
-            <IconButton icon={Send} size={34} bg={colors.ink} color={colors.white} onPress={sendComment} />
-          </Row>
-        </Animated.View>
+        <CommentComposer
+          key={replyTo?.id ?? 'root'}
+          momentId={m.id}
+          replyTo={replyTo ? { id: replyTo.id, name: userName(replyTo.createdBy) } : null}
+          onCancelReply={() => setReplyTo(null)}
+          onSent={() => {
+            setCommenting(false);
+            setReplyTo(null);
+          }}
+        />
       )}
+
+      <ActionSheet visible={menu} onClose={() => setMenu(false)} items={momentMenu} />
+      <ActionSheet visible={!!commentMenu} onClose={() => setCommentMenu(null)} items={commentItems} title={cm?.content || (cm?.sticker ? '[表情]' : cm?.image ? '[图片]' : undefined)} />
     </Animated.View>
   );
 }
 
 export default function Moments() {
   return (
-    <Screen tab title="动态" subtitle="OUR LITTLE MOMENTS" onRefresh={async () => invalidate('moments')} right={<IconButton icon={Plus} onPress={() => router.push('/moment/new')} />}>
+    <Screen tab title="动态" subtitle="OUR LITTLE MOMENTS" onRefresh={async () => invalidate('moments')} right={<IconButton icon={Plus} onPress={() => router.push('/moment/new')} label="发动态" />}>
       <MomentPage queryKey={KEY} seen={[]} />
     </Screen>
   );
@@ -201,26 +309,39 @@ function MomentPage({ queryKey, seen }: { queryKey: string; seen: string[] }) {
   return (
     <View style={{ gap: 14 }}>
       {queryKey === KEY && moments.data && rows.length === 0 && (
-        <Empty emoji="📷" title="发第一条动态吧" hint="只有你们两个人能看到，想发什么就发什么" action={<Button title="写点什么" onPress={() => router.push('/moment/new')} />} />
+        <Empty emoji="📷" title="发第一条动态吧" hint="照片、视频、Live 图都可以，只有你们两个人能看到" action={<Button title="写点什么" onPress={() => router.push('/moment/new')} />} />
       )}
-      {rows.filter((m) => !seen.includes(m.id) && !hidden.has(m.id)).map((m, i) => (
-        <MomentCard key={m.id} m={m} i={i} queryKey={queryKey} />
-      ))}
+      {rows
+        .filter((m) => !seen.includes(m.id) && !hidden.has(m.id))
+        .map((m, i) => (
+          <MomentCard key={m.id} m={m} i={i} queryKey={queryKey} />
+        ))}
       {queryKey === KEY ? <QueryFallback q={moments} count={2} /> : !moments.data && !moments.error && <SkeletonList count={1} />}
       {moments.error && (moments.data || queryKey !== KEY) && <Button title="加载失败，点此重试" variant="ghost" onPress={() => void moments.refresh()} />}
-      {next ? <MomentPage queryKey={next} seen={[...seen, ...rows.map((m) => m.id)]} /> : last && rows.length === 30 ? (
+      {next ? (
+        <MomentPage queryKey={next} seen={[...seen, ...rows.map((m) => m.id)]} />
+      ) : last && rows.length === 30 ? (
         <Button title="查看更早的动态" variant="ghost" onPress={() => setNext(`${KEY}?before=${encodeURIComponent(`${last.createdAt}|${last.id}`)}`)} />
-      ) : moments.data && (rows.length > 0 || queryKey !== KEY) && !moments.error ? <Txt v="caption" style={{ textAlign: 'center' }}>已经看到第一条动态了</Txt> : null}
+      ) : moments.data && (rows.length > 0 || queryKey !== KEY) && !moments.error ? (
+        <Txt v="caption" style={{ textAlign: 'center' }}>
+          已经看到第一条动态了
+        </Txt>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 18, borderCurve: 'continuous', ...shadow },
+  more: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   bigHeart: { position: 'absolute', alignSelf: 'center', top: '30%' },
   place: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', backgroundColor: colors.butter, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4, marginTop: 10 },
-  comments: { marginTop: 12, backgroundColor: colors.surfaceAlt, borderRadius: radius.sm, padding: 12, gap: 6 },
-  commentBox: { marginTop: 10, backgroundColor: colors.surfaceAlt, borderRadius: radius.pill, paddingLeft: 14, paddingRight: 4, height: 42 },
-  menuItem: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: colors.surface, borderRadius: radius.lg, padding: 16 },
-  commentInput: { flex: 1, fontSize: 15, color: colors.ink, height: 42 },
+  comments: { marginTop: 12, backgroundColor: colors.surfaceAlt, borderRadius: radius.sm, paddingVertical: 6, paddingHorizontal: 4 },
+  comment: { paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8 },
+  commentText: { fontSize: 14, lineHeight: 21, color: colors.ink },
+  commentName: { color: colors.pinkInk, fontWeight: '700' },
+  commentImage: { width: 110, height: 110, borderRadius: 10, backgroundColor: colors.surface },
+  menu: { backgroundColor: colors.surface, borderRadius: radius.lg, overflow: 'hidden' },
+  menuItem: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16 },
+  menuSep: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line },
 });

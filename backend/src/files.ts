@@ -79,7 +79,7 @@ export async function fileRoutes(app: FastifyInstance) {
           await sharp(buf, { failOn: 'none', animated: false }).rotate().resize({ width: 600, withoutEnlargement: true }).jpeg({ quality: 78 }).toFile(path.join(THUMB_DIR, name));
           written.push(path.join(THUMB_DIR, name));
         } catch (e) {
-          req.log.warn(e, 'image processing failed');
+          req.log.warn({ err: e, mimetype: part.mimetype, filename: part.filename }, 'image processing failed');
           return reply.code(400).send({ message: `无法识别的图片格式：${part.filename}` });
         }
 

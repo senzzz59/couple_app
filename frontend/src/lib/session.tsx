@@ -88,7 +88,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (ws?.readyState === 1) ws.send(JSON.stringify({ type: 'presence', active: s === 'active' }));
       if (s !== 'active') return;
       registerPush().catch(() => {});
-      for (const c of ['me', 'space', 'places', 'visits', 'anniversaries', 'moments', 'todos', 'answers', 'capsules']) invalidate(c);
+      for (const c of ['me', 'space', 'places', 'visits', 'anniversaries', 'moments', 'todos', 'answers', 'capsules', 'gallery', 'albums', 'stickers']) invalidate(c);
       if (ws && ws.readyState > 1) {
         clearTimeout(timer);
         connect();

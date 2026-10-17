@@ -30,6 +30,9 @@ const LEVELS = [
   { edge: 2400, quality: 0.86 },
   { edge: 1600, quality: 0.72 },
 ];
+// HEIC 转 JPEG：保留原尺寸
+const HEIC_LEVEL = { edge: 100000, quality: 0.92 };
+const isHeic = (blob: Blob, name?: string) => /image\/hei[cf]/i.test(blob.type) || /\.hei[cf]$/i.test(name ?? '');
 const COMPRESS_OVER = 900 * 1024;
 
 function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number) {
@@ -76,9 +79,9 @@ export async function hasEmbeddedVideo(blob: Blob) {
 }
 
 /** 浏览器里压缩图片；不是图片、GIF、或者压完反而更大时原样返回 */
-export async function compressImage(blob: Blob, level = 0): Promise<Blob> {
-  const { edge, quality } = LEVELS[Math.min(level, LEVELS.length - 1)];
-  if (!blob.type.startsWith('image/') || blob.type === 'image/gif' || blob.type === 'image/svg+xml') return blob;
+export async function compressImage(blob: Blob, level: number | 'heic' = 0): Promise<Blob> {
+  const { edge, quality } = level === 'heic' ? HEIC_LEVEL : LEVELS[Math.min(level, LEVELS.length - 1)];
+  if (level !== 'heic' && (!blob.type.startsWith('image/') || blob.type === 'image/gif' || blob.type === 'image/svg+xml')) return blob;
   const bmp = await loadBitmap(blob);
   if (!bmp || !bmp.w || !bmp.h) return blob;
   const scale = Math.min(1, edge / Math.max(bmp.w, bmp.h));
@@ -95,6 +98,7 @@ export async function compressImage(blob: Blob, level = 0): Promise<Blob> {
   ctx.fillRect(0, 0, w, h);
   bmp.draw(ctx, w, h);
   const out = await canvasToBlob(canvas, 'image/jpeg', quality);
+  if (level === 'heic') return out ?? blob;
   return out && out.size < blob.size ? out : blob;
 }
 
@@ -105,13 +109,35 @@ async function webBlob(input: UploadInput, original: boolean, level: number): Pr
   } catch {
     throw new ApiError('读取不到这个文件了，请重新选择', 0);
   }
-  if (input.mime && !blob.type) blob = new Blob([blob], { type: input.mime });
-  const keep = original || (await hasEmbeddedVideo(blob));
-  const out = keep ? blob : await compressImage(blob, level);
+  // 浏览器常常不给 .MOV / .HEIC 填类型：按扩展名补上，服务器才知道这是视频
+  const guessed = input.mime || MIME_BY_EXT[(input.name ?? '').split('.').pop()?.toLowerCase() ?? ''];
+  if (guessed && (!blob.type || blob.type === 'text/plain' || blob.type === 'application/octet-stream')) blob = new Blob([blob], { type: guessed });
+  let out: Blob;
+  if (isHeic(blob, input.name)) {
+    // 服务器读不了 HEIC：浏览器能解码（Safari）就转成 JPEG
+    out = await compressImage(blob, original ? 'heic' : level);
+    if (out === blob || out.type !== 'image/jpeg') throw new ApiError(`这个浏览器打不开 HEIC 照片（${input.name ?? ''}）。用 iPhone 直接从相册选，或在 Safari 里上传`, 415);
+  } else {
+    const keep = original || (await hasEmbeddedVideo(blob));
+    out = keep ? blob : await compressImage(blob, level);
+  }
   const ext = out.type === 'image/jpeg' ? 'jpg' : (input.name?.split('.').pop() ?? out.type.split('/')[1] ?? 'bin');
   const base = (input.name ?? 'file').replace(/\.[^.]+$/, '') || 'file';
   return { blob: out, name: `${base}.${ext}` };
 }
+
+const MIME_BY_EXT: Record<string, string> = {
+  mov: 'video/quicktime',
+  mp4: 'video/mp4',
+  m4v: 'video/x-m4v',
+  webm: 'video/webm',
+  '3gp': 'video/3gpp',
+  heic: 'image/heic',
+  heif: 'image/heif',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+};
 
 const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)}MB`;
 

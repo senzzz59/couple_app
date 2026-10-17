@@ -13,6 +13,8 @@ test('video uploads are recognised by mime type or by extension', () => {
   assert.equal(videoExt('video/quicktime', 'IMG_0001.MOV'), 'mov');
   assert.equal(videoExt('video/mp4', 'a.mp4'), 'mp4');
   assert.equal(videoExt('application/octet-stream', 'clip.MOV'), 'mov');
+  assert.equal(videoExt('text/plain', 'IMG_0001.MOV'), 'mov');
+  assert.equal(videoExt(undefined, 'IMG_0001.mp4'), 'mp4');
   assert.equal(videoExt('image/jpeg', 'photo.jpg'), null);
   assert.equal(videoExt('image/jpeg', 'trick.mov'), null);
 });

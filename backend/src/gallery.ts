@@ -44,7 +44,7 @@ export async function galleryRoutes(app: FastifyInstance) {
   app.get('/api/gallery', auth, async (req) => {
     const q = z
       .object({
-        limit: z.coerce.number().int().min(1).max(500).default(200),
+        limit: z.coerce.number().int().min(1).max(3000).default(300),
         before: z.string().optional(),
         album: z.string().length(36).optional(),
         kind: z.enum(['image', 'video', 'live']).optional(),

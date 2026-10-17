@@ -12,7 +12,8 @@ const VIDEO_MIME: Record<string, string> = {
 export function videoExt(mime: string | undefined, fileName: string | undefined): string | null {
   if (mime && VIDEO_MIME[mime]) return VIDEO_MIME[mime];
   const ext = fileName?.split('.').pop()?.toLowerCase();
-  if (ext && ['mp4', 'mov', 'webm', 'm4v', '3gp'].includes(ext) && (!mime || mime.startsWith('video/') || mime === 'application/octet-stream')) return ext;
+  // 有的浏览器给 .MOV 之类的文件不填类型，或者填成 text/plain / octet-stream：按扩展名认，只要它没声称自己是图片
+  if (ext && ['mp4', 'mov', 'webm', 'm4v', '3gp'].includes(ext) && !mime?.startsWith('image/')) return ext;
   return null;
 }
 

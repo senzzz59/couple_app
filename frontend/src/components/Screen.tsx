@@ -13,6 +13,9 @@ import { LoadError, Skeleton } from './Skeleton';
 import { TAB_BAR_HEIGHT } from './TabBar';
 import { IconButton, Row, Txt } from './ui';
 
+/** 电脑上宽屏浏览时内容居中，不拉满整个窗口 */
+export const CENTERED = { width: '100%', maxWidth: 720, alignSelf: 'center' } as const;
+
 /** 直接打开深链接时没有上一页，回首页 */
 export const goBack = () => (router.canGoBack() ? router.back() : router.replace('/'));
 
@@ -61,7 +64,7 @@ export function Screen({
         keyboardShouldPersistTaps="handled"
         {...pullRefresh.touchProps}
         refreshControl={pullRefresh.refreshControl}
-        contentContainerStyle={[{ paddingTop: insets.top + (back ? 56 : 12), paddingBottom: (tab ? TAB_BAR_HEIGHT + 24 : 24) + insets.bottom, paddingHorizontal: 16 }, contentStyle]}>
+        contentContainerStyle={[{ paddingTop: insets.top + (back ? 56 : 12), paddingBottom: (tab ? TAB_BAR_HEIGHT + 24 : 24) + insets.bottom, paddingHorizontal: 16 }, CENTERED, contentStyle]}>
         {title && (
           <Animated.View style={[{ marginBottom: 16, paddingHorizontal: 4, transformOrigin: 'left' }, big]}>
             <Row style={{ justifyContent: 'space-between', alignItems: 'flex-end' }}>
@@ -88,7 +91,7 @@ export function Screen({
       </Animated.View>
       {back && (
         <View style={{ position: 'absolute', top: insets.top + 6, left: 12 }}>
-          <IconButton icon={ChevronLeft} onPress={goBack} />
+          <IconButton icon={ChevronLeft} onPress={goBack} label="返回" />
         </View>
       )}
     </View>
@@ -96,17 +99,17 @@ export function Screen({
 }
 
 /** 弹出式表单页的外壳：标题 + 关闭 + 右上角保存 */
-export function SheetScreen({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
+export function SheetScreen({ title, children, action, onClose }: { title: string; children: ReactNode; action?: ReactNode; onClose?: () => void }) {
   const insets = useSafeAreaInsets();
   const top = Platform.OS === 'ios' ? 12 : insets.top + 8;
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: colors.bg }}>
-      <Row style={{ paddingTop: top, paddingHorizontal: 16, paddingBottom: 8, justifyContent: 'space-between' }}>
-        <IconButton icon={X} onPress={goBack} bg={colors.surfaceAlt} size={40} />
+      <Row style={[{ paddingTop: top, paddingHorizontal: 16, paddingBottom: 8, justifyContent: 'space-between' }, CENTERED]}>
+        <IconButton icon={X} onPress={onClose ?? goBack} bg={colors.surfaceAlt} size={40} label="关闭" />
         <Txt v="bodyStrong">{title}</Txt>
         <View style={{ minWidth: 40, alignItems: 'flex-end' }}>{action}</View>
       </Row>
-      <Animated.ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 40, gap: 18 }}>
+      <Animated.ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[{ padding: 16, paddingBottom: insets.bottom + 40, gap: 18 }, CENTERED]}>
         {children}
       </Animated.ScrollView>
     </KeyboardAvoidingView>

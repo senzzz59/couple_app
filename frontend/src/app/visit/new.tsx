@@ -112,7 +112,7 @@ function VisitForm({ placeId, id, initial: v }: { placeId: string; id?: string; 
           ))}
         </Animated.View>
         <Row style={styles.dishInput}>
-          <TextInput value={dish} onChangeText={setDish} placeholder="输入菜名，回车添加" placeholderTextColor={colors.faint} style={{ flex: 1, fontSize: 16, color: colors.ink, height: 48 }} onSubmitEditing={addDish} blurOnSubmit={false} returnKeyType="done" />
+          <TextInput value={dish} onChangeText={setDish} placeholder="输入菜名，回车添加" placeholderTextColor={colors.faint} style={{ flex: 1, minWidth: 0, fontSize: 16, color: colors.ink, height: 48 }} onSubmitEditing={addDish} blurOnSubmit={false} returnKeyType="done" />
           <IconButton icon={Plus} size={36} bg={colors.ink} color={colors.white} onPress={addDish} />
         </Row>
       </View>
