@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  bigint,
   boolean,
   date,
   datetime,
@@ -113,10 +114,18 @@ export const anniversaries = mysqlTable('anniversaries', {
   ...timestamps,
 });
 
+/**
+ * 动态 / 相册里的一项媒体。
+ * image：图片本身，或视频 / Live 图的封面；video：视频文件或 Live 图的动态部分。
+ */
+export type MediaItem = { kind: 'image' | 'video' | 'live'; image?: string | null; video?: string | null; w?: number | null; h?: number | null; duration?: number | null };
+
 export const moments = mysqlTable('moments', {
   id: id(),
   content: text('content'),
   photos: json('photos').$type<string[]>().notNull().$defaultFn(() => []),
+  /** 新版媒体（视频 / Live 图）；旧记录为 null，读取时由 photos 补出 */
+  media: json('media').$type<MediaItem[]>(),
   mood: varchar('mood', { length: 16 }),
   placeId: varchar('place_id', { length: 36 }).references(() => places.id, { onDelete: 'set null' }),
   createdBy: userRef('created_by'),
@@ -142,6 +151,12 @@ export const comments = mysqlTable(
       .notNull()
       .references(() => moments.id, { onDelete: 'cascade' }),
     content: varchar('content', { length: 500 }).notNull(),
+    /** 回复哪条评论（微信朋友圈式的「A 回复 B」） */
+    replyToId: varchar('reply_to_id', { length: 36 }),
+    /** 图片评论 */
+    image: varchar('image', { length: 100 }),
+    /** 表情包：内置的 blob:xxx，或自定义表情的文件名 */
+    sticker: varchar('sticker', { length: 100 }),
     createdBy: userRef('created_by'),
     ...timestamps,
   },
@@ -219,3 +234,60 @@ export const foodPreferences = mysqlTable('food_preferences', {
   userId: varchar('user_id', { length: 36 }).primaryKey().references(() => users.id, { onDelete: 'cascade' }),
   categories: json('categories').$type<string[]>().notNull().$defaultFn(() => []),
 });
+
+/** 两个人共用的自定义表情包 */
+export const stickers = mysqlTable('stickers', {
+  id: id(),
+  file: varchar('file', { length: 100 }).notNull(),
+  createdBy: userRef('created_by'),
+  ...timestamps,
+});
+
+/** 共享相册里的照片 / 视频 / Live 图 */
+export const galleryItems = mysqlTable(
+  'gallery_items',
+  {
+    id: id(),
+    kind: mysqlEnum('kind', ['image', 'video', 'live']).notNull().default('image'),
+    /** 展示用图片（视频 / Live 图的封面） */
+    image: varchar('image', { length: 100 }),
+    video: varchar('video', { length: 100 }),
+    /** 原图（下载用）；为空时下载展示图 */
+    original: varchar('original', { length: 120 }),
+    /** 上传时的文件名，下载时沿用 */
+    fileName: varchar('file_name', { length: 200 }),
+    width: int('width'),
+    height: int('height'),
+    duration: double('duration'),
+    size: bigint('size', { mode: 'number' }),
+    takenAt: datetime('taken_at', { fsp: 3 }).notNull(),
+    favorite: boolean('favorite').notNull().default(false),
+    createdBy: userRef('created_by'),
+    ...timestamps,
+  },
+  (t) => [index('gallery_taken_idx').on(t.takenAt)]
+);
+
+export const albums = mysqlTable('albums', {
+  id: id(),
+  title: varchar('title', { length: 40 }).notNull(),
+  emoji: varchar('emoji', { length: 16 }),
+  description: varchar('description', { length: 200 }),
+  coverId: varchar('cover_id', { length: 36 }),
+  createdBy: userRef('created_by'),
+  ...timestamps,
+});
+
+export const albumItems = mysqlTable(
+  'album_items',
+  {
+    albumId: varchar('album_id', { length: 36 })
+      .notNull()
+      .references(() => albums.id, { onDelete: 'cascade' }),
+    itemId: varchar('item_id', { length: 36 })
+      .notNull()
+      .references(() => galleryItems.id, { onDelete: 'cascade' }),
+    addedAt: timestamp('added_at', { fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
+  },
+  (t) => [primaryKey({ columns: [t.albumId, t.itemId] }), index('album_items_item_idx').on(t.itemId)]
+);

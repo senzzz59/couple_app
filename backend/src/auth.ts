@@ -34,6 +34,7 @@ export function decorateAuth(app: FastifyInstance) {
   app.decorate('authenticate', async (req: FastifyRequest, reply: FastifyReply) => {
     try {
       await req.jwtVerify();
+      if (!req.user?.sub) throw new Error('not a session token');
       const [u] = await db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.id, req.user.sub));
       if (!u) throw new Error('user gone');
     } catch {
