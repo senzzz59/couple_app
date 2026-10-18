@@ -86,7 +86,8 @@ export default function PlaceDetail() {
     y.value = e.contentOffset.y;
   });
   const cover = useAnimatedStyle(() => ({
-    transform: [{ translateY: interpolate(y.value, [-HEADER, 0, HEADER], [-HEADER / 2, 0, HEADER * 0.4]) }, { scale: interpolate(y.value, [-HEADER, 0], [2, 1], 'clamp') }],
+    // 视差只在封面还看得见的范围里做；不封顶的话页面一长，封面会跟着滑到页面底部露出来
+    transform: [{ translateY: interpolate(y.value, [-HEADER, 0, HEADER], [-HEADER / 2, 0, HEADER * 0.4], 'clamp') }, { scale: interpolate(y.value, [-HEADER, 0], [2, 1], 'clamp') }],
   }));
   const topBar = useAnimatedStyle(() => ({ opacity: interpolate(y.value, [HEADER - 140, HEADER - 80], [0, 1], 'clamp') }));
 
@@ -130,8 +131,9 @@ export default function PlaceDetail() {
         <LinearGradient colors={['rgba(0,0,0,0.25)', 'transparent', 'transparent']} style={StyleSheet.absoluteFill} />
       </Animated.View>
 
-      <Animated.ScrollView onScroll={onScroll} scrollEventThrottle={16} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: HEADER - 32, paddingBottom: insets.bottom + 110 }}>
-        <View style={styles.sheet}>
+      <Animated.ScrollView onScroll={onScroll} scrollEventThrottle={16} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: HEADER - 32 }}>
+        {/* 底部留白也放在卡片里（不透明），拉到底不会透出后面的封面 */}
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + 130 }]}>
           <Animated.View entering={enter(0)}>
             <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <View style={{ flex: 1, gap: 6 }}>

@@ -90,8 +90,9 @@ export default function Eats() {
 
   const filter = filters[tab];
   const list = useMemo(() => (places.data ?? []).filter((p) => p.status === tab), [places.data, tab]);
-  const shown = useMemo(() => applyFoodFilter(list, filter, pos), [list, filter, pos]);
-  const filtered = filter.where !== 'all' || !!filter.category;
+  const shown = useMemo(() => applyFoodFilter(list, filter, pos, visits.data), [list, filter, pos, visits.data]);
+  const query = filter.query?.trim() ?? '';
+  const filtered = filter.where !== 'all' || !!filter.category || !!query;
   const visitCount = (id: string) => visits.data?.filter((v) => v.placeId === id).length ?? 0;
   const { width } = useWindowDimensions();
   const polW = Math.floor((Math.min(width, 720) - 32 - 16) / 2);
@@ -119,9 +120,9 @@ export default function Eats() {
         value={tab}
         onChange={setTab}
       />
-      {list.length > 1 && (
+      {list.length > 0 && (
         <View style={{ marginTop: 14 }}>
-          <FoodFilters key={tab} places={list} value={filter} onChange={(f) => setFilters((s) => ({ ...s, [tab]: f }))} allowRating={tab === 'visited'} />
+          <FoodFilters key={tab} places={list} value={filter} onChange={(f) => setFilters((s) => ({ ...s, [tab]: f }))} allowRating={tab === 'visited'} searchable />
         </View>
       )}
 
@@ -136,9 +137,9 @@ export default function Eats() {
         ) : places.data && shown.length === 0 && filtered ? (
           <Empty
             emoji="🔍"
-            title={filter.where === 'near' ? `${filter.radius}km 内没有` : '这里还没有'}
-            hint={filter.where === 'near' ? '换大一点的范围试试' : undefined}
-            action={<Button title="看全部" variant="secondary" onPress={() => setFilters((s) => ({ ...s, [tab]: DEFAULT_FILTER }))} />}
+            title={query ? `没找到「${query}」` : filter.where === 'near' ? `${filter.radius}km 内没有` : '这里还没有'}
+            hint={query ? '可以搜店名、地址、类型，或者吃过的菜' : filter.where === 'near' ? '换大一点的范围试试' : undefined}
+            action={<Button title={query ? '清除搜索和筛选' : '看全部'} variant="secondary" onPress={() => setFilters((s) => ({ ...s, [tab]: DEFAULT_FILTER }))} />}
           />
         ) : tab === 'visited' ? (
           <View style={{ gap: 14 }}>

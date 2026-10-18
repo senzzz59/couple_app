@@ -1,19 +1,21 @@
 import { distanceKm } from './location';
-import type { Place } from './types';
+import { matchesQuery } from './food';
+import type { Place, Visit } from './types';
 
 /**
- * 美食筛选：在哪（全部 / 附近 / 某个城市）、什么类型、怎么排。
+ * 美食筛选：搜索、在哪（全部 / 附近 / 某个城市）、什么类型、怎么排。
  * 想去、吃过、随机转盘共用同一套。
  */
 export type FoodSort = 'recent' | 'near' | 'price' | 'rating';
-export type FoodFilter = { where: 'all' | 'near' | `city:${string}`; radius: number; category: string | null; sort: FoodSort };
-export const DEFAULT_FILTER: FoodFilter = { where: 'all', radius: 5, category: null, sort: 'recent' };
+export type FoodFilter = { where: 'all' | 'near' | `city:${string}`; radius: number; category: string | null; sort: FoodSort; query?: string };
+export const DEFAULT_FILTER: FoodFilter = { where: 'all', radius: 5, category: null, sort: 'recent', query: '' };
 export const RADII = [1, 3, 5, 10, 20];
 
 export type FilteredPlace = Place & { km: number | null };
 
-export function applyFoodFilter(list: Place[], f: FoodFilter, pos: { lat: number; lng: number } | null): FilteredPlace[] {
+export function applyFoodFilter(list: Place[], f: FoodFilter, pos: { lat: number; lng: number } | null, visits?: Visit[]): FilteredPlace[] {
   let out: FilteredPlace[] = list.map((p) => ({ ...p, km: pos ? distanceKm(pos, p) : null }));
+  if (f.query?.trim()) out = out.filter((p) => matchesQuery(p, f.query!, visits));
   if (f.where === 'near') out = pos ? out.filter((p) => p.km != null && p.km <= f.radius) : out;
   else if (f.where.startsWith('city:')) out = out.filter((p) => (p.city ?? '') === f.where.slice(5));
   if (f.category) out = out.filter((p) => p.category === f.category);
