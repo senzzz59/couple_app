@@ -7,6 +7,7 @@ import { env } from './env.ts';
 import { copyFile, FILE_NAME_RE, fileSource, ORIG_RE, removeFiles, removeOriginals } from './files.ts';
 import { broadcast } from './realtime.ts';
 import { notifyPartner } from './webPush.ts';
+import { pickCovers } from './monthCovers.ts';
 import { mediaItem } from './resources.ts';
 import { downloadName, galleryCursor } from './media.ts';
 import { uniqueNames, zipStream } from './zip.ts';
@@ -88,15 +89,25 @@ export async function galleryRoutes(app: FastifyInstance) {
     const conds: (SQL | undefined)[] = [];
     if (q.kind) conds.push(eq(g.kind, q.kind));
     if (q.favorite) conds.push(eq(g.favorite, true));
-    const rows = await db.select({ at: g.takenAt }).from(g).where(and(...conds));
+    const rows = await db
+      .select({ at: g.takenAt, image: g.image, favorite: g.favorite })
+      .from(g)
+      .where(and(...conds))
+      .orderBy(desc(g.takenAt));
     const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit' });
-    const counts = new Map<string, number>();
+    const months = new Map<string, { count: number; favs: string[]; rest: string[] }>();
     for (const r of rows) {
       const parts = Object.fromEntries(fmt.formatToParts(new Date(r.at)).map((p) => [p.type, p.value]));
       const month = `${parts.year}-${parts.month}`;
-      counts.set(month, (counts.get(month) ?? 0) + 1);
+      let m = months.get(month);
+      if (!m) months.set(month, (m = { count: 0, favs: [], rest: [] }));
+      m.count++;
+      // 封面：收藏的优先，其次最新的，最多 4 张（「月」「年」视图的卡片用）
+      if (r.image) (r.favorite ? m.favs : m.rest).push(r.image);
     }
-    return [...counts].sort((a, b) => b[0].localeCompare(a[0])).map(([month, count]) => ({ month, count }));
+    return [...months]
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([month, m]) => ({ month, count: m.count, covers: pickCovers(m.favs, m.rest) }));
   });
 
   // ---- 数量统计（智能相册）

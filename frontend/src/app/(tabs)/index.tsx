@@ -27,16 +27,17 @@ import { CENTERED } from '@/components/Screen';
 import { Sheet } from '@/components/Sheet';
 import { TAB_BAR_HEIGHT } from '@/components/TabBar';
 import { TodoRow } from '@/components/TodoRow';
+import { AskSheet } from '@/components/AskSheet';
 import { Avatar, Button, Card, enter, PressScale, Row, Txt } from '@/components/ui';
 import { api } from '@/lib/api';
 import { daysTogether, diffDays, fmtDate, greeting, parseDay, timeAgo, toDay, today } from '@/lib/dates';
 import { upcomingEvents } from '@/lib/events';
 import { haptic } from '@/lib/haptics';
 import { MOODS, NUDGES } from '@/lib/nudge';
-import { questionOfDay } from '@/lib/questions';
+import { questionState } from '@/lib/questions';
 import { useCouple } from '@/lib/session';
 import { invalidate, useQuery } from '@/lib/store';
-import type { Anniversary, Answer, Capsule, ChatUnread, GallerySummary, Moment, Place, Todo } from '@/lib/types';
+import type { Anniversary, Capsule, ChatUnread, GallerySummary, Moment, Place, Question, Todo } from '@/lib/types';
 import { usePendingDeletes } from '@/lib/undo';
 import { colors, fonts, radius, springs } from '@/theme';
 
@@ -295,28 +296,54 @@ function CapsuleCard() {
   );
 }
 
-// ---------------- 每日一问
+// ---------------- 问答
 function QuestionCard() {
-  const { me } = useCouple();
-  const day = toDay(today());
-  const q = questionOfDay();
-  const answers = useQuery<Answer[]>(`/api/answers?day=${day}`);
-  const mine = answers.data?.find((a) => a.createdBy === me?.id);
-  const theirs = answers.data?.find((a) => a.createdBy !== me?.id);
-  const status = mine && theirs ? '都答完了，去看看' : mine ? '等 TA 回答' : theirs ? 'TA 答完了，轮到你' : '回答后才能看到对方的';
+  const { me, partner } = useCouple();
+  const questions = useQuery<Question[]>('/api/questions');
+  const [asking, setAsking] = useState(false);
+  const list = questions.data ?? [];
+  const pending = list.filter((q) => questionState(q, me?.id).status === 'yours');
+  const next = pending[0];
+  const last = list[0];
+  const name = partner?.name || 'TA';
   return (
-    <Card bg={colors.peach} onPress={() => router.push('/question')}>
-      <Txt v="secondary" color={colors.peachInk}>
-        今天的问题
-      </Txt>
-      <Text style={{ fontFamily: fonts.round, fontSize: 21, lineHeight: 30, color: colors.ink, marginTop: 6, marginBottom: 12 }}>{q.text}</Text>
-      <Row gap={6}>
-        {(mine || theirs) && <View style={[styles.dot, { backgroundColor: mine && theirs ? colors.accentStrong : colors.peachInk }]} />}
-        <Txt v="secondary" color={colors.peachInk}>
-          {status}
-        </Txt>
-      </Row>
-    </Card>
+    <>
+      <Card bg={colors.peach} onPress={() => (next ? router.push({ pathname: '/question', params: { id: next.id } }) : setAsking(true))}>
+        <Row style={{ justifyContent: 'space-between' }}>
+          <Txt v="secondary" color={colors.peachInk} style={{ fontWeight: '700' }}>
+            问答
+          </Txt>
+          <Txt v="secondary" color={colors.peachInk} onPress={() => router.push('/questions')} suppressHighlighting>
+            {pending.length > 1 ? `${pending.length} 个等你回答 ›` : '全部 ›'}
+          </Txt>
+        </Row>
+        {next ? (
+          <>
+            <Row gap={10} style={{ alignItems: 'flex-start', marginTop: 10 }}>
+              <Avatar user={next.createdBy === me?.id ? me : partner} size={30} />
+              <View style={{ flex: 1 }}>
+                <Txt v="caption" color={colors.peachInk}>
+                  {next.createdBy === me?.id ? '你问的，也等你回答' : `${name}问你`}
+                </Txt>
+                <Text style={{ fontFamily: fonts.round, fontSize: 20, lineHeight: 28, color: colors.ink, marginTop: 2 }}>{next.text}</Text>
+              </View>
+            </Row>
+            <Row gap={8} style={{ marginTop: 14 }}>
+              <Button title="去回答" variant="accent" onPress={() => router.push({ pathname: '/question', params: { id: next.id } })} style={{ flex: 1, height: 44 }} />
+              <Button title={`问${name}一个`} variant="ghost" onPress={() => setAsking(true)} style={styles.askGhost} />
+            </Row>
+          </>
+        ) : (
+          <>
+            <Text style={{ fontFamily: fonts.round, fontSize: 21, lineHeight: 30, color: colors.ink, marginTop: 6 }}>今天想问{name}点什么？</Text>
+            <Txt v="secondary" color={colors.peachInk} numberOfLines={1} style={{ marginTop: 6 }}>
+              {last ? `上一个问题：${last.text} · ${{ yours: '等你回答', waiting: '等 TA 回答', done: '都答了' }[questionState(last, me?.id).status]}` : '点这里，问 TA 第一个问题'}
+            </Txt>
+          </>
+        )}
+      </Card>
+      <AskSheet visible={asking} onClose={() => setAsking(false)} />
+    </>
   );
 }
 
@@ -558,6 +585,7 @@ const styles = StyleSheet.create({
   myMood: { backgroundColor: colors.surfaceAlt, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 6 },
   rowSep: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line },
   dot: { width: 6, height: 6, borderRadius: 3 },
+  askGhost: { height: 44, paddingHorizontal: 14, borderWidth: 1, borderColor: 'rgba(153,87,58,0.3)' },
   moodGrid: { flexDirection: 'row', flexWrap: 'wrap', rowGap: 10, justifyContent: 'space-between' },
   moodItem: { width: '15%', aspectRatio: 1, borderRadius: radius.md, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: 'transparent' },
   moodInput: { backgroundColor: colors.surface, borderRadius: radius.md, height: 50, paddingHorizontal: 16, fontSize: 16, color: colors.ink, borderWidth: 1, borderColor: colors.line },

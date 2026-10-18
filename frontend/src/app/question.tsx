@@ -1,44 +1,52 @@
 import { BlurView } from 'expo-blur';
-import { useEffect, useState } from 'react';
-import { Platform, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Redirect, router, useLocalSearchParams } from 'expo-router';
+import { Trash2 } from 'lucide-react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
+import { AskSheet } from '@/components/AskSheet';
 import { celebrate, toast } from '@/components/motion';
-import { SheetScreen } from '@/components/Screen';
-import { Avatar, Button, Row, Txt } from '@/components/ui';
+import { goBack, Screen } from '@/components/Screen';
+import { Avatar, Button, Empty, IconButton, Row, Txt } from '@/components/ui';
 import { api } from '@/lib/api';
-import { fmtDate, parseDay, toDay, today } from '@/lib/dates';
+import { confirm } from '@/lib/confirm';
+import { fmtDate, parseDay, timeAgo } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
-import { QUESTIONS, questionOfDay } from '@/lib/questions';
+import { QUESTIONS, questionState } from '@/lib/questions';
 import { useCouple } from '@/lib/session';
 import { invalidate, setQueryData, useQuery } from '@/lib/store';
-import type { Answer } from '@/lib/types';
+import type { Answer, Question as Q, User } from '@/lib/types';
 import { useKept } from '@/lib/useKept';
 import { colors, fonts, radius, shadow } from '@/theme';
 
 /** 对方的答案：自己答完之前是毛玻璃，答完后翻牌揭晓 */
-function PartnerAnswer({ answer, revealed }: { answer?: Answer; revealed: boolean }) {
-  const { partner } = useCouple();
-  const flip = useSharedValue(revealed ? 1 : 0);
+function PartnerAnswer({ user, content, answered, revealed, hint }: { user?: User | null; content?: string | null; answered: boolean; revealed: boolean; hint: string }) {
+  // 平时正面朝上（没揭晓时盖着毛玻璃）；刚揭晓的那一下从背面翻过来
+  const flip = useSharedValue(1);
+  const was = useRef(revealed);
   useEffect(() => {
-    flip.value = withSpring(revealed ? 1 : 0, { damping: 14, stiffness: 90 });
+    if (revealed && !was.current) {
+      flip.value = 0;
+      flip.value = withSpring(1, { damping: 14, stiffness: 90 });
+    }
+    was.current = revealed;
   }, [revealed, flip]);
   const anim = useAnimatedStyle(() => ({ transform: [{ perspective: 800 }, { rotateY: `${(1 - flip.value) * 180}deg` }] }));
-
   return (
     <Animated.View style={[styles.card, anim]}>
       <Row style={{ marginBottom: 10 }}>
-        <Avatar user={partner} size={26} />
-        <Txt v="label">{partner?.name ?? 'TA'} 的回答</Txt>
+        <Avatar user={user} size={26} />
+        <Txt v="label">{user?.name ?? 'TA'} 的回答</Txt>
       </Row>
-      {!answer ? (
+      {!answered ? (
         <Txt v="body" color={colors.muted}>
-          还没回答，戳 TA 一下？
+          {hint}
         </Txt>
       ) : (
         <View>
           <Txt v="body" style={{ fontSize: 17, lineHeight: 26 }}>
-            {revealed ? answer.content : '············'}
+            {revealed ? content : '············'}
           </Txt>
           {!revealed && (
             <BlurView intensity={Platform.OS === 'web' ? 20 : 40} tint="light" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', borderRadius: 8 }]}>
@@ -53,29 +61,36 @@ function PartnerAnswer({ answer, revealed }: { answer?: Answer; revealed: boolea
   );
 }
 
-export default function Question() {
-  const { me, userName } = useCouple();
-  const day = toDay(today());
-  const q = questionOfDay();
-  const key = `/api/answers?day=${day}`;
-  const answers = useQuery<Answer[]>(key);
-  const history = useQuery<Answer[]>('/api/answers/history');
-  const mine = answers.data?.find((a) => a.createdBy === me?.id);
-  const theirs = answers.data?.find((a) => a.createdBy !== me?.id);
-  const [text, setText] = useKept(`question:${day}:text`, '');
-  const [editing, setEditing] = useKept(`question:${day}:editing`, false);
+type View_ = {
+  key: string;
+  byline: string;
+  text: string;
+  mine?: string | null;
+  theirs?: { content: string | null } | undefined;
+  iMust: boolean;
+  theyMust: boolean;
+  submit: (content: string) => Promise<void>;
+  remove?: () => void;
+};
+
+/** 一个问题：问题、我的回答、TA 的回答 */
+function QuestionBody({ v }: { v: View_ }) {
+  const { me, partner } = useCouple();
+  const [text, setText] = useKept(`question:${v.key}:text`, '');
+  const [editing, setEditing] = useKept(`question:${v.key}:editing`, false);
   const [saving, setSaving] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const name = partner?.name || 'TA';
 
   const submit = async () => {
     if (!text.trim()) return;
     setSaving(true);
     try {
-      const res = await api.put<Answer[]>(`/api/answers/${day}`, { question: q.index, content: text.trim() });
-      setQueryData(key, () => res);
+      const first = v.mine == null;
+      await v.submit(text.trim());
       setEditing(false);
       haptic.success();
-      if (theirs && !mine) setTimeout(celebrate, 500);
-      invalidate('answers');
+      if (first && v.theirs) setTimeout(celebrate, 500);
     } catch (e) {
       toast((e as Error).message, '⚠️');
     } finally {
@@ -83,69 +98,148 @@ export default function Question() {
     }
   };
 
-  // 往期：按天分组，两个人都答了的才展示
-  const past = Object.entries(
-    (history.data ?? []).filter((a) => a.day !== day).reduce<Record<string, Answer[]>>((acc, a) => ((acc[a.day] ??= []).push(a), acc), {})
-  ).filter(([, list]) => list.length >= 2);
-
   return (
-    <SheetScreen title="每日一问">
-      <Animated.View entering={FadeInDown.springify().damping(18)}>
-        <Txt v="label">{fmtDate(day, true)}</Txt>
-        <Text style={{ fontFamily: fonts.round, fontSize: 28, lineHeight: 38, color: colors.ink, marginTop: 8 }}>{q.text}</Text>
-      </Animated.View>
+    <Screen back title=" " right={v.remove && <IconButton icon={Trash2} onPress={v.remove} bg={colors.surfaceAlt} size={40} label="删除这个问题" />}>
+      <View style={{ gap: 18 }}>
+        <Animated.View entering={FadeInDown.springify().damping(18)} style={{ gap: 8 }}>
+          <Txt v="label">{v.byline}</Txt>
+          <Text style={{ fontFamily: fonts.round, fontSize: 28, lineHeight: 38, color: colors.ink }}>{v.text}</Text>
+        </Animated.View>
 
-      {mine && !editing ? (
-        <Animated.View entering={FadeIn} style={[styles.card, { backgroundColor: colors.peach }]}>
-          <Row style={{ marginBottom: 10, justifyContent: 'space-between' }}>
-            <Row>
-              <Avatar user={me} size={26} />
-              <Txt v="label" color={colors.peachInk}>
-                我的回答
+        {!v.iMust ? (
+          <Txt v="secondary">这个问题只需要 {name} 回答</Txt>
+        ) : v.mine != null && !editing ? (
+          <Animated.View entering={FadeIn} style={[styles.card, { backgroundColor: colors.peach }]}>
+            <Row style={{ marginBottom: 10, justifyContent: 'space-between' }}>
+              <Row>
+                <Avatar user={me} size={26} />
+                <Txt v="label" color={colors.peachInk}>
+                  我的回答
+                </Txt>
+              </Row>
+              <Txt
+                v="caption"
+                color={colors.peachInk}
+                onPress={() => {
+                  setText(v.mine ?? '');
+                  setEditing(true);
+                }}>
+                修改
               </Txt>
             </Row>
-            <Txt
-              v="caption"
-              color={colors.peachInk}
-              onPress={() => {
-                setText(mine.content ?? '');
-                setEditing(true);
-              }}>
-              修改
+            <Txt v="body" style={{ fontSize: 17, lineHeight: 26 }}>
+              {v.mine}
             </Txt>
-          </Row>
-          <Txt v="body" style={{ fontSize: 17, lineHeight: 26 }}>
-            {mine.content}
-          </Txt>
-        </Animated.View>
-      ) : (
-        <Animated.View entering={FadeInDown.delay(100).springify()} style={{ gap: 12 }}>
-          <TextInput value={text} onChangeText={setText} placeholder="写下你的答案…" placeholderTextColor={colors.faint} multiline style={styles.input} maxLength={1000} />
-          <Button title={theirs ? '提交并揭晓 TA 的答案' : '提交'} variant="accent" onPress={submit} loading={saving} disabled={!text.trim()} />
-        </Animated.View>
-      )}
+          </Animated.View>
+        ) : (
+          <Animated.View entering={FadeInDown.delay(100).springify()} style={{ gap: 12 }}>
+            <TextInput value={text} onChangeText={setText} placeholder="写下你的答案…" placeholderTextColor={colors.faint} multiline style={styles.input} maxLength={1000} />
+            <Button title={v.theirs ? `提交并揭晓${name}的答案` : '提交'} variant="accent" onPress={submit} loading={saving} disabled={!text.trim()} />
+          </Animated.View>
+        )}
 
-      <PartnerAnswer answer={theirs} revealed={!!mine} />
+        {v.theyMust && <PartnerAnswer user={partner} content={v.theirs?.content} answered={!!v.theirs} revealed={v.theirs?.content != null} hint={`${name}还没回答`} />}
 
-      {past.length > 0 && (
-        <View style={{ gap: 12, marginTop: 12 }}>
-          <Txt v="label">往期</Txt>
-          {past.slice(0, 20).map(([d, list]) => (
-            <View key={d} style={[styles.card, { gap: 8 }]}>
-              <Txt v="caption">{fmtDate(parseDay(d))}</Txt>
-              <Txt v="bodyStrong">{QUESTIONS[list[0].question] ?? ''}</Txt>
-              {list.map((a) => (
-                <Txt key={a.id} v="body" color={colors.inkSoft}>
-                  <Txt v="bodyStrong">{userName(a.createdBy)}：</Txt>
-                  {a.content}
-                </Txt>
-              ))}
-            </View>
-          ))}
-        </View>
-      )}
-    </SheetScreen>
+        <Button title={`再问${name}一个`} variant="secondary" onPress={() => setAsking(true)} />
+      </View>
+      <AskSheet visible={asking} onClose={() => setAsking(false)} />
+    </Screen>
   );
+}
+
+function Loading() {
+  return (
+    <Screen back title=" ">
+      <ActivityIndicator color={colors.accent} style={{ marginTop: 60 }} />
+    </Screen>
+  );
+}
+
+/** 自己提的问题 */
+function OwnQuestion({ id }: { id: string }) {
+  const { me, userName } = useCouple();
+  const key = `/api/questions/${id}`;
+  const q = useQuery<Q>(key);
+  if (q.error && !q.data)
+    return (
+      <Screen back title=" ">
+        <Empty title={q.error} hint="可能已经被删除了" action={<Button title="去问答列表" onPress={() => router.replace('/questions')} />} />
+      </Screen>
+    );
+  if (!q.data) return <Loading />;
+  const s = questionState(q.data, me?.id);
+  return (
+    <QuestionBody
+      v={{
+        key: id,
+        byline: `${s.asker ? '我' : userName(q.data.createdBy)}问的 · ${timeAgo(q.data.createdAt)}`,
+        text: q.data.text,
+        mine: s.mine?.content,
+        theirs: s.theirs,
+        iMust: s.iMust,
+        theyMust: s.theyMust,
+        submit: async (content) => {
+          const res = await api.put<Q>(`/api/questions/${id}/answer`, { content });
+          setQueryData(key, () => res);
+          invalidate('questions');
+        },
+        remove: s.asker
+          ? async () => {
+              if (!(await confirm('删除这个问题？', '两个人的回答也会一起删除'))) return;
+              try {
+                await api.del(`/api/questions/${id}`);
+                invalidate('questions');
+                goBack();
+              } catch (e) {
+                toast((e as Error).message, '⚠️');
+              }
+            }
+          : undefined,
+      }}
+    />
+  );
+}
+
+/** 以前自动出的每日一问：还能补答 */
+function DailyQuestion({ day }: { day: string }) {
+  const { me } = useCouple();
+  const key = `/api/answers?day=${day}`;
+  const answers = useQuery<Answer[]>(key);
+  if (!answers.data) return <Loading />;
+  const list = answers.data;
+  const mine = list.find((a) => a.createdBy === me?.id);
+  const theirs = list.find((a) => a.createdBy !== me?.id);
+  const index = (mine ?? theirs)?.question;
+  if (index == null) return <Redirect href="/questions" />;
+  return (
+    <QuestionBody
+      v={{
+        key: `day-${day}`,
+        byline: `每日一问 · ${fmtDate(parseDay(day))}`,
+        text: QUESTIONS[index] ?? '',
+        mine: mine?.content,
+        theirs,
+        iMust: true,
+        theyMust: true,
+        submit: async (content) => {
+          const res = await api.put<Answer[]>(`/api/answers/${day}`, { question: index, content });
+          setQueryData(key, () => res);
+          invalidate('answers');
+        },
+      }}
+    />
+  );
+}
+
+/** /question?id=…：自己提的问题；?day=…：以前的每日一问；什么都没有（旧链接）：去问答列表 */
+export default function Question() {
+  const { id, day } = useLocalSearchParams<{ id?: string; day?: string }>();
+  useEffect(() => {
+    if (!id && !day) router.replace('/questions');
+  }, [id, day]);
+  if (id) return <OwnQuestion id={id} />;
+  if (day && /^\d{4}-\d{2}-\d{2}$/.test(day)) return <DailyQuestion day={day} />;
+  return <Loading />;
 }
 
 const styles = StyleSheet.create({

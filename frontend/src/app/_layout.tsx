@@ -136,7 +136,8 @@ function RootStack({ fontsLoaded }: { fontsLoaded: boolean }) {
           <Stack.Screen name="album/[id]" />
           <Stack.Screen name="chat" />
           <Stack.Screen name="album/add" options={modal} />
-          <Stack.Screen name="question" options={modal} />
+          <Stack.Screen name="questions" />
+          <Stack.Screen name="question" />
           <Stack.Screen name="place/edit" options={modal} />
           <Stack.Screen name="visit/new" options={modal} />
           <Stack.Screen name="moment/new" options={modal} />
