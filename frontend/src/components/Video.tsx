@@ -10,6 +10,7 @@ export type VideoProps = {
   poster?: string;
   style?: StyleProp<ViewStyle>;
   controls?: boolean;
+  controlsVisible?: boolean;
   autoPlay?: boolean;
   muted?: boolean;
   loop?: boolean;
