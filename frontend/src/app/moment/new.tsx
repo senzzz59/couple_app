@@ -15,6 +15,7 @@ import { confirm } from '@/lib/confirm';
 import { haptic } from '@/lib/haptics';
 import { pickMedia, releaseLocal, uploadMedia, type LocalMedia } from '@/lib/media';
 import { MOODS } from '@/lib/nudge';
+import { EmojiTile } from '@/components/EmojiTile';
 import { useCouple } from '@/lib/session';
 import { invalidate, useQuery } from '@/lib/store';
 import type { Place } from '@/lib/types';
@@ -232,6 +233,18 @@ export default function NewMoment() {
                 <Text style={{ fontSize: 24 }}>{m}</Text>
               </PressScale>
             ))}
+            <EmojiTile
+              value={mood}
+              presets={MOODS}
+              onChange={(e) => {
+                setMood(e);
+                setPanel(null);
+              }}
+              size={44}
+              fontSize={24}
+              style={styles.mood}
+              activeStyle={styles.moodOn}
+            />
           </Animated.View>
         )}
         <View style={styles.sep} />

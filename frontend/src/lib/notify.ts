@@ -34,8 +34,8 @@ export async function ensurePermission() {
 }
 
 let scheduleQueue = Promise.resolve();
-export function rescheduleAll(anns: Anniversary[], todos: Todo[], startDate?: string | null, capsules: Capsule[] = []) {
-  const task = scheduleQueue.catch(() => {}).then(() => scheduleAll(anns, todos, startDate, capsules));
+export function rescheduleAll(anns: Anniversary[], todos: Todo[], startDate?: string | null, capsules: Capsule[] = [], remindAt?: string) {
+  const task = scheduleQueue.catch(() => {}).then(() => scheduleAll(anns, todos, startDate, capsules, remindAt));
   scheduleQueue = task;
   return task;
 }
@@ -48,9 +48,9 @@ export function cancelReminders() {
   return task;
 }
 
-async function scheduleAll(anns: Anniversary[], todos: Todo[], startDate?: string | null, capsules: Capsule[] = []) {
+async function scheduleAll(anns: Anniversary[], todos: Todo[], startDate?: string | null, capsules: Capsule[] = [], remindAt?: string) {
   if (!supported || !(await ensurePermission())) return;
-  const upcoming = reminderPlans(anns, todos, startDate, capsules);
+  const upcoming = reminderPlans(anns, todos, startDate, capsules, Date.now(), remindAt);
   await Notifications.cancelAllScheduledNotificationsAsync();
   for (const p of upcoming) {
     await Notifications.scheduleNotificationAsync({

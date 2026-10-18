@@ -58,3 +58,16 @@ test('today’s milestone is included, then advances to the next milestone', () 
   assert.equal(nextMilestone(toDay(start), day100)?.target, 100);
   assert.equal(nextMilestone(toDay(start), new Date(2026, 0, 102))?.target, 200);
 });
+
+test('anniversary reminders fire at the chosen time; todos keep their own time', () => {
+  const now = new Date(2026, 9, 14, 12).getTime();
+  const anniversary = { title: '纪念日', date: '2020-10-20', kind: 'custom', yearly: true, lunar: false, remind: [0] } as Anniversary;
+  const todo = { title: 'buy', due: new Date(2026, 9, 15, 19, 45).toISOString(), done: false } as Todo;
+  const plans = reminderPlans([anniversary], [todo], undefined, [], now, '20:30');
+  const ann = plans.find((p) => p.title.includes('纪念日'))!;
+  assert.equal(`${ann.at.getHours()}:${ann.at.getMinutes()}`, '20:30');
+  const t = plans.find((p) => p.body === 'buy')!;
+  assert.equal(`${t.at.getHours()}:${t.at.getMinutes()}`, '19:45');
+  // 默认还是 9 点；格式不对时也退回默认
+  for (const time of [undefined, 'bad']) assert.equal(reminderPlans([anniversary], [], undefined, [], now, time).find((p) => p.title.includes('纪念日'))!.at.getHours(), 9);
+});

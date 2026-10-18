@@ -8,6 +8,7 @@ import type { Album } from '@/lib/types';
 import { colors, radius } from '@/theme';
 
 import { ALBUM_EMOJIS } from './AlbumPicker';
+import { EmojiTile } from './EmojiTile';
 import { toast } from './motion';
 import { Sheet } from './Sheet';
 import { Button, Field, PressScale, Txt } from './ui';
@@ -53,6 +54,7 @@ function Body({ album, onClose, onSaved }: { album?: Album | null; onClose: () =
             <Text style={{ fontSize: 22 }}>{e}</Text>
           </PressScale>
         ))}
+        <EmojiTile value={emoji} presets={ALBUM_EMOJIS} onChange={setEmoji} size={44} fontSize={22} style={styles.emoji} activeStyle={styles.emojiOn} />
       </View>
       <Field label="名字" value={title} onChangeText={setTitle} placeholder="比如：第一次旅行、你的生日" maxLength={40} autoFocus={!album} onSubmitEditing={save} />
       <Field label="描述 · 可选" value={description} onChangeText={setDescription} placeholder="写一句关于这个相册的话" maxLength={200} />
