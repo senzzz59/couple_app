@@ -6,7 +6,8 @@ import { ActivityIndicator, Modal, ScrollView, StyleSheet, View } from 'react-na
 import { api } from '@/lib/api';
 import { type MapDestination } from '@/lib/amap';
 import { type AmapDetails, type AmapJourney, type TravelMode, travelDistance, travelTime } from '@/lib/amapLive';
-import { AMAP_KEY, currentPosition, openAmapPlace } from '@/lib/geo';
+import { AMAP_KEY, openAmapPlace } from '@/lib/geo';
+import { locate } from '@/lib/location';
 import { colors, fonts, radius } from '@/theme';
 import { toast } from './motion';
 import { Button, PressScale, Row, Txt } from './ui';
@@ -53,7 +54,8 @@ export function LivePlaceInfo({ destination }: { destination: MapDestination }) 
     setLocationError('');
     setJourney(undefined);
     try {
-      const origin = await currentPosition(false);
+      const origin = await locate();
+      if (!origin) throw new Error('暂时拿不到位置，稍后再试');
       const result = await api.post<AmapJourney>('/api/amap/journey', {
         key: AMAP_KEY, origin: { lat: origin.lat, lng: origin.lng }, destination: { lat, lng }, destinationCity: place?.cityCode || destination.city || '',
       });

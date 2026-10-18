@@ -1,18 +1,7 @@
 import { ScrollViewStyleReset, useServerDocumentContext } from 'expo-router/html';
 import type { PropsWithChildren } from 'react';
 
-// iPhone 从主屏幕打开时的启动画面（按屏幕尺寸匹配，竖屏）
-const SPLASH: [number, number, number][] = [
-  [430, 932, 3],
-  [393, 852, 3],
-  [428, 926, 3],
-  [390, 844, 3],
-  [375, 812, 3],
-  [414, 896, 3],
-  [414, 896, 2],
-  [360, 780, 3],
-  [375, 667, 2],
-];
+import { LAUNCH_CSS, LAUNCH_HTML, LAUNCH_JS, SPLASH, VIEWPORT, VIEWPORT_JS } from '@/lib/launchScreen';
 
 /**
  * 让网页用起来像 App：
@@ -21,7 +10,8 @@ const SPLASH: [number, number, number][] = [
  */
 const APP_CSS = [
   'html,body{background:#FAF7F5;margin:0;overscroll-behavior:none}',
-  '#root{min-height:100dvh}',
+  // 页面切换时滑进来的屏幕会暂时超出右边；iOS 会因此把整页缩小（看起来所有东西都变小），这里裁掉溢出
+  '#root{min-height:100dvh;overflow:hidden;overflow:clip}',
   'html{touch-action:manipulation;-webkit-text-size-adjust:100%}',
   '*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}',
   'body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}',
@@ -39,7 +29,7 @@ export default function Root({ children }: PropsWithChildren) {
     <html {...htmlAttributes} lang="zh-CN">
       <head>
         <meta charSet="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+        <meta name="viewport" content={VIEWPORT} />
         <title>us.</title>
         <meta name="description" content="只属于我们两个人。" />
         <meta name="theme-color" content="#FAF7F5" />
@@ -62,11 +52,18 @@ export default function Root({ children }: PropsWithChildren) {
         ))}
         <ScrollViewStyleReset />
         <style dangerouslySetInnerHTML={{ __html: APP_CSS }} />
-        <script dangerouslySetInnerHTML={{ __html: NO_MEDIA_MENU }} />
+        <style dangerouslySetInnerHTML={{ __html: LAUNCH_CSS }} />
+        <script dangerouslySetInnerHTML={{ __html: NO_MEDIA_MENU + VIEWPORT_JS }} />
         <script src="/web-build.js" />
         {headNodes}
       </head>
-      <body {...bodyAttributes}>{children}{bodyNodes}</body>
+      <body {...bodyAttributes}>
+        {/* 启动动画：在 JS 加载前就显示，App 就绪后由 hideLaunch() 淡出 */}
+        <div dangerouslySetInnerHTML={{ __html: LAUNCH_HTML }} style={{ display: 'contents' }} />
+        <script dangerouslySetInnerHTML={{ __html: LAUNCH_JS }} />
+        {children}
+        {bodyNodes}
+      </body>
     </html>
   );
 }

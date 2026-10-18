@@ -77,6 +77,36 @@ self.addEventListener('activate', event => event.waitUntil((async () => {
   for (const key of await caches.keys()) if (key.startsWith('us-static-') && key !== CACHE) await caches.delete(key);
   await self.clients.claim();
 })()));
+// 后台通知：TA 发动态、评论、戳一戳。iOS 要求每条推送都显示出来
+self.addEventListener('push', event => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { data = { body: event.data ? event.data.text() : '' }; }
+  const title = data.title || 'us.';
+  event.waitUntil(self.registration.showNotification(title, {
+    body: data.body || '',
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    tag: data.tag || undefined,
+    renotify: !!data.tag,
+    data: { url: typeof data.url === 'string' && data.url.startsWith('/') ? data.url : '/' },
+  }));
+});
+// 点通知：已经开着就切过去并跳到对应页面，没开就打开
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const url = new URL(event.notification.data?.url || '/', self.location.origin).href;
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const client of windows) {
+      if (new URL(client.url).origin !== self.location.origin) continue;
+      await client.focus();
+      // App 里自己跳页面，不用整页刷新
+      client.postMessage({ type: 'open', url: event.notification.data?.url || '/' });
+      return;
+    }
+    await self.clients.openWindow(url);
+  })());
+});
 self.addEventListener('fetch', event => {
   const request = event.request;
   const url = new URL(request.url);

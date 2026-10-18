@@ -131,7 +131,8 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
   const locate = async () => {
     setLocating(true);
     try {
-      const pos = await currentPosition();
+      // 收藏「我现在在的店」：1 分钟内的系统定位就够准，不用重新等 GPS
+      const pos = await currentPosition(true, 60_000);
       set({ amapUrl: '', lat: pos.lat, lng: pos.lng, address: f.address || pos.address, city: f.city || pos.city });
       haptic.success();
     } catch (e) {

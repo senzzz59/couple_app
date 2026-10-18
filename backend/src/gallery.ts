@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { db, schema } from './db/index.ts';
 import { copyFile, FILE_NAME_RE, filePath, removeFiles, removeOriginals } from './files.ts';
 import { broadcast } from './realtime.ts';
+import { notifyPartner } from './webPush.ts';
 import { mediaItem } from './resources.ts';
 import { downloadName, galleryCursor } from './media.ts';
 import { uniqueNames, zipStream } from './zip.ts';
@@ -106,6 +107,8 @@ export async function galleryRoutes(app: FastifyInstance) {
       if (album) await db.insert(s.albumItems).values(rows.map((r) => ({ albumId: body.albumId!, itemId: r.id })));
     }
     changed(req.user.sub);
+    const videos = rows.filter((r) => r.kind === 'video').length;
+    notifyPartner(req.user.sub, { title: '{name}', body: `往相册里放了 ${rows.length} ${videos === rows.length ? '个视频' : videos ? '项照片和视频' : '张照片'}`, url: '/gallery', tag: 'gallery', throttleMs: 10 * 60_000 }, (e) => req.log.warn(e, 'web push failed'));
     return db.select().from(g).where(inArray(g.id, rows.map((r) => r.id))).orderBy(desc(g.takenAt));
   });
 

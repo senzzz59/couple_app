@@ -8,6 +8,7 @@ import { env } from './env.ts';
 import { removeFiles } from './files.ts';
 import { broadcast, isOnline, sendTo } from './realtime.ts';
 import { pushNudge } from './push.ts';
+import { sendWebPush } from './webPush.ts';
 
 declare module '@fastify/jwt' {
   interface FastifyJWT {
@@ -113,6 +114,8 @@ export async function authRoutes(app: FastifyInstance) {
     return s;
   });
 
+  const NUDGE_TEXT = { miss: '想你了 💗', hug: '要抱抱 🫂', kiss: '亲你一下 😘', hungry: '饿了，一起吃饭吗 🍜', poke: '戳了你一下 👉' } as const;
+
   /** 戳一戳：只推给另一半 */
   app.post('/api/nudges', auth, async (req) => {
     const { kind } = z.object({ kind: z.enum(['miss', 'hug', 'kiss', 'hungry', 'poke']) }).parse(req.body);
@@ -122,10 +125,15 @@ export async function authRoutes(app: FastifyInstance) {
     const event = { id, kind, from: req.user.sub, at: new Date().toISOString() };
     await db.insert(schema.nudges).values({ id, fromId: req.user.sub, toId: partner.id, kind });
     const [sender] = await db.select({ name: schema.users.name }).from(schema.users).where(eq(schema.users.id, req.user.sub));
-    const remotePush = !isOnline(partner.id) && await pushNudge(partner.id, sender?.name ?? 'TA', event, (e) => req.log.warn(e, 'push delivery failed')).catch((e) => {
-      req.log.warn(e, 'push registration lookup failed');
-      return false;
-    });
+    const offline = !isOnline(partner.id);
+    const log = (e: unknown) => req.log.warn(e, 'push delivery failed');
+    const [nativePush, webPush] = offline
+      ? await Promise.all([
+        pushNudge(partner.id, sender?.name ?? 'TA', event, log).catch((e) => { log(e); return false; }),
+        sendWebPush(partner.id, { title: sender?.name || 'TA', body: NUDGE_TEXT[kind], url: '/', tag: 'nudge' }, log).catch((e) => { log(e); return false; }),
+      ])
+      : [false, false];
+    const remotePush = nativePush || webPush;
     sendTo(partner.id, { type: 'nudge', ...event, remotePush });
     return { ok: true };
   });

@@ -7,6 +7,7 @@ import { db, schema } from './db/index.ts';
 import { FILE_NAME_RE, removeFiles } from './files.ts';
 import { mediaFiles, normalizeMedia } from './media.ts';
 import { broadcast } from './realtime.ts';
+import { notifyPartner, snippet } from './webPush.ts';
 import { visibleAnswers } from './answerPrivacy.ts';
 import { momentPagination } from './momentPagination.ts';
 import { validAmapUrl } from './amap.ts';
@@ -168,6 +169,27 @@ const resources: Resource[] = [
   },
 ];
 
+/** 新内容提醒另一半（网页推送） */
+async function notifyCreated(name: string, data: Record<string, unknown>, by: string, log: (error: unknown) => void) {
+  try {
+    if (name === 'moments') {
+      const text = snippet(data.content);
+      const media = Array.isArray(data.media) ? data.media.length : Array.isArray(data.photos) ? data.photos.length : 0;
+      notifyPartner(by, { title: '{name} 发了新动态', body: text || (media ? `分享了 ${media} 张照片 / 视频` : '快去看看'), url: '/moments', tag: 'moment' }, log);
+    } else if (name === 'comments') {
+      const [moment] = await db.select({ createdBy: s.moments.createdBy }).from(s.moments).where(eq(s.moments.id, String(data.momentId)));
+      const what = snippet(data.content) || (data.image ? '[图片]' : data.sticker ? '[表情]' : '');
+      const reply = data.replyToId ? (await db.select({ createdBy: s.comments.createdBy }).from(s.comments).where(eq(s.comments.id, String(data.replyToId))))[0] : null;
+      const verb = reply && reply.createdBy !== by ? '回复了你' : moment?.createdBy !== by ? '评论了你的动态' : '评论了动态';
+      notifyPartner(by, { title: `{name} ${verb}`, body: what, url: '/moments', tag: `comment-${data.momentId}` }, log);
+    } else if (name === 'places' && data.status !== 'visited') {
+      notifyPartner(by, { title: '{name} 收藏了一家店', body: `想和你一起去：${snippet(data.name, 30)} 🍜`, url: '/eats', tag: 'place' }, log);
+    }
+  } catch (error) {
+    log(error);
+  }
+}
+
 export async function resourceRoutes(app: FastifyInstance) {
   const auth = { preHandler: app.authenticate };
 
@@ -201,6 +223,7 @@ export async function resourceRoutes(app: FastifyInstance) {
       const id = crypto.randomUUID();
       await db.insert(t).values({ ...data, id, createdBy: req.user.sub } as never);
       changed(id, req.user.sub);
+      void notifyCreated(r.name, data, req.user.sub, (e) => req.log.warn(e, 'web push failed'));
       return find(id);
     });
 
@@ -265,6 +288,13 @@ export async function resourceRoutes(app: FastifyInstance) {
     if (existing) await db.delete(s.momentLikes).where(where);
     else await db.insert(s.momentLikes).values({ momentId, userId: req.user.sub });
     broadcast({ type: 'change', collection: 'moments', id: momentId, by: req.user.sub });
+    if (!existing) {
+      const [moment] = await db.select({ createdBy: s.moments.createdBy, content: s.moments.content }).from(s.moments).where(eq(s.moments.id, momentId));
+      if (moment && moment.createdBy !== req.user.sub) {
+        const text = snippet(moment.content, 20);
+        notifyPartner(req.user.sub, { title: '{name}', body: `赞了你的动态${text ? `「${text}」` : ''} ❤️`, url: '/moments', tag: `like-${momentId}` }, (e) => req.log.warn(e, 'web push failed'));
+      }
+    }
     return { liked: !existing };
   });
 
@@ -277,11 +307,13 @@ export async function resourceRoutes(app: FastifyInstance) {
   app.put('/api/answers/:day', auth, async (req) => {
     const day = dateStr.parse((req.params as { day: string }).day);
     const body = z.object({ question: z.number().int().min(0), content: z.string().trim().min(1).max(1000) }).parse(req.body);
+    const [answered] = await db.select({ day: s.answers.day }).from(s.answers).where(and(eq(s.answers.day, day), eq(s.answers.createdBy, req.user.sub))).limit(1);
     await db
       .insert(s.answers)
       .values({ day, ...body, createdBy: req.user.sub })
       .onDuplicateKeyUpdate({ set: { content: body.content } });
     broadcast({ type: 'change', collection: 'answers', by: req.user.sub });
+    if (!answered) notifyPartner(req.user.sub, { title: '{name}', body: '回答了今天的问题，你也来答一下就能看到 TA 的答案 💌', url: '/question', tag: `answer-${day}` }, (e) => req.log.warn(e, 'web push failed'));
     return visibleAnswers(await db.select().from(s.answers).where(eq(s.answers.day, day)), req.user.sub);
   });
 

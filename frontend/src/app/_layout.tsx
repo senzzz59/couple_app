@@ -1,9 +1,9 @@
 import { Nunito_700Bold, Nunito_800ExtraBold, Nunito_900Black, useFonts } from '@expo-google-fonts/nunito';
-import { Stack } from 'expo-router';
+import { type Href, router, Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef } from 'react';
-import { AppState, View } from 'react-native';
+import { AppState, Platform, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { ConfirmHost } from '@/components/Confirm';
@@ -12,6 +12,8 @@ import '@/lib/install';
 import { ConfettiHost, toast, ToastHost } from '@/components/motion';
 import { useUpdateStartup } from '@/components/UpdateStartup';
 import { haptic } from '@/lib/haptics';
+import { hideLaunch } from '@/lib/launch';
+import { startLocationWarmup } from '@/lib/location';
 import { notifyNow, rescheduleAll } from '@/lib/notify';
 import { NUDGES } from '@/lib/nudge';
 import { subscribeNudgeNotifications } from '@/lib/nudgeNotifications';
@@ -34,6 +36,26 @@ function ReminderSync() {
     const t = setTimeout(() => rescheduleAll(anns.data!, todos.data!, space?.startDate, capsules.data ?? []).catch(() => {}), 1500);
     return () => clearTimeout(t);
   }, [anns.data, todos.data, space?.startDate, capsules.data]);
+  return null;
+}
+
+/** 已允许定位时，后台把位置提前准备好 */
+function LocationWarmup() {
+  useEffect(() => startLocationWarmup(), []);
+  return null;
+}
+
+/** 点了系统通知：跳到对应页面（网页版，消息来自 Service Worker） */
+function NotificationOpenListener() {
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    const onMessage = (e: MessageEvent) => {
+      const url = e.data?.type === 'open' ? e.data.url : null;
+      if (typeof url === 'string' && url.startsWith('/')) router.push(url as Href);
+    };
+    navigator.serviceWorker.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', onMessage);
+  }, []);
   return null;
 }
 
@@ -66,7 +88,9 @@ function RootStack({ fontsLoaded }: { fontsLoaded: boolean }) {
   const { status } = useSession();
   const ready = fontsLoaded && status !== 'loading' && updateReady;
   useEffect(() => {
-    if (ready) SplashScreen.hideAsync();
+    if (!ready) return;
+    SplashScreen.hideAsync();
+    hideLaunch();
   }, [ready]);
   if (!ready) return null;
 
@@ -105,6 +129,8 @@ function RootStack({ fontsLoaded }: { fontsLoaded: boolean }) {
         <>
           <ReminderSync />
           <NudgeListener />
+          <LocationWarmup />
+          <NotificationOpenListener />
         </>
       )}
     </>
