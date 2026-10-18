@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { contentTypeOf, objectKey, s3ConfigFrom, SIGN_EXPIRES_S, SIGN_WINDOW_S, signWindow } from '../src/storage.ts';
+import { contentTypeOf, legacyKey, objectKey, parseObjectKey, s3ConfigFrom, SIGN_EXPIRES_S, SIGN_WINDOW_S, signWindow } from '../src/storage.ts';
 
 const keys = { S3_ENDPOINT: 'cn-sy1.rains3.com', S3_BUCKET: 'couple', S3_ACCESS_KEY: 'ak', S3_SECRET_KEY: 'sk' };
 
@@ -12,8 +12,8 @@ test('object storage stays off until endpoint, bucket and both keys are set', ()
   assert.equal(cfg.internalEndpoint, 'http://cn-sy1.internal.rains3.com');
   assert.equal(cfg.region, 'us-east-1');
   assert.equal(cfg.forcePathStyle, false);
-  assert.equal(objectKey(cfg.prefix, 'thumb', 'a.jpg'), 'couple/thumb/a.jpg');
-  assert.equal(objectKey(s3ConfigFrom(keys)!.prefix, 'main', 'a.jpg'), 'a.jpg');
+  assert.equal(objectKey(cfg.prefix, 'thumb', 'a.jpg'), 'couple/thumbs/a.jpg');
+  assert.equal(objectKey(s3ConfigFrom(keys)!.prefix, 'main', 'a.jpg'), 'photos/a.jpg');
 });
 
 test('signed links stay identical within a window and remain valid for days', () => {
@@ -55,4 +55,21 @@ test('checksum-required requests use Content-MD5 instead of CRC32 headers (Rainy
   assert.ok(headers['content-md5']);
   assert.ok(!Object.keys(headers).some((h) => h.startsWith('x-amz-checksum') || h === 'x-amz-sdk-checksum-algorithm'));
   assert.match(String(headers['x-amz-content-sha256'] ?? headers.authorization), /./);
+});
+
+test('objects are sorted into folders by kind, and old locations are recognised', () => {
+  assert.equal(objectKey('', 'main', 'a.jpg'), 'photos/a.jpg');
+  assert.equal(objectKey('', 'main', 'a.MOV'), 'videos/a.MOV');
+  assert.equal(objectKey('', 'thumb', 'a.mp4'), 'thumbs/a.mp4');
+  assert.equal(objectKey('x/', 'orig', 'a.heic'), 'x/originals/a.heic');
+  assert.equal(legacyKey('', 'main', 'a.jpg'), 'a.jpg');
+  assert.equal(legacyKey('', 'orig', 'a.jpg'), 'orig/a.jpg');
+  assert.deepEqual(parseObjectKey('photos/a.jpg'), { area: 'main', name: 'a.jpg', legacy: false });
+  assert.deepEqual(parseObjectKey('videos/a.mov'), { area: 'main', name: 'a.mov', legacy: false });
+  assert.deepEqual(parseObjectKey('thumbs/a.jpg'), { area: 'thumb', name: 'a.jpg', legacy: false });
+  assert.deepEqual(parseObjectKey('originals/a.heic'), { area: 'orig', name: 'a.heic', legacy: false });
+  assert.deepEqual(parseObjectKey('a.jpg'), { area: 'main', name: 'a.jpg', legacy: true });
+  assert.deepEqual(parseObjectKey('thumb/a.jpg'), { area: 'thumb', name: 'a.jpg', legacy: true });
+  assert.deepEqual(parseObjectKey('orig/a.jpg'), { area: 'orig', name: 'a.jpg', legacy: true });
+  for (const k of ['uploading/a.jpg', 'incoming/a.jpg', 'other/a.jpg', 'photos/x/a.jpg', 'photos/', '']) assert.equal(parseObjectKey(k), null, k);
 });

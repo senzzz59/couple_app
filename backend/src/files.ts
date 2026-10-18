@@ -24,6 +24,7 @@ export const storage = new Storage(env.uploadDir, s3ConfigFrom(process.env));
 // 主目录里的视频要等转码（或确认不用转）之后再搬走
 storage.videoReady = async (name) => !(await ffmpegAvailable()) || videoSettled(name);
 storage.contentType = (area, name) => contentTypeOf(name, area === 'main' && videoIsMp4(name));
+storage.names = NAMES;
 onVideoSettled((name) => storage.offload('main', name));
 
 /** 把刚写好的本地文件交给对象存储（转码中的视频由转码队列完成后再交） */
@@ -42,12 +43,14 @@ async function offloadWritten(files: string[]) {
 export async function initStorage(log: { info: (o: object, m: string) => void; warn: (o: object, m: string) => void }) {
   if (!storage.enabled) return;
   await storage.init(log);
+  // 以前放在根目录 / thumb/ / orig/ 的对象搬到 photos/ videos/ thumbs/ originals/
+  await storage.migrateLayout().catch((e) => log.warn({ err: (e as Error).message }, 'object storage: sorting files into folders failed'));
   const sweep = async () => {
     const count = await storage.migrateLocal(NAMES);
     if (count) log.info({ count }, 'object storage: queued old local files (moved one at a time, new uploads go first)');
   };
   await sweep();
-  setInterval(() => void sweep().then(() => storage.cleanupIncoming()).catch(() => {}), 60 * 60_000).unref();
+  setInterval(() => void sweep().then(() => storage.cleanupIncoming()).then(() => storage.migrateLayout()).catch(() => {}), 60 * 60_000).unref();
 }
 
 const IMAGE_LIMIT = 60 * 1024 * 1024;
@@ -127,6 +130,8 @@ async function processVideo(target: string, vext: string, fileName: string, keep
     await dropLocal(target, written);
     return item;
   }
+  // 要转码的视频：转码要一阵子，先把原片放到对象存储里播放（不走服务器带宽），转好后成品覆盖它
+  if (remote) await storage.copyObject(remote, 'main', name, { draft: true }).catch(() => {});
   enqueueVideo(name, log);
   return item;
 }
@@ -265,7 +270,7 @@ export async function fileRoutes(app: FastifyInstance) {
         if (!head) throw new UploadError(400, `上传没有完成，请重试：${u.name}`);
         const vext = videoExt(head.type, u.name);
         if (head.size > (vext ? VIDEO_LIMIT : IMAGE_LIMIT)) throw new UploadError(413, `${vext ? '视频太大了（最大 500MB）' : '图片太大了（最大 60MB）'}：${u.name}`);
-        const remote = storage.incomingKey(u.id);
+        const remote = head.key;
         if (vext) {
           const target = path.join(env.uploadDir, `${crypto.randomUUID()}.${vext}`);
           written.push(target);
@@ -296,6 +301,12 @@ export async function fileRoutes(app: FastifyInstance) {
     const dl = (req.query as { dl?: string }).dl;
     const safe = dl ? dl.replace(/[\r\n"\\/]/g, '_').slice(0, 150) || name : undefined;
     const local = await fs.stat(path.join(dir, name)).catch(() => null);
+    // 正在转码的视频：原片已经放在对象存储里了，从那里播（链接不缓存，转好后会换成成品）
+    if (local && area === 'main' && VIDEO_RE.test(name) && !videoSettled(name) && storage.hasDraft(name)) {
+      const { url } = await storage.signedUrl(area, name, { download: safe });
+      reply.header('Cache-Control', 'no-store');
+      return reply.redirect(url, 302);
+    }
     if (!local && storage.enabled) {
       // 已经搬到对象存储：跳转到临时签名链接，由对象存储直接把文件发给浏览器
       const { url, cacheSeconds } = await storage.signedUrl(area, name, { download: safe });
