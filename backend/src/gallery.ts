@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { db, schema } from './db/index.ts';
-import { copyFile, FILE_NAME_RE, fileSource, removeFiles, removeOriginals } from './files.ts';
+import { copyFile, FILE_NAME_RE, fileSource, ORIG_RE, removeFiles, removeOriginals } from './files.ts';
 import { broadcast } from './realtime.ts';
 import { notifyPartner } from './webPush.ts';
 import { mediaItem } from './resources.ts';
@@ -13,7 +13,8 @@ import { uniqueNames, zipStream } from './zip.ts';
 const s = schema;
 const g = s.galleryItems;
 const uploaded = z.string().regex(FILE_NAME_RE, '文件名不对');
-const original = z.string().regex(/^[0-9a-f-]{36}\.(jpg|jpeg|png|gif|webp|heic|heif|avif|tif|tiff|dng)$/, '文件名不对');
+// 原图 / 原片：和上传时生成的名字规则一致（要转码的视频会留一份 .mov / .mp4 原片）
+const original = z.string().regex(ORIG_RE, '文件名不对');
 const ids = z.array(z.string().length(36)).min(1).max(1000);
 const opt = <T extends z.ZodType>(t: T) => t.nullable().optional();
 
