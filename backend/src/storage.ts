@@ -512,6 +512,11 @@ export class Storage {
     }
   }
 
+  /** 给服务器自己用的临时读取链接（ffprobe / ffmpeg 直接按需读取对象存储里的视频，不用整个下载） */
+  async signedReadUrl(key: string) {
+    return getSignedUrl(this.ops!, new GetObjectCommand({ Bucket: this.cfg!.bucket, Key: key }), { expiresIn: 3600 });
+  }
+
   async readIncoming(id: string): Promise<Readable> {
     const res = await this.ops!.send(new GetObjectCommand({ Bucket: this.cfg!.bucket, Key: await this.existingIncomingKey(id) }));
     return res.Body as Readable;

@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "id": "gallery-jump-faster-upload",
+      "date": "2026-10-18",
+      "title": "相册按月份查找，上传更快",
+      "changes": [
+        { "type": "new", "text": "相册可以直接跳到某年某月：点日历按钮或月份标题，选择年份和月份" },
+        { "type": "new", "text": "相册分类增加「照片」，可以只看照片、视频、Live 图或收藏" },
+        { "type": "improve", "text": "上传视频更快：视频传到存储后马上完成，不再等服务器下载整个视频" },
+        { "type": "improve", "text": "同时上传三个文件；网络中断或切到后台后自动重新上传，不再改走较慢的线路" }
+      ]
+    },
+    {
       "id": "fix-tabbar-after-reload",
       "date": "2026-10-18",
       "title": "修复更新后底部标签栏显示不全",

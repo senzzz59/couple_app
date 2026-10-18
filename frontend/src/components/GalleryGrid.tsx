@@ -1,4 +1,4 @@
-import { Check, Heart } from 'lucide-react-native';
+import { Check, ChevronDown, Heart } from 'lucide-react-native';
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { ZoomIn } from 'react-native-reanimated';
@@ -9,7 +9,7 @@ import type { GalleryItem } from '@/lib/types';
 import { colors } from '@/theme';
 
 import { MediaThumb } from './Media';
-import { Row, Txt } from './ui';
+import { PressScale, Row, Txt } from './ui';
 
 const GAP = 3;
 
@@ -20,13 +20,13 @@ export function useGridColumns() {
   return { cols, cell: Math.floor((w - GAP * (cols - 1)) / cols) };
 }
 
-/** 按「年月」分组，同一个月放在一起 */
+/** 按「年月」分组，同一个月放在一起；key 是 YYYY-MM（和 /api/gallery/months 一致） */
 function groupByMonth(items: GalleryItem[]) {
   const groups: { key: string; label: string; items: GalleryItem[] }[] = [];
   const now = new Date();
   for (const it of items) {
     const d = new Date(it.takenAt);
-    const key = `${d.getFullYear()}-${d.getMonth()}`;
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     let g = groups.at(-1);
     if (!g || g.key !== key) {
       const label = d.getFullYear() === now.getFullYear() ? `${d.getMonth() + 1}月` : `${d.getFullYear()}年${d.getMonth() + 1}月`;
@@ -41,6 +41,7 @@ function groupByMonth(items: GalleryItem[]) {
 /**
  * 相册网格：按月分组。
  * selecting 为 true 时点按是选择；否则点按打开，长按进入选择并选中这一项。
+ * onPressMonth：点月份标题（打开「选择月份」）；onMonthLayout：每个月在网格里的位置（跳到某个月用）。
  */
 export function GalleryGrid({
   items,
@@ -50,6 +51,8 @@ export function GalleryGrid({
   onOpen,
   onStartSelect,
   grouped = true,
+  onPressMonth,
+  onMonthLayout,
 }: {
   items: GalleryItem[];
   selecting: boolean;
@@ -58,6 +61,8 @@ export function GalleryGrid({
   onOpen: (index: number) => void;
   onStartSelect: (id: string) => void;
   grouped?: boolean;
+  onPressMonth?: () => void;
+  onMonthLayout?: (month: string, y: number) => void;
 }) {
   const { cell } = useGridColumns();
   const groups = useMemo(() => (grouped ? groupByMonth(items) : [{ key: 'all', label: '', items }]), [items, grouped]);
@@ -66,12 +71,21 @@ export function GalleryGrid({
   return (
     <View style={{ gap: 18 }}>
       {groups.map((g) => (
-        <View key={g.key} style={{ gap: 8 }}>
+        <View key={g.key} style={{ gap: 8 }} onLayout={onMonthLayout && ((e) => onMonthLayout(g.key, e.nativeEvent.layout.y))}>
           {!!g.label && (
             <Row style={{ justifyContent: 'space-between', paddingHorizontal: 4 }}>
-              <Txt v="heading" style={{ fontSize: 17 }}>
-                {g.label}
-              </Txt>
+              {onPressMonth && !selecting ? (
+                <PressScale haptics={false} hitSlop={8} onPress={onPressMonth} accessibilityLabel={`${g.label}，选择月份`} style={styles.monthBtn}>
+                  <Txt v="heading" style={{ fontSize: 17 }}>
+                    {g.label}
+                  </Txt>
+                  <ChevronDown size={16} color={colors.muted} />
+                </PressScale>
+              ) : (
+                <Txt v="heading" style={{ fontSize: 17 }}>
+                  {g.label}
+                </Txt>
+              )}
               <Txt v="secondary">{g.items.length}</Txt>
             </Row>
           )}
@@ -123,6 +137,7 @@ export { UploadBanner } from './UploadCenter';
 
 const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: GAP },
+  monthBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   fav: { position: 'absolute', left: 6, bottom: 6 },
   check: { position: 'absolute', right: 6, top: 6, width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: '#fff', backgroundColor: 'rgba(0,0,0,0.15)', alignItems: 'center', justifyContent: 'center' },
   checkOn: { backgroundColor: colors.accentStrong, borderColor: colors.accentStrong },
