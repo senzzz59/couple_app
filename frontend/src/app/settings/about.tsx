@@ -1,6 +1,7 @@
 import { Image } from 'expo-image';
 import { router, type Href } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { Platform, StyleSheet, View } from 'react-native';
 
 import { ReleaseTimeline } from '@/components/ReleaseNotes';
 import { Screen } from '@/components/Screen';
@@ -19,8 +20,27 @@ const fmtBuilt = (iso: string | null) => {
   return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
+/** 屏幕信息：页面显示大小不对时截图给开发者看（连点版本号 5 下才出现） */
+function screenInfo() {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return [];
+  const vv = window.visualViewport;
+  const standalone = window.matchMedia?.('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone === true;
+  return [
+    `inner ${window.innerWidth}×${window.innerHeight}`,
+    `client ${document.documentElement.clientWidth}×${document.documentElement.clientHeight}`,
+    `screen ${screen.width}×${screen.height} @${window.devicePixelRatio}`,
+    `visual ${vv ? `${Math.round(vv.width)}×${Math.round(vv.height)} ×${vv.scale.toFixed(2)}` : '-'}`,
+    `root ${document.getElementById('root')?.offsetWidth ?? '-'}×${document.getElementById('root')?.offsetHeight ?? '-'}`,
+    `主屏幕模式 ${standalone ? '是' : '否'}`,
+    `viewport ${document.querySelector('meta[name=viewport]')?.getAttribute('content') ?? '-'}`,
+    navigator.userAgent,
+  ];
+}
+
 export default function About() {
   const update = useUpdateCheck();
+  const [taps, setTaps] = useState(0);
+  const [info, setInfo] = useState<string[] | null>(null);
   return (
     <Screen back title="关于">
       <View style={styles.hero}>
@@ -29,10 +49,28 @@ export default function About() {
       </View>
       <View style={{ gap: 24 }}>
         <Group>
-          <SettingRow first label="版本" value={appVersion} />
+          <SettingRow
+            first
+            label="版本"
+            value={appVersion}
+            onPress={() => {
+              const n = taps + 1;
+              setTaps(n);
+              if (n >= 5) setInfo(screenInfo());
+            }}
+          />
           {buildInfo.builtAt && <SettingRow label="发布时间" value={fmtBuilt(buildInfo.builtAt)} />}
           {buildInfo.commit && <SettingRow label="提交" value={buildInfo.commit} />}
         </Group>
+        {info && (
+          <View style={styles.info}>
+            {info.map((line) => (
+              <Txt key={line} v="caption" selectable style={{ fontSize: 11 }}>
+                {line}
+              </Txt>
+            ))}
+          </View>
+        )}
         <Button title={update.pending ? '更新到新版本' : '检查更新'} variant={update.pending ? 'primary' : 'secondary'} loading={update.busy} onPress={update.check} />
         <View style={{ gap: 12 }}>
           <Txt v="heading" style={{ paddingHorizontal: 4 }}>
@@ -53,4 +91,5 @@ export default function About() {
 const styles = StyleSheet.create({
   hero: { alignItems: 'center', gap: 6, paddingVertical: 24 },
   icon: { width: 76, height: 76, borderRadius: 18, marginBottom: 8 },
+  info: { backgroundColor: colors.surface, borderRadius: 16, padding: 12, gap: 2 },
 });
