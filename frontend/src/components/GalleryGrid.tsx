@@ -1,10 +1,11 @@
-import { Check, ChevronDown, Heart } from 'lucide-react-native';
+import { Image } from 'expo-image';
+import { Check, ChevronDown, ChevronRight, Heart } from 'lucide-react-native';
 import { useEffect, useMemo } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withTiming, ZoomIn } from 'react-native-reanimated';
 
 import { haptic } from '@/lib/haptics';
-import { galleryToMedia } from '@/lib/media';
+import { galleryToMedia, mediaUrl } from '@/lib/media';
 import type { GalleryItem, User } from '@/lib/types';
 import { colors } from '@/theme';
 
@@ -41,7 +42,8 @@ function groupByMonth(items: GalleryItem[]) {
 /**
  * 相册网格：按月分组。
  * selecting 为 true 时点按是选择；否则点按打开，长按进入选择并选中这一项。
- * onPressMonth：点月份标题（打开「选择月份」）；onMonthLayout：每个月在网格里的位置（跳到某个月用）。
+ * 点月份标题收起 / 展开这个月（collapsed 里是收起的 YYYY-MM）；counts：每个月的总数（没加载完也准）；
+ * onMonthLayout：每个月在网格里的位置（跳到某个月用）。
  */
 export function GalleryGrid({
   items,
@@ -51,7 +53,9 @@ export function GalleryGrid({
   onOpen,
   onStartSelect,
   grouped = true,
-  onPressMonth,
+  collapsed,
+  onToggleMonth,
+  counts,
   onMonthLayout,
   peer,
 }: {
@@ -62,7 +66,9 @@ export function GalleryGrid({
   onOpen: (index: number) => void;
   onStartSelect: (id: string) => void;
   grouped?: boolean;
-  onPressMonth?: () => void;
+  collapsed?: Set<string>;
+  onToggleMonth?: (month: string) => void;
+  counts?: Map<string, number>;
   onMonthLayout?: (month: string, y: number) => void;
   /** 另一半正在看的那张：描边 + 头像 */
   peer?: { itemId: string | null; user: User | null } | null;
@@ -76,22 +82,9 @@ export function GalleryGrid({
       {groups.map((g) => (
         <View key={g.key} style={{ gap: 8 }} onLayout={onMonthLayout && ((e) => onMonthLayout(g.key, e.nativeEvent.layout.y))}>
           {!!g.label && (
-            <Row style={{ justifyContent: 'space-between', paddingHorizontal: 4 }}>
-              {onPressMonth && !selecting ? (
-                <PressScale haptics={false} hitSlop={8} onPress={onPressMonth} accessibilityLabel={`${g.label}，选择月份`} style={styles.monthBtn}>
-                  <Txt v="heading" style={{ fontSize: 17 }}>
-                    {g.label}
-                  </Txt>
-                  <ChevronDown size={16} color={colors.muted} />
-                </PressScale>
-              ) : (
-                <Txt v="heading" style={{ fontSize: 17 }}>
-                  {g.label}
-                </Txt>
-              )}
-              <Txt v="secondary">{g.items.length}</Txt>
-            </Row>
+            <MonthHeader label={g.label} count={counts?.get(g.key) ?? g.items.length} folded={!!collapsed?.has(g.key)} items={g.items} onToggle={onToggleMonth && (() => onToggleMonth(g.key))} />
           )}
+          {!collapsed?.has(g.key) && (
           <View style={styles.grid}>
             {g.items.map((it) => {
               const on = selected.has(it.id);
@@ -130,9 +123,51 @@ export function GalleryGrid({
               );
             })}
           </View>
+          )}
         </View>
       ))}
     </View>
+  );
+}
+
+/** 月份标题：点一下收起 / 展开；收起时是一行小卡片，露出几张缩略图 */
+function MonthHeader({ label, count, folded, items, onToggle }: { label: string; count: number; folded: boolean; items: GalleryItem[]; onToggle?: () => void }) {
+  if (!onToggle)
+    return (
+      <Row style={{ justifyContent: 'space-between', paddingHorizontal: 4 }}>
+        <Txt v="heading" style={{ fontSize: 17 }}>
+          {label}
+        </Txt>
+        <Txt v="secondary">{count}</Txt>
+      </Row>
+    );
+  if (folded)
+    return (
+      <PressScale haptics={false} onPress={onToggle} accessibilityLabel={`${label}，已收起，点一下展开`} accessibilityState={{ expanded: false }} style={styles.folded}>
+        <View style={{ flexDirection: 'row' }}>
+          {items.slice(0, 3).map((it, i) => (
+            <Image key={it.id} source={mediaUrl(it.image, 'thumb')} style={[styles.foldThumb, i > 0 && { marginLeft: -10 }]} contentFit="cover" />
+          ))}
+        </View>
+        <Txt v="heading" style={{ fontSize: 17 }}>
+          {label}
+        </Txt>
+        <Txt v="secondary" style={{ flex: 1 }}>
+          {count} 项 · 已收起
+        </Txt>
+        <ChevronRight size={18} color={colors.muted} />
+      </PressScale>
+    );
+  return (
+    <PressScale haptics={false} hitSlop={6} onPress={onToggle} accessibilityLabel={`${label}，点一下收起`} accessibilityState={{ expanded: true }} style={styles.monthBtn}>
+      <Txt v="heading" style={{ fontSize: 17 }}>
+        {label}
+      </Txt>
+      <Txt v="secondary" style={{ flex: 1 }}>
+        {count} 项
+      </Txt>
+      <ChevronDown size={18} color={colors.muted} />
+    </PressScale>
   );
 }
 
@@ -158,7 +193,9 @@ export { UploadBanner } from './UploadCenter';
 
 const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: GAP },
-  monthBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  monthBtn: { flexDirection: 'row', alignItems: 'baseline', gap: 8, paddingHorizontal: 4, paddingVertical: 2 },
+  folded: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.surface, borderRadius: 14, paddingVertical: 10, paddingHorizontal: 12 },
+  foldThumb: { width: 30, height: 30, borderRadius: 7, borderWidth: 2, borderColor: colors.surface, backgroundColor: colors.surfaceAlt },
   fav: { position: 'absolute', left: 6, bottom: 6 },
   peerRing: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 6, borderWidth: 3, borderColor: colors.accent },
   peerAvatar: { position: 'absolute', left: 4, top: 4 },

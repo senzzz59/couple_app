@@ -168,6 +168,19 @@ export interface Answer extends Base {
   content: string | null;
 }
 
+/** 问答：两个人互相提问。content 为 null：TA 答了，但我还要先答才能看 */
+export interface QuestionAnswer extends Base {
+  questionId: string;
+  content: string | null;
+}
+
+export interface Question extends Base {
+  text: string;
+  /** 提问的人也一起答 */
+  askerAnswers: boolean;
+  answers: QuestionAnswer[];
+}
+
 export type ChatKind = 'text' | 'image' | 'sticker' | 'voice' | 'photo';
 
 export interface ChatMessage {

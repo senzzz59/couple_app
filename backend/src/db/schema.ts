@@ -218,6 +218,33 @@ export const answers = mysqlTable(
   (t) => [uniqueIndex('answers_day_user').on(t.day, t.createdBy)]
 );
 
+/** 问答：两个人互相提问。askerAnswers：提问的人也一起答（两个人都答完才互相看到） */
+export const questions = mysqlTable(
+  'questions',
+  {
+    id: id(),
+    text: varchar('text', { length: 200 }).notNull(),
+    askerAnswers: boolean('asker_answers').notNull().default(true),
+    createdBy: userRef('created_by').notNull(),
+    ...timestamps,
+  },
+  (t) => [index('questions_created_idx').on(t.createdAt)]
+);
+
+export const questionAnswers = mysqlTable(
+  'question_answers',
+  {
+    id: id(),
+    questionId: varchar('question_id', { length: 36 })
+      .notNull()
+      .references(() => questions.id, { onDelete: 'cascade' }),
+    content: text('content').notNull(),
+    createdBy: userRef('created_by').notNull(),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex('question_answers_q_user').on(t.questionId, t.createdBy)]
+);
+
 export const nudges = mysqlTable('nudges', {
   id: id(),
   fromId: varchar('from_id', { length: 36 }).notNull(),

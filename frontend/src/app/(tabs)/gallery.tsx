@@ -1,8 +1,9 @@
+import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { CalendarDays, CircleDot, Heart, ImagePlus, Play, Plus } from 'lucide-react-native';
-import { useRef, useState } from 'react';
-import { Platform, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { CircleDot, Heart, ImagePlus, Play, Plus } from 'lucide-react-native';
+import { useMemo, useRef, useState } from 'react';
+import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated from 'react-native-reanimated';
 
@@ -10,17 +11,20 @@ import { AlbumEditor } from '@/components/AlbumEditor';
 import { AlbumPicker } from '@/components/AlbumPicker';
 import { GalleryGrid, UploadBanner } from '@/components/GalleryGrid';
 import { Segmented, toast } from '@/components/motion';
-import { MonthJump, type MonthCount } from '@/components/MonthJump';
+import { MonthCards, YearCards, type GalleryView, type MonthCount } from '@/components/GalleryOverview';
 import { PeerBanner, useGalleryPresence } from '@/components/PeerBanner';
 import { Screen } from '@/components/Screen';
 import { SelectionBar } from '@/components/SelectionBar';
+import { TAB_BAR_HEIGHT } from '@/components/TabBar';
 import { QueryFallback } from '@/components/Skeleton';
 import { Button, Chip, Empty, enter, IconButton, PressScale, Row, Txt } from '@/components/ui';
 import { uploadToGallery } from '@/lib/galleryUpload';
+import { haptic } from '@/lib/haptics';
 import { useGallerySelection } from '@/lib/gallerySelection';
 import { mediaUrl } from '@/lib/media';
 import { invalidate, useQuery } from '@/lib/store';
 import type { Album, GalleryItem, GallerySummary } from '@/lib/types';
+import { useKept } from '@/lib/useKept';
 import { galleryEntry, openViewer } from '@/lib/viewer';
 import { colors, radius, shadow } from '@/theme';
 
@@ -135,43 +139,56 @@ export default function Gallery() {
   const sel = useGallerySelection(items, { onPickAlbum: () => setPicker(true) });
   const presence = useGalleryPresence();
 
-  // ---- 跳到某年某月：先把那个月之前（更新）的都加载出来，再滚到那个月
+  // ---- 年 / 月 / 全部（参考 iPhone 相册）；全部里每个月可以收起
   const insets = useSafeAreaInsets();
   const months = useQuery<MonthCount[]>(tab === 'photos' ? `/api/gallery/months?tz=${encodeURIComponent(TZ)}${filterQuery(filter)}` : null);
-  const [jumpOpen, setJumpOpen] = useState(false);
-  const [picked, setPicked] = useState<string | null>(null);
-  // 要跳去的月份：等它显示出来、量好位置再滚过去
-  const target = useRef<string | null>(null);
+  const counts = useMemo(() => new Map((months.data ?? []).map((m) => [m.month, m.count])), [months.data]);
+  const [view, setView] = useKept<GalleryView>('gallery:view', 'all');
+  const [folded, setFolded] = useKept<string[]>('gallery:folded', []);
+  const collapsed = useMemo(() => new Set(folded), [folded]);
+  const toggleMonth = (month: string) => {
+    haptic.tick();
+    setFolded((xs) => (xs.includes(month) ? xs.filter((x) => x !== month) : [...xs, month]));
+  };
   const scrollRef = useRef<Animated.ScrollView>(null);
   const bodyY = useRef(0);
   const gridY = useRef(0);
   const monthY = useRef(new Map<string, number>());
-  // 选择月份的弹层要完全收起再滚
-  const sheetGone = useRef(true);
-  const openJump = () => {
-    // 网页上弹层关掉时会把焦点还给打开它的按钮，浏览器会把页面滚回那个按钮：先让按钮失去焦点
-    if (Platform.OS === 'web') (document.activeElement as HTMLElement | null)?.blur?.();
-    setJumpOpen(true);
-  };
+  // 要跳去的月份 / 年份：等它显示出来、量好位置再滚过去
+  const target = useRef<string | null>(null);
+  const yearTarget = useRef<string | null>(null);
+  // 顶部毛玻璃标题栏会挡住一截；距离可能很远，直接跳过去
+  const scrollToY = (y: number) => scrollRef.current?.scrollTo({ y: Math.max(0, bodyY.current + y - insets.top - 56), animated: false });
   const tryJump = () => {
     const month = target.current;
     const y = month ? monthY.current.get(month) : undefined;
-    if (!sheetGone.current || y == null) return;
+    if (y == null) return;
     target.current = null;
-    // 顶部毛玻璃标题栏会挡住一截；距离可能很远，直接跳过去
-    scrollRef.current?.scrollTo({ y: Math.max(0, bodyY.current + gridY.current + y - insets.top - 56), animated: false });
+    scrollToY(gridY.current + y);
   };
-  const pickMonth = (month: string) => {
-    setJumpOpen(false);
-    setPicked(month);
-    sheetGone.current = false;
+  const switchView = (v: GalleryView) => {
+    if (v === view) return;
+    haptic.tick();
+    target.current = null;
+    yearTarget.current = null;
+    setView(v);
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+  };
+  // 点「月」里的卡片：去「全部」，展开那个月，先把那个月之前（更新）的都加载出来，再滚过去
+  const openMonth = (month: string) => {
+    setFolded((xs) => xs.filter((x) => x !== month));
+    monthY.current.clear();
     target.current = month;
     const needed = (months.data ?? []).filter((m) => m.month >= month).reduce((n, m) => n + m.count, 0);
     if (needed > limit) setLimit(Math.ceil(needed / PAGE) * PAGE);
+    setView('all');
+  };
+  const openYear = (year: string) => {
+    yearTarget.current = year;
+    setView('months');
   };
   const changeFilter = (f: Filter) => {
     setFilter(f);
-    setPicked(null);
     target.current = null;
     monthY.current.clear();
   };
@@ -224,9 +241,29 @@ export default function Gallery() {
                       <Chip key={f.key} label={f.label} active={filter === f.key} onPress={() => changeFilter(f.key)} />
                     ))}
                   </ScrollView>
-                  {(months.data?.length ?? 0) > 1 && <IconButton icon={CalendarDays} onPress={openJump} size={40} label="选择月份" />}
                 </Row>
               )}
+              {view !== 'all' && !sel.selecting ? (
+                months.data && months.data.length === 0 ? (
+                  <Empty emoji="🖼️" title={FILTERS.find((f) => f.key === filter)!.empty} />
+                ) : view === 'months' ? (
+                  <View onLayout={(e) => (gridY.current = e.nativeEvent.layout.y)}>
+                    <MonthCards
+                      months={months.data ?? []}
+                      onPick={openMonth}
+                      onYearLayout={(year, y) => {
+                        if (year !== yearTarget.current) return;
+                        yearTarget.current = null;
+                        // 等外层量好位置再滚
+                        setTimeout(() => scrollToY(gridY.current + y), 30);
+                      }}
+                    />
+                  </View>
+                ) : (
+                  <YearCards months={months.data ?? []} onPick={openYear} />
+                )
+              ) : (
+              <>
               <QueryFallback q={list} kind="grid" count={6} />
               {list.data && items.length === 0 ? (
                 filter === 'all' ? (
@@ -245,7 +282,9 @@ export default function Gallery() {
                     onToggle={sel.toggle}
                     onStartSelect={sel.start}
                     onOpen={(i) => openViewer(items.map(galleryEntry), i, { mode: 'gallery' })}
-                    onPressMonth={(months.data?.length ?? 0) > 1 ? openJump : undefined}
+                    collapsed={collapsed}
+                    onToggleMonth={toggleMonth}
+                    counts={counts}
                     peer={presence.grid}
                     onMonthLayout={(month, y) => {
                       monthY.current.set(month, y);
@@ -255,20 +294,16 @@ export default function Gallery() {
                 </View>
               )}
               {items.length >= limit && <Button title="加载更多" variant="ghost" onPress={() => setLimit((l) => l + PAGE)} style={{ marginTop: 12 }} />}
+              </>
+              )}
+              {!sel.selecting && <View style={{ height: 56 }} />}
               {sel.selecting && <View style={{ height: 90 }} />}
             </>
           )}
         </View>
       </Screen>
       {sel.selecting && <SelectionBar count={sel.selected.size} actions={sel.actions} aboveTabs />}
-      <MonthJump
-        visible={jumpOpen}
-        onClose={() => setJumpOpen(false)}
-        onClosed={() => {
-          sheetGone.current = true;
-          tryJump();
-        }}
-        months={months.data ?? []} current={picked} onPick={pickMonth} />
+      {tab === 'photos' && !sel.selecting && (months.data?.length ?? 0) > 0 && <ViewSwitch value={view} onChange={switchView} />}
       <AlbumPicker
         visible={picker}
         onClose={() => setPicker(false)}
@@ -279,7 +314,40 @@ export default function Gallery() {
   );
 }
 
+const VIEWS: { key: GalleryView; label: string }[] = [
+  { key: 'years', label: '年' },
+  { key: 'months', label: '月' },
+  { key: 'all', label: '全部' },
+];
+
+/** 底栏上面那条「年 / 月 / 全部」 */
+function ViewSwitch({ value, onChange }: { value: GalleryView; onChange: (v: GalleryView) => void }) {
+  const insets = useSafeAreaInsets();
+  return (
+    <View pointerEvents="box-none" style={[styles.switchWrap, { bottom: Math.max(insets.bottom, 12) + TAB_BAR_HEIGHT + 12 }]}>
+      <View style={styles.switch} accessibilityRole="tablist">
+        <BlurView intensity={60} tint="light" style={[StyleSheet.absoluteFill, styles.switchBlur]} />
+        {VIEWS.map((v) => {
+          const on = v.key === value;
+          return (
+            <PressScale key={v.key} haptics={false} scaleTo={0.92} onPress={() => onChange(v.key)} accessibilityRole="tab" accessibilityState={{ selected: on }} style={[styles.switchItem, on && styles.switchOn]}>
+              <Txt v="secondary" color={on ? colors.white : colors.inkSoft} style={on && { fontWeight: '700' }}>
+                {v.label}
+              </Txt>
+            </PressScale>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  switchWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  switch: { flexDirection: 'row', gap: 2, padding: 4, borderRadius: 22, ...shadow },
+  switchBlur: { borderRadius: 22, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.94)' },
+  switchItem: { height: 34, minWidth: 54, paddingHorizontal: 16, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  switchOn: { backgroundColor: colors.ink },
   headerBtn: { height: 38, paddingHorizontal: 14 },
   albumCover: { borderRadius: radius.lg, overflow: 'hidden', backgroundColor: colors.surfaceAlt, alignItems: 'center', justifyContent: 'center', ...shadow },
   newAlbum: { backgroundColor: colors.accentSoft, borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.accent, gap: 6, shadowOpacity: 0 },

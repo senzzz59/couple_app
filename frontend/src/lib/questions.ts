@@ -1,4 +1,4 @@
-import { diffDays, parseDay, today } from './dates';
+import type { Question } from './types';
 
 /** 每日一问题库：两个人都回答后才能看到对方的答案 */
 export const QUESTIONS = [
@@ -44,8 +44,23 @@ export const QUESTIONS = [
   '如果我们可以在任何地方住一年，你选哪里？',
 ];
 
-/** 以 2024-01-01 为起点，每天轮换一题，两个人看到的题目一致 */
-export function questionOfDay(day = today()) {
-  const idx = ((diffDays(day, parseDay('2024-01-01')) % QUESTIONS.length) + QUESTIONS.length) % QUESTIONS.length;
-  return { index: idx, text: QUESTIONS[idx] };
+/** 提问时的灵感：随机挑几条（以前的每日一问题库） */
+export function suggestQuestions(n = 3, exclude: string[] = []) {
+  const pool = QUESTIONS.filter((q) => !exclude.includes(q));
+  const picked: string[] = [];
+  while (picked.length < n && pool.length) picked.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+  return picked;
+}
+
+export type QuestionStatus = 'yours' | 'waiting' | 'done';
+
+/** 一个问题对我来说的状态：轮到我答 / 等 TA 答 / 都答完了 */
+export function questionState(q: Question, me?: string | null) {
+  const mine = q.answers.find((a) => a.createdBy === me);
+  const theirs = q.answers.find((a) => a.createdBy !== me);
+  const asker = q.createdBy === me;
+  const iMust = !asker || q.askerAnswers;
+  const theyMust = asker || q.askerAnswers;
+  const status: QuestionStatus = iMust && !mine ? 'yours' : theyMust && !theirs ? 'waiting' : 'done';
+  return { mine, theirs, asker, iMust, theyMust, status };
 }
