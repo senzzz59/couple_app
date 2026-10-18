@@ -43,7 +43,7 @@ export async function initStorage(log: { info: (o: object, m: string) => void; w
   await storage.init(log);
   const sweep = async () => {
     const count = await storage.migrateLocal(NAMES);
-    if (count) log.info({ count }, 'object storage: uploading local files');
+    if (count) log.info({ count }, 'object storage: queued old local files (moved one at a time, new uploads go first)');
   };
   await sweep();
   setInterval(() => void sweep().catch(() => {}), 60 * 60_000).unref();

@@ -24,6 +24,7 @@ import type { Readable } from 'node:stream';
  */
 
 export type Area = 'main' | 'thumb' | 'orig';
+type Job = { area: Area; name: string; background: boolean };
 type Log = { info: (o: object, m: string) => void; warn: (o: object, m: string) => void };
 
 export type S3Config = {
@@ -119,10 +120,15 @@ export class Storage {
   /** 服务器自己读写：有内网地址且连得通时走内网 */
   private ops: S3Client | null;
   private log: Log = { info: () => {}, warn: () => {} };
-  private readonly queue: { area: Area; name: string; contentType?: string }[] = [];
+  /** 新上传的文件：优先传，传完就从对象存储加载 */
+  private readonly urgent: Job[] = [];
+  /** 以前存在本地的文件：后台慢慢搬，最多占一个通道，不和新上传抢带宽 */
+  private readonly backlog: Job[] = [];
   private readonly queued = new Set<string>();
   private active = 0;
+  private activeBacklog = 0;
   private readonly concurrency = 3;
+  private migrated = 0;
   /** 上传途中被删掉的文件：传完后把对象也删掉，不留孤儿 */
   private readonly removed = new Set<string>();
   private idleWaiters: (() => void)[] = [];
@@ -209,14 +215,24 @@ export class Storage {
     }
   }
 
-  /** 本地文件处理完成，排队传到对象存储 */
-  offload(area: Area, name: string) {
+  /** 本地文件处理完成，排队传到对象存储；background 是搬运旧文件 */
+  offload(area: Area, name: string, background = false) {
     if (!this.cfg) return;
     const id = `${area}/${name}`;
-    if (this.queued.has(id)) return;
-    this.queued.add(id);
-    this.queue.push({ area, name });
+    if (this.queued.has(id)) {
+      // 已经在后台队列里排着：提到前面
+      const i = background ? -1 : this.backlog.findIndex((j) => j.area === area && j.name === name);
+      if (i >= 0) this.urgent.push(...this.backlog.splice(i, 1).map((j) => ({ ...j, background: false })));
+    } else {
+      this.queued.add(id);
+      (background ? this.backlog : this.urgent).push({ area, name, background });
+    }
     this.pump();
+  }
+
+  /** 还没搬完的数量（新上传 + 旧文件） */
+  get pending() {
+    return this.urgent.length + this.backlog.length + this.active;
   }
 
   /** 搬运本地已有的文件（启动时、以及之后定时补漏） */
@@ -231,25 +247,40 @@ export class Storage {
         // 刚写的文件可能还没写完 / 还在处理，交给上传流程自己搬
         const st = await fs.stat(path.join(this.dirs[area], f)).catch(() => null);
         if (!st || Date.now() - st.mtimeMs < 10 * 60_000) continue;
-        this.offload(area, f);
-        count++;
+        if (!this.queued.has(`${area}/${f}`)) count++;
+        this.offload(area, f, true);
       }
     }
     return count;
   }
 
+  private next(): Job | undefined {
+    if (this.urgent.length) return this.urgent.shift();
+    if (this.backlog.length && this.activeBacklog < 1) return this.backlog.shift();
+    return undefined;
+  }
+
   private pump() {
-    while (this.active < this.concurrency && this.queue.length) {
-      const job = this.queue.shift()!;
+    let job: Job | undefined;
+    while (this.active < this.concurrency && (job = this.next())) {
+      const { area, name, background } = job;
       this.active++;
-      void this.upload(job.area, job.name)
-        .catch((e) => this.log.warn({ area: job.area, name: job.name, err: (e as Error).message }, 'object storage upload failed; file kept on local disk'))
+      if (background) this.activeBacklog++;
+      void this.upload(area, name)
+        .then(() => {
+          if (!background) return;
+          this.migrated++;
+          if (this.migrated % 100 === 0) this.log.info({ done: this.migrated, left: this.backlog.length }, 'object storage: moving old files');
+          if (!this.backlog.length) this.log.info({ done: this.migrated }, 'object storage: old files moved');
+        })
+        .catch((e) => this.log.warn({ area, name, err: (e as Error).message }, 'object storage upload failed; file kept on local disk'))
         .finally(() => {
           this.active--;
-          this.queued.delete(`${job.area}/${job.name}`);
-          this.removed.delete(`${job.area}/${job.name}`);
+          if (background) this.activeBacklog--;
+          this.queued.delete(`${area}/${name}`);
+          this.removed.delete(`${area}/${name}`);
           this.pump();
-          if (!this.active && !this.queue.length) for (const w of this.idleWaiters.splice(0)) w();
+          if (!this.pending) for (const w of this.idleWaiters.splice(0)) w();
         });
     }
   }
@@ -288,7 +319,7 @@ export class Storage {
 
   /** 等上传队列清空（测试 / 停机前用） */
   idle() {
-    if (!this.active && !this.queue.length) return Promise.resolve();
+    if (!this.pending) return Promise.resolve();
     return new Promise<void>((r) => this.idleWaiters.push(r));
   }
 
