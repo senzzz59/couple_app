@@ -419,6 +419,32 @@ export class Storage {
     } while (token);
   }
 
+  /** 列出存着的所有文件（本地 + 对象存储），清理没人引用的文件用；不认识的对象（incoming/ 等）不列 */
+  async listStored(): Promise<{ area: Area; name: string; modifiedAt: number }[]> {
+    const out: { area: Area; name: string; modifiedAt: number }[] = [];
+    for (const area of ['main', 'thumb', 'orig'] as Area[]) {
+      for (const f of await fs.readdir(this.dirs[area]).catch(() => [] as string[])) {
+        const st = await fs.stat(path.join(this.dirs[area], f)).catch(() => null);
+        if (st?.isFile()) out.push({ area, name: f, modifiedAt: st.mtimeMs });
+      }
+    }
+    if (!this.cfg || !this.ready) return out;
+    const prefix = this.cfg.prefix;
+    let token: string | undefined;
+    do {
+      const page = await this.ops!.send(new ListObjectsV2Command({ Bucket: this.cfg.bucket, Prefix: prefix || undefined, ContinuationToken: token }));
+      for (const o of page.Contents ?? []) {
+        const rest = o.Key?.slice(prefix.length) ?? '';
+        const [first, second, extra] = rest.split('/');
+        const where: [Area, string] | null =
+          second === undefined ? ['main', first] : extra === undefined && first === 'thumb' ? ['thumb', second] : extra === undefined && first === 'orig' ? ['orig', second] : null;
+        if (where && where[1]) out.push({ area: where[0], name: where[1], modifiedAt: o.LastModified?.getTime() ?? Date.now() });
+      }
+      token = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (token);
+    return out;
+  }
+
   /** 等上传队列清空（测试 / 停机前用） */
   idle() {
     if (!this.pending) return Promise.resolve();

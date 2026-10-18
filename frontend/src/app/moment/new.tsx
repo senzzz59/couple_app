@@ -112,6 +112,11 @@ export default function NewMoment() {
       haptic.success();
       invalidate('moments');
       if (toGallery) invalidate('gallery');
+      // 带了餐厅：服务器顺便记了一次探店
+      if (placeId) {
+        invalidate('visits');
+        invalidate('places');
+      }
       router.back();
       router.navigate('/moments');
     } catch (e) {

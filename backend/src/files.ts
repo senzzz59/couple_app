@@ -15,7 +15,7 @@ import { displaySize, enqueueVideo, ffmpegAvailable, makePoster, markVideo, onVi
 const THUMB_DIR = path.join(env.uploadDir, 'thumb');
 const ORIG_DIR = path.join(env.uploadDir, 'orig');
 export const FILE_NAME_RE = /^[0-9a-f-]{36}\.(jpg|png|gif|webp|mp4|mov|webm|m4v|3gp)$/;
-const ORIG_RE = /^[0-9a-f-]{36}\.(jpg|jpeg|png|gif|webp|heic|heif|avif|tif|tiff|dng|mp4|mov|webm|m4v|3gp)$/;
+export const ORIG_RE = /^[0-9a-f-]{36}\.(jpg|jpeg|png|gif|webp|heic|heif|avif|tif|tiff|dng|mp4|mov|webm|m4v|3gp)$/;
 const VIDEO_RE = /\.(mp4|mov|webm|m4v|3gp)$/;
 const NAMES: Record<Area, RegExp> = { main: FILE_NAME_RE, thumb: FILE_NAME_RE, orig: ORIG_RE };
 

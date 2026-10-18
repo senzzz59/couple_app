@@ -11,6 +11,7 @@ import { notifyPartner, snippet } from './webPush.ts';
 import { visibleAnswers } from './answerPrivacy.ts';
 import { momentPagination } from './momentPagination.ts';
 import { validAmapUrl } from './amap.ts';
+import { visitFromMoment } from './momentVisit.ts';
 
 const s = schema;
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -224,7 +225,10 @@ export async function resourceRoutes(app: FastifyInstance) {
       await db.insert(t).values({ ...data, id, createdBy: req.user.sub } as never);
       changed(id, req.user.sub);
       void notifyCreated(r.name, data, req.user.sub, (e) => req.log.warn(e, 'web push failed'));
-      return find(id);
+      const row = await find(id);
+      // 带餐厅的动态：顺便记一次探店（失败不影响动态本身）
+      if (r.name === 'moments' && row?.placeId) await visitFromMoment(row as never, req.user.sub).catch((e) => req.log.warn(e, 'visit from moment failed'));
+      return row;
     });
 
     app.patch(`${base}/:id`, auth, async (req, reply) => {
