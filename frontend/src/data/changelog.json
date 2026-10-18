@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "id": "fix-deploy-typecheck",
+      "date": "2026-10-19",
+      "title": "修复上两次更新没有上线",
+      "changes": [
+        { "type": "fix", "text": "修复视频全屏、倍速和新的问答、相册按年月看这两次更新没能上线的问题，这次会一起生效" }
+      ]
+    },
+    {
       "id": "questions-and-album-views",
       "date": "2026-10-19",
       "title": "问答改成互相提问，相册可以按年月看",

@@ -248,7 +248,7 @@ export const Video = forwardRef<VideoHandle, VideoProps>(function Video(
       {controls && (
         <>
           {/* 点一下：显示 / 隐藏按钮；长按：倍速快进 */}
-          <Pressable style={[StyleSheet.absoluteFill, styles.noSelect]} onPress={tap} onLongPress={startFast} onPressOut={stopFast} delayLongPress={350} accessibilityLabel="视频画面，长按快进" />
+          <Pressable style={StyleSheet.absoluteFill} onPress={tap} onLongPress={startFast} onPressOut={stopFast} delayLongPress={350} accessibilityLabel="视频画面，长按快进" />
 
           {waiting && !paused && (
             <View pointerEvents="none" style={styles.center}>
@@ -335,7 +335,6 @@ export const Video = forwardRef<VideoHandle, VideoProps>(function Video(
 const styles = StyleSheet.create({
   wrap: { overflow: 'hidden' },
   fs: { backgroundColor: '#000' },
-  noSelect: { userSelect: 'none' },
   center: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
   bigPlay: {
     width: 64,
