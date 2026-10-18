@@ -139,8 +139,10 @@ function MomentCard({ m, i, queryKey }: { m: Moment; i: number; queryKey: string
     haptic.medium();
     toggleLike(m, me.id, queryKey);
   };
+  // 手指一动就不算双击（是在滑动）
   const doubleTap = Gesture.Tap()
     .numberOfTaps(2)
+    .maxDistance(10)
     .onEnd(() => scheduleOnRN(like, true));
 
   const startReply = (c: Comment | null) => {
@@ -222,7 +224,8 @@ function MomentCard({ m, i, queryKey }: { m: Moment; i: number; queryKey: string
         </Pressable>
       </Row>
 
-      <GestureDetector gesture={doubleTap}>
+      {/* 网页版默认会禁止从这里开始滑动页面（touch-action: none），从动态正文或照片上划不动；这里允许正常滑动 */}
+      <GestureDetector gesture={doubleTap} touchAction="manipulation">
         <View collapsable={false} style={{ marginTop: 12, gap: 10 }}>
           {!!m.content && <Txt v="body">{m.content}</Txt>}
           <MediaGrid items={media} width={contentWidth} takenAt={m.createdAt} />

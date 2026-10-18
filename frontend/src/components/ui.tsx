@@ -3,6 +3,7 @@ import { LucideIcon } from 'lucide-react-native';
 import { forwardRef, ReactNode, useState } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   PressableProps,
   StyleProp,
@@ -45,6 +46,8 @@ type PressScaleProps = PressableProps & {
   children?: ReactNode;
 };
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+// 网页版：按下的效果稍等一下再出现。手指落在按钮 / 照片上开始滑动页面时，不会先「按下去」一下
+const PRESS_DELAY = Platform.OS === 'web' ? ({ delayPressIn: 90 } as object) : {};
 export function PressScale({ style, scaleTo = 0.95, haptics = true, onPressIn, onPressOut, onPress, children, ...p }: PressScaleProps) {
   const sx = useSharedValue(1);
   const sy = useSharedValue(1);
@@ -52,6 +55,7 @@ export function PressScale({ style, scaleTo = 0.95, haptics = true, onPressIn, o
   const squash = (1 - scaleTo) * 0.6;
   return (
     <AnimatedPressable
+      {...PRESS_DELAY}
       {...p}
       onPressIn={(e) => {
         sx.set(withSpring(1 - squash * 0.3, springs.snappy));
