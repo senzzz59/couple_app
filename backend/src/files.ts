@@ -5,11 +5,12 @@ import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import sharp, { type Metadata } from 'sharp';
+import { z } from 'zod';
 
 import { env } from './env.ts';
 import { exifTakenAt, findEmbeddedVideo, videoExt } from './media.ts';
 import { s3ConfigFrom, Storage, contentTypeOf, type Area } from './storage.ts';
-import { displaySize, enqueueVideo, ffmpegAvailable, makePoster, onVideoSettled, probeVideo, videoIsMp4, videoPlan, videoSettled } from './transcode.ts';
+import { displaySize, enqueueVideo, ffmpegAvailable, makePoster, markVideo, onVideoSettled, probeVideo, videoIsMp4, videoPlan, videoSettled } from './transcode.ts';
 
 const THUMB_DIR = path.join(env.uploadDir, 'thumb');
 const ORIG_DIR = path.join(env.uploadDir, 'orig');
@@ -46,7 +47,7 @@ export async function initStorage(log: { info: (o: object, m: string) => void; w
     if (count) log.info({ count }, 'object storage: queued old local files (moved one at a time, new uploads go first)');
   };
   await sweep();
-  setInterval(() => void sweep().catch(() => {}), 60 * 60_000).unref();
+  setInterval(() => void sweep().then(() => storage.cleanupIncoming()).catch(() => {}), 60 * 60_000).unref();
 }
 
 const IMAGE_LIMIT = 60 * 1024 * 1024;
@@ -68,12 +69,136 @@ export type UploadedItem = {
 
 const ORIG_EXT: Record<string, string> = { jpeg: 'jpg', png: 'png', gif: 'gif', webp: 'webp', heif: 'heic', avif: 'avif', tiff: 'tif' };
 
+class UploadError extends Error {
+  constructor(
+    readonly status: number,
+    message: string
+  ) {
+    super(message);
+  }
+}
+
+type Log = { warn: (o: object, m: string) => void };
+
+/** 文件已经在对象存储里有了：本地那份删掉，也不用再清理 / 上传 */
+async function dropLocal(target: string, written: string[]) {
+  const i = written.indexOf(target);
+  if (i >= 0) written.splice(i, 1);
+  await fs.rm(target, { force: true });
+}
+
+/**
+ * 视频：读尺寸 / 时长、截封面、排队转码。target 已经在 written 里。
+ * remote：直传到对象存储的原文件（incoming/...），原片和不用转码的视频直接在对象存储里复制，不再从服务器传一遍。
+ */
+async function processVideo(target: string, vext: string, fileName: string, keepOriginal: boolean, written: string[], log: Log, remote?: string): Promise<UploadedItem> {
+  const name = path.basename(target);
+  const { size } = await fs.stat(target);
+  const item: UploadedItem = { kind: 'video', image: null, video: name, original: null, fileName, width: null, height: null, duration: null, size, takenAt: null };
+  if (!(await ffmpegAvailable())) {
+    if (remote && (await storage.copyObject(remote, 'main', name).then(() => true, () => false))) await dropLocal(target, written);
+    return item;
+  }
+  const probe = await probeVideo(target);
+  const plan = probe ? videoPlan(probe) : 'ok';
+  if (probe) {
+    Object.assign(item, displaySize(probe), { duration: probe.duration });
+    // 要转码的视频，相册上传时先留一份原片供下载
+    if (keepOriginal && plan !== 'ok') {
+      const original = `${crypto.randomUUID()}.${vext}`;
+      if (!remote || !(await storage.copyObject(remote, 'orig', original).then(() => true, () => false))) {
+        await fs.link(target, path.join(ORIG_DIR, original)).catch(() => fs.copyFile(target, path.join(ORIG_DIR, original)));
+        written.push(path.join(ORIG_DIR, original));
+      }
+      item.original = original;
+    }
+  }
+  // 服务器截封面：浏览器解不了 HEVC 时前端截不到，这里兜底
+  const poster = `${crypto.randomUUID()}.jpg`;
+  if (await makePoster(target, path.join(env.uploadDir, poster))) {
+    written.push(path.join(env.uploadDir, poster));
+    await sharp(path.join(env.uploadDir, poster)).resize({ width: 600, withoutEnlargement: true }).jpeg({ quality: 78 }).toFile(path.join(THUMB_DIR, poster));
+    written.push(path.join(THUMB_DIR, poster));
+    item.image = poster;
+  }
+  // 所有手机都能播的视频：对象存储里的原文件就是成品，复制过去就行
+  if (remote && plan === 'ok' && (await storage.copyObject(remote, 'main', name).then(() => true, () => false))) {
+    await markVideo(name, 'ok');
+    await dropLocal(target, written);
+    return item;
+  }
+  enqueueVideo(name, log);
+  return item;
+}
+
+/** 图片：按 EXIF 摆正、限制最长边 2400px、生成 600px 缩略图，可选保留原图；安卓动态照片拆出视频 */
+async function processImage(buf: Buffer, mimetype: string, fileName: string, keepOriginal: boolean, written: string[], log: Log, remote?: string): Promise<UploadedItem> {
+  if (buf.length > IMAGE_LIMIT) throw new UploadError(413, `图片太大了（最大 60MB）：${fileName}`);
+  const isGif = mimetype === 'image/gif';
+  const id = crypto.randomUUID();
+  const name = `${id}.${isGif ? 'gif' : 'jpg'}`;
+  let meta: Metadata;
+  try {
+    meta = await sharp(buf, { failOn: 'none' }).metadata();
+    if (isGif) {
+      await fs.writeFile(path.join(env.uploadDir, name), buf);
+    } else {
+      const img = sharp(buf, { failOn: 'none' }).rotate();
+      await img.clone().resize({ width: 2400, height: 2400, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 84, mozjpeg: true }).toFile(path.join(env.uploadDir, name));
+    }
+    written.push(path.join(env.uploadDir, name));
+    await sharp(buf, { failOn: 'none', animated: false }).rotate().resize({ width: 600, withoutEnlargement: true }).jpeg({ quality: 78 }).toFile(path.join(THUMB_DIR, name));
+    written.push(path.join(THUMB_DIR, name));
+  } catch (e) {
+    log.warn({ err: e, mimetype, filename: fileName }, 'image processing failed');
+    throw new UploadError(400, `无法识别的图片格式：${fileName}`);
+  }
+
+  let original: string | null = null;
+  if (keepOriginal) {
+    original = `${id}.${ORIG_EXT[meta.format ?? ''] ?? 'jpg'}`;
+    if (!remote || !(await storage.copyObject(remote, 'orig', original).then(() => true, () => false))) {
+      await fs.writeFile(path.join(ORIG_DIR, original), buf);
+      written.push(path.join(ORIG_DIR, original));
+    }
+  }
+
+  // 安卓动态照片：JPEG 后面接着一段 MP4
+  let video: string | null = null;
+  const embedded = meta.format === 'jpeg' ? findEmbeddedVideo(buf) : -1;
+  if (embedded > 0) {
+    video = `${id}.mp4`;
+    await fs.writeFile(path.join(env.uploadDir, video), buf.subarray(embedded));
+    written.push(path.join(env.uploadDir, video));
+    // 三星等机型的动态照片是 HEVC，转成 iPhone 也能播的格式
+    if (await ffmpegAvailable()) enqueueVideo(video, log);
+  }
+
+  const swap = (meta.orientation ?? 1) >= 5;
+  return {
+    kind: video ? 'live' : 'image',
+    image: name,
+    video,
+    original,
+    fileName,
+    width: (swap ? meta.height : meta.width) ?? null,
+    height: (swap ? meta.width : meta.height) ?? null,
+    duration: null,
+    size: buf.length,
+    takenAt: exifTakenAt(meta.exif, env.tz)?.toISOString() ?? null,
+  };
+}
+
+const DIRECT_ID_RE = /^[0-9a-f-]{36}\.[a-z0-9]{1,5}$/;
+const directFile = z.object({ name: z.string().min(1).max(300), type: z.string().max(100).default(''), size: z.number().int().min(1) });
+
 /**
  * 上传：
  * - 图片自动按 EXIF 摆正、限制最长边 2400px、生成 600px 缩略图；?original=1 时额外保留原图（相册下载用）
  * - 视频原样保存（最大 500MB），支持断点续传式的 Range 播放
  * - 安卓「动态照片」会拆出里面的视频，变成 Live 图
  * 文件名是随机 UUID（不可猜测），通过 /files/<name>、/files/thumb/<name>、/files/orig/<name> 访问。
+ * 配置了对象存储时，网页先把文件直传到对象存储（/api/files/direct → PUT → /api/files/complete），不经过服务器带宽。
  */
 export async function fileRoutes(app: FastifyInstance) {
   await fs.mkdir(THUMB_DIR, { recursive: true });
@@ -81,110 +206,87 @@ export async function fileRoutes(app: FastifyInstance) {
 
   app.post('/api/files', { preHandler: app.authenticate }, async (req, reply) => {
     const keepOriginal = (req.query as { original?: string }).original === '1';
-    const names: string[] = [];
     const items: UploadedItem[] = [];
     const written: string[] = [];
     try {
       for await (const part of req.files({ limits: { fileSize: VIDEO_LIMIT, files: 30 } })) {
         const vext = videoExt(part.mimetype, part.filename);
         if (vext) {
-          const name = `${crypto.randomUUID()}.${vext}`;
-          const target = path.join(env.uploadDir, name);
+          const target = path.join(env.uploadDir, `${crypto.randomUUID()}.${vext}`);
           written.push(target);
           await pipeline(part.file, createWriteStream(target));
-          if (part.file.truncated) return reply.code(413).send({ message: `视频太大了（最大 500MB）：${part.filename}` });
-          const { size } = await fs.stat(target);
-          const item: UploadedItem = { kind: 'video', image: null, video: name, original: null, fileName: part.filename, width: null, height: null, duration: null, size, takenAt: null };
-          if (await ffmpegAvailable()) {
-            const probe = await probeVideo(target);
-            if (probe) {
-              Object.assign(item, displaySize(probe), { duration: probe.duration });
-              // 要转码的视频，相册上传时先留一份原片供下载
-              if (keepOriginal && videoPlan(probe) !== 'ok') {
-                const original = `${crypto.randomUUID()}.${vext}`;
-                await fs.link(target, path.join(ORIG_DIR, original)).catch(() => fs.copyFile(target, path.join(ORIG_DIR, original)));
-                written.push(path.join(ORIG_DIR, original));
-                item.original = original;
-              }
-            }
-            // 服务器截封面：浏览器解不了 HEVC 时前端截不到，这里兜底
-            const poster = `${crypto.randomUUID()}.jpg`;
-            if (await makePoster(target, path.join(env.uploadDir, poster))) {
-              written.push(path.join(env.uploadDir, poster));
-              await sharp(path.join(env.uploadDir, poster)).resize({ width: 600, withoutEnlargement: true }).jpeg({ quality: 78 }).toFile(path.join(THUMB_DIR, poster));
-              written.push(path.join(THUMB_DIR, poster));
-              item.image = poster;
-            }
-            enqueueVideo(name, req.log);
-          }
-          names.push(name);
-          items.push(item);
+          if (part.file.truncated) throw new UploadError(413, `视频太大了（最大 500MB）：${part.filename}`);
+          items.push(await processVideo(target, vext, part.filename, keepOriginal, written, req.log));
           continue;
         }
-
-        const buf = await part.toBuffer();
-        if (buf.length > IMAGE_LIMIT) return reply.code(413).send({ message: `图片太大了（最大 60MB）：${part.filename}` });
-        const isGif = part.mimetype === 'image/gif';
-        const id = crypto.randomUUID();
-        const name = `${id}.${isGif ? 'gif' : 'jpg'}`;
-        let meta: Metadata;
-        try {
-          meta = await sharp(buf, { failOn: 'none' }).metadata();
-          if (isGif) {
-            await fs.writeFile(path.join(env.uploadDir, name), buf);
-          } else {
-            const img = sharp(buf, { failOn: 'none' }).rotate();
-            await img.clone().resize({ width: 2400, height: 2400, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 84, mozjpeg: true }).toFile(path.join(env.uploadDir, name));
-          }
-          written.push(path.join(env.uploadDir, name));
-          await sharp(buf, { failOn: 'none', animated: false }).rotate().resize({ width: 600, withoutEnlargement: true }).jpeg({ quality: 78 }).toFile(path.join(THUMB_DIR, name));
-          written.push(path.join(THUMB_DIR, name));
-        } catch (e) {
-          req.log.warn({ err: e, mimetype: part.mimetype, filename: part.filename }, 'image processing failed');
-          return reply.code(400).send({ message: `无法识别的图片格式：${part.filename}` });
-        }
-
-        let original: string | null = null;
-        if (keepOriginal) {
-          original = `${id}.${ORIG_EXT[meta.format ?? ''] ?? 'jpg'}`;
-          await fs.writeFile(path.join(ORIG_DIR, original), buf);
-          written.push(path.join(ORIG_DIR, original));
-        }
-
-        // 安卓动态照片：JPEG 后面接着一段 MP4
-        let video: string | null = null;
-        const embedded = meta.format === 'jpeg' ? findEmbeddedVideo(buf) : -1;
-        if (embedded > 0) {
-          video = `${id}.mp4`;
-          await fs.writeFile(path.join(env.uploadDir, video), buf.subarray(embedded));
-          written.push(path.join(env.uploadDir, video));
-          // 三星等机型的动态照片是 HEVC，转成 iPhone 也能播的格式
-          if (await ffmpegAvailable()) enqueueVideo(video, req.log);
-        }
-
-        const swap = (meta.orientation ?? 1) >= 5;
-        names.push(name);
-        items.push({
-          kind: video ? 'live' : 'image',
-          image: name,
-          video,
-          original,
-          fileName: part.filename,
-          width: (swap ? meta.height : meta.width) ?? null,
-          height: (swap ? meta.width : meta.height) ?? null,
-          duration: null,
-          size: buf.length,
-          takenAt: exifTakenAt(meta.exif, env.tz)?.toISOString() ?? null,
-        });
+        items.push(await processImage(await part.toBuffer(), part.mimetype, part.filename, keepOriginal, written, req.log));
       }
     } catch (e) {
       // 中途失败：把已经写下的文件清掉，避免留下孤儿文件
       await Promise.all(written.map((f) => fs.rm(f, { force: true })));
+      if (e instanceof UploadError) return reply.code(e.status).send({ message: e.message });
       if ((e as { code?: string }).code === 'FST_REQ_FILE_TOO_LARGE') return reply.code(413).send({ message: '文件太大了（视频最大 500MB）' });
       throw e;
     }
     void offloadWritten(written);
-    return { files: names, items };
+    return { files: items.map((i) => (i.kind === 'video' ? i.video! : i.image!)), items };
+  });
+
+  // ---- 直传第一步：给每个文件一个 1 小时有效的上传链接（对象存储没配置 / 连不上时告诉前端走老路）
+  app.post('/api/files/direct', { preHandler: app.authenticate }, async (req, reply) => {
+    const body = z.object({ files: z.array(directFile).min(1).max(30) }).parse(req.body);
+    if (!storage.directUpload) return { enabled: false };
+    for (const f of body.files) {
+      const video = !!videoExt(f.type, f.name);
+      if (f.size > (video ? VIDEO_LIMIT : IMAGE_LIMIT)) return reply.code(413).send({ message: `${video ? '视频太大了（最大 500MB）' : '图片太大了（最大 60MB）'}：${f.name}` });
+    }
+    const uploads = await Promise.all(
+      body.files.map(async (f) => {
+        const ext = (f.name.split('.').pop() ?? '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5) || 'bin';
+        const id = `${crypto.randomUUID()}.${ext}`;
+        const type = f.type || 'application/octet-stream';
+        return { id, url: await storage.signedUploadUrl(id, type, f.size), headers: { 'Content-Type': type } };
+      })
+    );
+    return { enabled: true, uploads };
+  });
+
+  // ---- 直传第二步：文件已经在对象存储里了，服务器取回来处理（和普通上传一样），返回同样的结果
+  app.post('/api/files/complete', { preHandler: app.authenticate }, async (req, reply) => {
+    const body = z
+      .object({ uploads: z.array(z.object({ id: z.string().regex(DIRECT_ID_RE), name: z.string().min(1).max(300) })).min(1).max(30), original: z.boolean().optional() })
+      .parse(req.body);
+    if (!storage.enabled) return reply.code(400).send({ message: '对象存储没有配置' });
+    const items: UploadedItem[] = [];
+    const written: string[] = [];
+    try {
+      for (const u of body.uploads) {
+        const head = await storage.headIncoming(u.id);
+        if (!head) throw new UploadError(400, `上传没有完成，请重试：${u.name}`);
+        const vext = videoExt(head.type, u.name);
+        if (head.size > (vext ? VIDEO_LIMIT : IMAGE_LIMIT)) throw new UploadError(413, `${vext ? '视频太大了（最大 500MB）' : '图片太大了（最大 60MB）'}：${u.name}`);
+        const remote = storage.incomingKey(u.id);
+        if (vext) {
+          const target = path.join(env.uploadDir, `${crypto.randomUUID()}.${vext}`);
+          written.push(target);
+          await pipeline(await storage.readIncoming(u.id), createWriteStream(target));
+          items.push(await processVideo(target, vext, u.name, !!body.original, written, req.log, remote));
+        } else {
+          const chunks: Buffer[] = [];
+          for await (const c of await storage.readIncoming(u.id)) chunks.push(c as Buffer);
+          items.push(await processImage(Buffer.concat(chunks), head.type, u.name, !!body.original, written, req.log, remote));
+        }
+      }
+    } catch (e) {
+      await Promise.all(written.map((f) => fs.rm(f, { force: true })));
+      if (e instanceof UploadError) return reply.code(e.status).send({ message: e.message });
+      throw e;
+    } finally {
+      // 原文件已经处理（或复制）完了，临时对象删掉
+      await Promise.all(body.uploads.map((u) => storage.removeIncoming(u.id)));
+    }
+    void offloadWritten(written);
+    return { files: items.map((i) => (i.kind === 'video' ? i.video! : i.image!)), items };
   });
 
   const serve = (area: Area, re: RegExp) => async (req: { params: unknown; query: unknown }, reply: FastifyReply) => {

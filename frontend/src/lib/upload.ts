@@ -1,9 +1,11 @@
 import { Platform } from 'react-native';
 
-import { ApiError, getBaseUrl, getToken } from './api';
+import { api, ApiError, getBaseUrl, getToken } from './api';
 
 /**
- * 上传文件到 /api/files。
+ * 上传文件。
+ * - 服务器配置了对象存储时，网页把文件直接传到对象存储（不占服务器带宽），再通知服务器处理；
+ *   直传失败（比如对象存储不允许跨域）就自动改走服务器 /api/files，这次打开页面不再尝试直传。
  * - 网页版先在浏览器里把大图压到最长边 2400px 的 JPEG（服务器最终也是这个规格），
  *   一张几 MB 的截图 / PNG 通常只剩几百 KB，上传更快，也不容易被服务器的上传大小限制拦下。
  * - 用 XMLHttpRequest 上传，可以显示进度，并且能分清是网络断了还是文件太大。
@@ -167,12 +169,66 @@ function send(form: FormData, total: number, onProgress?: (p: number) => void, q
   });
 }
 
-async function buildForm(inputs: UploadInput[], original: boolean, level: number) {
+type Prepared = { blob: Blob; name: string };
+type DirectTicket = { id: string; url: string; headers: Record<string, string> };
+
+/** 直传失败过（网络 / 跨域）：本次打开页面都走服务器 */
+let directOff = false;
+
+function put(url: string, blob: Blob, headers: Record<string, string>, onProgress: (loaded: number) => void) {
+  return new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', url);
+    for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
+    xhr.upload.onprogress = (e) => onProgress(e.loaded);
+    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new ApiError(`上传失败（${xhr.status}）`, xhr.status)));
+    xhr.onerror = () => reject(new ApiError('network', 0));
+    xhr.ontimeout = () => reject(new ApiError('network', 0));
+    xhr.timeout = 30 * 60 * 1000;
+    xhr.send(blob);
+  });
+}
+
+/** 直传到对象存储；返回 null 表示这次不能直传，调用方改走服务器 */
+async function sendDirect(files: Prepared[], original: boolean, onProgress?: (p: number) => void): Promise<unknown | null> {
+  if (directOff || Platform.OS !== 'web') return null;
+  let tickets: DirectTicket[] | undefined;
+  try {
+    const res = await api.post<{ enabled: boolean; uploads?: DirectTicket[] }>('/api/files/direct', { files: files.map((f) => ({ name: f.name, type: f.blob.type, size: f.blob.size })) });
+    tickets = res.enabled ? res.uploads : undefined;
+  } catch {
+    return null;
+  }
+  if (!tickets || tickets.length !== files.length) return null;
+  const total = files.reduce((n, f) => n + f.blob.size, 0) || 1;
+  let done = 0;
+  try {
+    for (const [i, t] of tickets.entries()) {
+      await put(t.url, files[i].blob, t.headers, (loaded) => onProgress?.(((done + loaded) / total) * 0.95));
+      done += files[i].blob.size;
+    }
+  } catch (e) {
+    // 连不上对象存储或跨域被拦：这次打开页面都走服务器
+    if (e instanceof ApiError && e.status === 0) directOff = true;
+    return null;
+  }
+  try {
+    const out = await api.post('/api/files/complete', { uploads: tickets.map((t, i) => ({ id: t.id, name: files[i].name })), original });
+    onProgress?.(1);
+    return out;
+  } catch (e) {
+    // 文件本身有问题（格式不认识、太大）直接告诉用户；服务器临时出错就改走老路再试
+    if (e instanceof ApiError && e.status >= 400 && e.status < 500) throw e;
+    return null;
+  }
+}
+
+async function buildForm(inputs: UploadInput[], original: boolean, level: number, prepared?: Prepared[]) {
   const form = new FormData();
   let total = 0;
   for (const [i, input] of inputs.entries()) {
     if (Platform.OS === 'web') {
-      const { blob, name } = await webBlob(input, original, level);
+      const { blob, name } = prepared?.[i] ?? (await webBlob(input, original, level));
       total += blob.size;
       form.append('file', blob, name);
     } else {
@@ -187,7 +243,14 @@ async function buildForm(inputs: UploadInput[], original: boolean, level: number
 export async function uploadFiles<T = { files: string[] }>(inputs: UploadInput[], opts: UploadOptions = {}): Promise<T> {
   const original = !!opts.original;
   const query = original ? '?original=1' : '';
-  let { form, total } = await buildForm(inputs, original, 0);
+  let prepared: Prepared[] | undefined;
+  if (Platform.OS === 'web' && !directOff) {
+    prepared = [];
+    for (const input of inputs) prepared.push(await webBlob(input, original, 0));
+    const direct = await sendDirect(prepared, original, opts.onProgress);
+    if (direct) return direct as T;
+  }
+  let { form, total } = await buildForm(inputs, original, 0, prepared);
   try {
     return (await send(form, total, opts.onProgress, query)) as T;
   } catch (e) {
