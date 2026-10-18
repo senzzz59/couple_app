@@ -2,6 +2,9 @@ import http from 'node:http';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+import { syncDeployTools } from './sync-tools.mjs';
 
 export function validateWebhook(headers, rawBody, secret) {
   const supplied = headers['x-hub-signature-256'];
@@ -61,7 +64,13 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const secret = process.env.WEBHOOK_SECRET;
   if (!secret || secret.length < 32) throw new Error('WEBHOOK_SECRET must contain at least 32 characters');
   const script = fileURLToPath(new URL('./deploy-all.mjs', import.meta.url));
-  const deploy = () => new Promise((resolve, reject) => {
+  const repository = path.resolve(path.dirname(script), '..');
+  const deploy = async () => {
+    // 先把部署脚本更新到最新（安全时才快进），再用新脚本部署
+    await syncDeployTools(repository);
+    return runDeploy();
+  };
+  const runDeploy = () => new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [script], { stdio: 'inherit', env: process.env });
     child.on('error', reject);
     child.on('exit', (code) => code === 0 ? resolve() : reject(new Error(`deploy exited ${code}`)));

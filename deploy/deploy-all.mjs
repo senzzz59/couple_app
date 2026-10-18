@@ -1,7 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { root, run, withLock, publishFrontend } from './release-utils.mjs';
+import { notifyDeploy } from './notify.mjs';
+import { root, repository, run, withLock, publishFrontend } from './release-utils.mjs';
 
 const scripts = path.dirname(fileURLToPath(import.meta.url));
 await withLock('all', async () => {
@@ -13,6 +14,7 @@ await withLock('all', async () => {
   if (!release.startsWith(path.join(root, 'releases') + path.sep)) throw new Error('Invalid frontend release');
   // Both sides use the same immutable commit even if master advances during the build.
   await run(process.execPath, [path.join(scripts, 'deploy-backend.mjs')], scripts, { ...process.env, COUPLE_DEPLOY_COMMIT: pending.commit });
+  const lastDeployed = await fs.readFile(path.join(root, 'state/deployment.json'), 'utf8').then((t) => JSON.parse(t).commit).catch(() => null);
   await withLock('frontend', async () => {
     const file = path.join(root, 'state/frontend.json');
     const previous = await fs.readFile(file, 'utf8').then(JSON.parse).catch(() => null);
@@ -22,4 +24,6 @@ await withLock('all', async () => {
     await fs.writeFile(path.join(root, 'state/deployment.json'), JSON.stringify({ commit: pending.commit, updatedAt: result.updatedAt }, null, 2));
     console.log(`Frontend and backend deployed from master: ${pending.commit}`);
   });
+  // 发通知邮件：版本号 + 这次新增的更新记录（失败不影响部署）
+  if (lastDeployed !== pending.commit) await notifyDeploy({ root, repository, previous: /^[0-9a-f]{40}$/.test(lastDeployed ?? '') ? lastDeployed : null, commit: pending.commit });
 });

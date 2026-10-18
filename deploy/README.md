@@ -133,6 +133,24 @@ systemctl restart couple-webhook
 
 连续推送会合并待执行任务并串行部署。若前端构建或后端检查失败，不切换前端；若后端更新后无法通过健康检查，存在上一版本时会尝试恢复旧后端服务。数据库迁移不会自动逆向回滚，因此涉及数据库的更改应向后兼容，并提前备份。
 
+## 部署完成邮件和更新记录
+
+每次自动部署成功后，会发一封邮件：版本号、部署时间、提交号，以及这次带来的更新内容（和 App「我的 → 关于 → 更新记录」一致）。
+
+- 用 `shared/backend.env` 里的 SMTP 配置发送（和注册验证码同一套）。没配 SMTP 时只在后端日志里记一行。
+- 收件人：`backend.env` 里的 `DEPLOY_NOTIFY_EMAIL`，留空默认 `2110901906@qq.com`；多个邮箱用逗号分开；填 `off` 关闭。改了之后重新部署后端生效。
+- 部署脚本在服务器本机调用后端的 `/internal/deploy-notify`（不在 `/api/` 下，Nginx 不会转发到公网），并用 `JWT_SECRET` 签名。
+- 邮件发送失败不影响部署结果；`journalctl -u couple-webhook` 里能看到 `Deploy notification: ...`。
+
+每次功能合并都会在 `frontend/src/data/changelog.json` 写一条中文更新记录，版本号自动按合并提交计算。
+
+**部署工具自动更新**：接收器在每次部署前，会把主克隆（`/www/couple-app/repo`）快进到最新的 master，部署脚本的改动不用再手动拉取。只在主克隆没有本地修改、能快进时才做，否则照旧用现有脚本部署并在日志里说明。这个功能本身需要手动更新一次：
+
+```sh
+cd /www/couple-app/repo && git pull --ff-only origin master
+systemctl restart couple-webhook
+```
+
 ## 5. 手动部署和前端回退
 
 ```sh
