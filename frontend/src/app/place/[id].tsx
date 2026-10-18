@@ -7,6 +7,7 @@ import { Linking, ScrollView, StyleSheet, Text, useWindowDimensions, View } from
 import Animated, { interpolate, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { chooseTravel } from '@/components/TravelPicker';
 import { LivePlaceInfo } from '@/components/LivePlaceInfo';
 import { StarRating, toast } from '@/components/motion';
 import { openViewer } from '@/components/Photos';
@@ -16,7 +17,6 @@ import { Avatar, Button, enter, IconButton, PressScale, Row, Txt } from '@/compo
 import { fileUrl } from '@/lib/api';
 import { fmtDate } from '@/lib/dates';
 import { categoryEmoji, placeCover } from '@/lib/food';
-import { openInMaps } from '@/lib/geo';
 import { haptic } from '@/lib/haptics';
 import { useCouple } from '@/lib/session';
 import { useQuery } from '@/lib/store';
@@ -152,7 +152,7 @@ export default function PlaceDetail() {
           </Animated.View>
 
           <Animated.View entering={enter(1)} style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
-            <PressScale onPress={() => openInMaps(p).catch(() => toast('打不开高德地图', '⚠️'))} style={[styles.action, { backgroundColor: colors.ink }]}>
+            <PressScale onPress={() => chooseTravel(p)} style={[styles.action, { backgroundColor: colors.ink }]}>
               <Navigation size={18} color={colors.white} />
               <Txt v="bodyStrong" color={colors.white}>
                 {p.amapUrl && (p.lat == null || p.lng == null) ? '打开高德地点' : '高德导航'}

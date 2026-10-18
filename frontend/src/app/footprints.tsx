@@ -10,7 +10,8 @@ import { RollingNumber, Segmented, StarRating } from '@/components/motion';
 import { Screen } from '@/components/Screen';
 import { enter, PressScale, Row, Txt } from '@/components/ui';
 import { categoryEmoji } from '@/lib/food';
-import { AMAP_JS_KEY, openInMaps } from '@/lib/geo';
+import { chooseTravel } from '@/components/TravelPicker';
+import { AMAP_JS_KEY } from '@/lib/geo';
 import type { MapPoint } from '@/lib/mapHtml';
 import { invalidate, useQuery } from '@/lib/store';
 import type { Place, Visit } from '@/lib/types';
@@ -155,7 +156,7 @@ export default function Footprints() {
               </Txt>
             </Row>
           </View>
-          <PressScale onPress={() => openInMaps(sel)} style={styles.selBtn}>
+          <PressScale onPress={() => chooseTravel(sel)} style={styles.selBtn}>
             <Navigation size={16} color={colors.ink} />
           </PressScale>
           <PressScale onPress={() => router.push({ pathname: '/place/[id]', params: { id: sel.id } })} style={[styles.selBtn, { backgroundColor: colors.ink }]}>

@@ -9,12 +9,12 @@ import { api, fileUrl } from '@/lib/api';
 import type { AmapDetails } from '@/lib/amapLive';
 import { fmtDate } from '@/lib/dates';
 import { categoryEmoji, categoryTone, placeArea } from '@/lib/food';
-import { AMAP_KEY, openInMaps } from '@/lib/geo';
+import { AMAP_KEY } from '@/lib/geo';
+import { chooseTravel } from './TravelPicker';
 import { fmtKm } from '@/lib/location';
 import type { Place, Visit } from '@/lib/types';
 import { colors, fonts, radius } from '@/theme';
 
-import { toast } from './motion';
 import { PressScale, Row, Txt } from './ui';
 
 // 同一家店这次打开 App 只查一次高德
@@ -164,7 +164,7 @@ function PeekBody({ p, visits, km, onClose }: { p: Place; visits: Visit[]; km: n
         </ScrollView>
 
         <Animated.View entering={FadeIn.delay(120)} style={styles.actions}>
-          <Action icon={<Navigation size={17} color={colors.white} />} label="导航" dark onPress={() => go(() => openInMaps(p).catch(() => toast('打不开高德地图', '⚠️')))} />
+          <Action icon={<Navigation size={17} color={colors.white} />} label="导航" dark onPress={() => go(() => chooseTravel(p))} />
           <Action icon={<NotebookPen size={17} color={colors.ink} />} label="记一次" onPress={() => go(() => router.push({ pathname: '/visit/new', params: { placeId: p.id } }))} />
           <Action label="详情" onPress={() => go(() => router.push({ pathname: '/place/[id]', params: { id: p.id } }))} />
         </Animated.View>
