@@ -16,3 +16,5 @@ export const useAppUpdates = () => useSyncExternalStore(appUpdates.subscribe, ap
 export const appVersion = Constants.nativeAppVersion ?? Constants.expoConfig?.version ?? '1.0.0';
 export const updateVersion = Updates.updateId?.slice(0, 8);
 export const buildInfo = { commit: null as string | null, builtAt: null as string | null };
+/** 更新记录每一条的版本号：App 里没有构建信息，用记录里写的版本 */
+export const releaseVersions: Record<string, string> = {};

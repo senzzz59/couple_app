@@ -117,6 +117,7 @@ function RootStack({ fontsLoaded }: { fontsLoaded: boolean }) {
           <Stack.Screen name="anniversaries" />
           <Stack.Screen name="settings/index" />
           <Stack.Screen name="settings/about" />
+          <Stack.Screen name="settings/changelog" />
           <Stack.Screen name="settings/profile" options={modal} />
           <Stack.Screen name="settings/password" options={modal} />
           <Stack.Screen name="roulette" options={{ animation: 'fade_from_bottom' }} />

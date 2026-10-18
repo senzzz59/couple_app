@@ -1,0 +1,123 @@
+{
+  "releases": [
+    {
+      "id": "deploy-email-changelog",
+      "date": "2026-10-18",
+      "title": "更新记录和部署通知",
+      "changes": [
+        { "type": "new", "text": "「关于」里可以看每个版本更新了什么" },
+        { "type": "new", "text": "每次自动部署完成后发邮件通知，附上版本号和这次的更新内容" }
+      ]
+    },
+    {
+      "id": "nav-travel-mode",
+      "version": "1.1.56",
+      "date": "2026-10-18",
+      "title": "导航可以选怎么去",
+      "changes": [
+        { "type": "new", "text": "点导航先选步行、骑行、公交地铁还是开车，上次选的会标出来" },
+        { "type": "new", "text": "「现在出发要多久」里点某种方式，直接按这种方式导航" },
+        { "type": "fix", "text": "以前导航一律按开车打开" }
+      ]
+    },
+    {
+      "id": "upload-manager",
+      "version": "1.1.54",
+      "date": "2026-10-18",
+      "title": "上传队列和快速上传",
+      "changes": [
+        { "type": "new", "text": "点上传条能看每一项：排队、上传中、处理中、失败，失败的可以重试" },
+        { "type": "new", "text": "切到别的应用、页面被关掉，回来会接着传；断网自动重试" },
+        { "type": "new", "text": "传过的同一个文件不用再传，显示「快速上传」" }
+      ]
+    },
+    {
+      "id": "customizable-options",
+      "version": "1.1.52",
+      "date": "2026-10-18",
+      "title": "更多自己说了算",
+      "changes": [
+        { "type": "new", "text": "待办提醒可以选任意时间" },
+        { "type": "new", "text": "待办分类可以自己增删，两个人共用" },
+        { "type": "new", "text": "纪念日可以设提前几天提醒、几点提醒" },
+        { "type": "new", "text": "纪念日、相册图标和心情可以用任意表情" }
+      ]
+    },
+    {
+      "id": "oss-layout-video-preview",
+      "version": "1.1.50",
+      "date": "2026-10-18",
+      "title": "视频更快能看",
+      "changes": [
+        { "type": "improve", "text": "iPhone 视频转码完成前也从对象存储播放，不再卡在服务器带宽上" },
+        { "type": "improve", "text": "对象存储里的文件按照片、视频、缩略图、原图分目录存放" }
+      ]
+    },
+    {
+      "id": "eats-search-place-cover",
+      "version": "1.1.48",
+      "date": "2026-10-18",
+      "title": "美食搜索",
+      "changes": [
+        { "type": "new", "text": "美食页可以搜店名、地址、类型和吃过的菜" },
+        { "type": "fix", "text": "店铺页拉到最底下会露出封面" }
+      ]
+    },
+    {
+      "id": "gallery-video-original",
+      "version": "1.1.46",
+      "date": "2026-10-18",
+      "title": "修复视频存进相册失败",
+      "changes": [{ "type": "fix", "text": "iPhone 视频上传到相册提示「文件名不对」" }]
+    },
+    {
+      "id": "visit-note-empty",
+      "version": "1.1.44",
+      "date": "2026-10-18",
+      "title": "探店备注留空",
+      "changes": [{ "type": "improve", "text": "从动态自动记的探店不再带上动态文字" }]
+    },
+    {
+      "id": "moment-place-visit",
+      "version": "1.1.42",
+      "date": "2026-10-18",
+      "title": "动态带餐厅自动记探店",
+      "changes": [
+        { "type": "new", "text": "发动态时选了餐厅，会给这家店记一次探店，照片和日期跟动态一样" },
+        { "type": "improve", "text": "删掉动态不会影响探店的照片" },
+        { "type": "improve", "text": "每天自动清理没有用到的照片和视频" }
+      ]
+    },
+    {
+      "id": "oss-direct-upload",
+      "version": "1.1.40",
+      "date": "2026-10-18",
+      "title": "照片视频直传对象存储",
+      "changes": [{ "type": "improve", "text": "网页上传直接传到对象存储，不再占服务器带宽" }]
+    },
+    {
+      "id": "oss-cors-md5",
+      "version": "1.1.38",
+      "date": "2026-10-18",
+      "title": "修复保存到手机",
+      "changes": [{ "type": "fix", "text": "对象存储跨域设置失败，手机「保存到相册」只能走下载" }]
+    },
+    {
+      "id": "oss-upload-priority",
+      "version": "1.1.36",
+      "date": "2026-10-18",
+      "title": "新上传的优先",
+      "changes": [{ "type": "fix", "text": "启用对象存储后，新上传的照片要等旧照片全部搬完才变快" }]
+    },
+    {
+      "id": "oss-media-storage",
+      "version": "1.1.34",
+      "date": "2026-10-18",
+      "title": "照片和视频放到对象存储",
+      "changes": [
+        { "type": "new", "text": "照片和视频存到对象存储，加载更快" },
+        { "type": "improve", "text": "相册缩略图滚到附近才加载" }
+      ]
+    }
+  ]
+}

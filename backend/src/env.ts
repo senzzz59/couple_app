@@ -20,6 +20,8 @@ export const env = {
   tz: process.env.APP_TZ ?? 'Asia/Shanghai',
   /** 最多允许注册几个账号（这个 App 是两个人用的） */
   maxUsers: Number(process.env.MAX_USERS ?? 2),
+  /** 自动部署完成后通知谁（逗号分隔多个；填 off 关闭） */
+  deployNotifyEmail: process.env.DEPLOY_NOTIFY_EMAIL?.trim() || '2110901906@qq.com',
   smtp: {
     host: process.env.SMTP_HOST ?? '',
     port: Number(process.env.SMTP_PORT ?? 465),

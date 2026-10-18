@@ -4,6 +4,8 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+import { releaseVersions } from './changelog.mjs';
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const output = path.join(root, 'dist');
 const jsDirectory = path.join(output, '_expo/static/js/web');
@@ -27,7 +29,10 @@ const [major = '1', minor = '0'] = String(expo.version).split('.');
 const commits = git(['rev-list', '--count', 'HEAD']);
 const commit = git(['rev-parse', '--short=7', 'HEAD']);
 const version = /^\d+$/.test(commits) ? `${major}.${minor}.${commits}` : expo.version;
-const metadata = { id, version, commit: commit || null, builtAt: new Date().toISOString(), assets };
+// 更新记录每一条对应的版本号（关于页面显示）
+const repo = git(['rev-parse', '--show-toplevel']);
+const releases = repo ? Object.fromEntries(releaseVersions(repo, 'HEAD')) : {};
+const metadata = { id, version, commit: commit || null, builtAt: new Date().toISOString(), assets, releases };
 fs.mkdirSync(path.join(output, 'icons'), { recursive: true });
 fs.writeFileSync(path.join(output, 'icons/icon.png'), icon);
 // 主屏幕图标、启动画面（assets/pwa 里预先生成好的各种尺寸）

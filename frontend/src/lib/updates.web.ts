@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { createUpdateController } from './updateController';
 
-type WebBuild = { id: string; version: string; commit?: string | null; builtAt?: string; assets: string[] };
+type WebBuild = { id: string; version: string; commit?: string | null; builtAt?: string; assets: string[]; releases?: Record<string, string> };
 const current = typeof window === 'undefined' ? null : (window as unknown as { __US_BUILD__?: WebBuild }).__US_BUILD__ ?? null;
 let candidate: WebBuild | null = null;
 let registration: Promise<ServiceWorkerRegistration | null> | null = null;
@@ -56,4 +56,6 @@ export const useAppUpdates = () => useSyncExternalStore(appUpdates.subscribe, ap
 export const appVersion = current?.version ?? '开发版';
 /** 这次构建的提交和时间（设置 · 关于里显示） */
 export const buildInfo = { commit: current?.commit ?? null, builtAt: current?.builtAt ?? null };
+/** 更新记录每一条的版本号（构建时从 git 历史算出来） */
+export const releaseVersions: Record<string, string> = current?.releases ?? {};
 export const updateVersion = current?.id.slice(0, 8);
