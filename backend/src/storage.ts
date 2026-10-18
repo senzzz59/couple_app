@@ -10,6 +10,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -100,8 +101,28 @@ export function signWindow(nowMs: number) {
   return { signingDate: new Date(start * 1000), cacheSeconds: Math.max(60, start + SIGN_WINDOW_S - Math.floor(nowMs / 1000)) };
 }
 
+/**
+ * 设置跨域这类必须带校验的请求，新版 SDK 用 x-amz-checksum-crc32，雨云等服务会报
+ * 「A header you provided implies functionality that is not implemented」；换回老式的 Content-MD5。
+ */
+export function useContentMd5(c: S3Client) {
+  c.middlewareStack.addRelativeTo(
+    ((next: (a: unknown) => Promise<unknown>) => async (args: { request: { headers: Record<string, string>; body?: unknown } }) => {
+      const { headers, body } = args.request;
+      const names = Object.keys(headers).filter((h) => /^x-amz-(sdk-)?checksum-/i.test(h));
+      if (names.length && (typeof body === 'string' || body instanceof Uint8Array)) {
+        for (const h of names) delete headers[h];
+        headers['content-md5'] = createHash('md5').update(body).digest('base64');
+      }
+      return next(args);
+    }) as never,
+    { name: 'contentMd5Fallback', relation: 'before', toMiddleware: 'httpSigningMiddleware', override: true } as never
+  );
+  return c;
+}
+
 function client(cfg: S3Config, endpoint: string, forcePathStyle: boolean) {
-  return new S3Client({
+  return useContentMd5(new S3Client({
     endpoint,
     region: cfg.region,
     forcePathStyle,
@@ -109,7 +130,7 @@ function client(cfg: S3Config, endpoint: string, forcePathStyle: boolean) {
     // 新版 SDK 默认附带 CRC32 校验头，很多 S3 兼容服务不认；只在必须时才加
     requestChecksumCalculation: 'WHEN_REQUIRED',
     responseChecksumValidation: 'WHEN_REQUIRED',
-  });
+  }));
 }
 
 export class Storage {
