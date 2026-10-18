@@ -9,7 +9,8 @@ import { LAUNCH_CSS, LAUNCH_HTML, LAUNCH_JS, SPLASH, VIEWPORT, VIEWPORT_JS } fro
  * - 去掉点按时的灰色高亮、长按选中文字、双击放大（输入框里照常可以选字）
  */
 const APP_CSS = [
-  'html,body{background:#FAF7F5;margin:0;overscroll-behavior:none}',
+  // 弹层（Modal）挂在 body 上、不在 #root 里：html / body 也要裁掉横向溢出，否则 iOS 会把整页缩小
+  'html,body{background:#FAF7F5;margin:0;overscroll-behavior:none;overflow:hidden;overflow:clip}',
   // 页面切换时滑进来的屏幕会暂时超出右边；iOS 会因此把整页缩小（看起来所有东西都变小），这里裁掉溢出。
   // 高度严格等于可见区域（html/body/#root 都是 100%）：不用 100dvh，安卓刷新后它可能比屏幕高，底部标签栏会被裁掉一截
   '#root{height:100%;overflow:hidden;overflow:clip}',

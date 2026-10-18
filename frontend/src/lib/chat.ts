@@ -26,3 +26,11 @@ export const TIME_GAP_MS = 5 * 60_000;
 
 /** 撤回时限，和服务器一致 */
 export const RECALL_MS = 2 * 60_000;
+
+/** 刚发出 / 刚收到的消息（聊天页用来放特效） */
+const freshListeners = new Set<(m: ChatMessage) => void>();
+export const onFreshMessage = (fn: (m: ChatMessage) => void) => {
+  freshListeners.add(fn);
+  return () => void freshListeners.delete(fn);
+};
+export const freshMessage = (m: ChatMessage) => freshListeners.forEach((fn) => fn(m));

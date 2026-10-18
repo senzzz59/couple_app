@@ -36,7 +36,8 @@ export type RealtimeEvent =
 export type CoviewAction = 'invite' | 'join' | 'leave' | 'goto';
 const COVIEW_ACTIONS: CoviewAction[] = ['invite', 'join', 'leave', 'goto'];
 
-export const REACTION_EMOJIS = ['💗', '😂', '😍', '👀', '👍', '🥺', '😮', '🔥'];
+/** 旧版的 emoji 回应 + 团子回应（心动 / 笑死 / 好看 / 盯） */
+export const REACTION_EMOJIS = ['💗', '😂', '😍', '👀', '👍', '🥺', '😮', '🔥', 'blob:love', 'blob:laugh', 'blob:wow', 'blob:stare'];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const RATE_LIMIT = 15;
 

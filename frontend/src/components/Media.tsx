@@ -66,7 +66,7 @@ export function MediaThumb({ item, size, style, radius: r = 10 }: { item: MediaI
  * Live 图：平时是静态照片，按住（电脑上鼠标移上去）播放动态部分。
  * autoPlay：打开时先自动播放一次（和 iPhone 相册一样）。
  */
-export function LivePhoto({ item, style, fit = 'cover', autoPlay, onPress, label, children }: { item: MediaItem; style?: StyleProp<ViewStyle>; fit?: 'cover' | 'contain'; autoPlay?: boolean; onPress?: () => void; label?: string; children?: React.ReactNode }) {
+export function LivePhoto({ item, style, fit = 'cover', autoPlay, onPress, label, children, glow = true }: { item: MediaItem; style?: StyleProp<ViewStyle>; fit?: 'cover' | 'contain'; autoPlay?: boolean; onPress?: () => void; label?: string; children?: React.ReactNode; /** 播放时描一圈白边（全屏查看时不要） */ glow?: boolean }) {
   const [mounted, setMounted] = useState(!!autoPlay);
   const [playing, setPlaying] = useState(false);
   const video = useRef<VideoHandle>(null);
@@ -102,7 +102,7 @@ export function LivePhoto({ item, style, fit = 'cover', autoPlay, onPress, label
       <View style={[styles.topLeft, { left: 8, top: 8 }]}>
         <LiveBadge />
       </View>
-      {playing && <Animated.View entering={FadeIn.duration(120)} exiting={FadeOut.duration(200)} pointerEvents="none" style={styles.liveGlow} />}
+      {playing && glow && <Animated.View entering={FadeIn.duration(120)} exiting={FadeOut.duration(200)} pointerEvents="none" style={styles.liveGlow} />}
       {children}
     </Pressable>
   );

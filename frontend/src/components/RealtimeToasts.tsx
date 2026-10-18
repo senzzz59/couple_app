@@ -5,6 +5,7 @@ import { chatPreview } from '@/lib/chat';
 import { haptic } from '@/lib/haptics';
 import { isViewerOpen, joinCoview, type Reaction } from '@/lib/peer';
 import { onRealtime } from '@/lib/realtime';
+import { reactionText } from '@/lib/stickers';
 import { useCouple } from '@/lib/session';
 import type { ChatMessage } from '@/lib/types';
 import { openViewerById } from '@/lib/viewer';
@@ -63,7 +64,7 @@ export function RealtimeToasts() {
       }),
       onRealtime<Reaction>('react', (r) => {
         if (isViewerOpen()) return;
-        toast(`${nameRef.current} 对一张照片：${r.emoji ?? r.text}`, '💬', undefined, { action: { label: '看看', onPress: () => open(r.itemId) }, showEmoji: true });
+        toast(`${nameRef.current} 对一张照片：${reactionText(r)}`, '💬', undefined, { action: { label: '看看', onPress: () => open(r.itemId) }, showEmoji: true });
       }),
     ];
     return () => offs.forEach((off) => off());
