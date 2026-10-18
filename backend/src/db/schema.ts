@@ -44,6 +44,22 @@ export const pushTokens = mysqlTable('push_tokens', {
   userId: varchar('user_id', { length: 36 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
 });
 
+/** 网页版（添加到主屏幕后）的推送订阅。endpoint 可能很长，用它的 sha256 作主键 */
+export const webPushSubscriptions = mysqlTable('web_push_subscriptions', {
+  id: varchar('id', { length: 64 }).primaryKey(),
+  userId: varchar('user_id', { length: 36 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  endpoint: text('endpoint').notNull(),
+  p256dh: varchar('p256dh', { length: 200 }).notNull(),
+  auth: varchar('auth', { length: 100 }).notNull(),
+  createdAt: timestamp('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+/** 服务器自己生成并保存的密钥（例如网页推送的 VAPID 密钥），不用手动配置 */
+export const appSecrets = mysqlTable('app_secrets', {
+  name: varchar('name', { length: 64 }).primaryKey(),
+  value: text('value').notNull(),
+});
+
 export const pushReceipts = mysqlTable('push_receipts', {
   id: varchar('id', { length: 191 }).primaryKey(),
   token: varchar('token', { length: 191 }).notNull(),

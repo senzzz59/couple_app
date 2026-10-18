@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { Bell, CalendarHeart, ChevronRight, Download, Heart, Info, KeyRound, LogOut, Smartphone } from 'lucide-react-native';
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 
@@ -11,9 +11,11 @@ import { Sheet } from '@/components/Sheet';
 import { Avatar, Button, enter, PressScale, Txt } from '@/components/ui';
 import { confirm } from '@/lib/confirm';
 import { fmtFullDate } from '@/lib/dates';
+import { haptic } from '@/lib/haptics';
 import { isIOS, isStandalone, promptInstall } from '@/lib/install';
 import { ensurePermission } from '@/lib/notify';
 import { registerPush } from '@/lib/push';
+import { enableWebPush, testWebPush, webPushState, type WebPushState } from '@/lib/webPush';
 import { useCouple, useSession } from '@/lib/session';
 import { invalidate } from '@/lib/store';
 import { appVersion } from '@/lib/updates';
@@ -37,6 +39,40 @@ export default function Settings() {
     for (const c of ['anniversaries', 'todos', 'capsules', 'space']) invalidate(c);
     await registerPush().catch(() => false);
     toast('提醒已开启');
+  };
+
+  // 网页版的后台通知（添加到主屏幕后）
+  const [pushState, setPushState] = useState<WebPushState | null>(null);
+  const [pushBusy, setPushBusy] = useState(false);
+  const refreshPush = useCallback(() => {
+    if (web) webPushState().then(setPushState).catch(() => setPushState('unsupported'));
+  }, [web]);
+  useEffect(refreshPush, [refreshPush]);
+  const PUSH_LABEL: Record<WebPushState, string> = { on: '已开启', off: '未开启', denied: '已关闭', 'needs-install': '需添加到主屏幕', unsupported: '不支持' };
+  const webNotifications = async () => {
+    if (pushState === 'needs-install') return setInstallGuide(true);
+    if (pushState === 'unsupported') return toast('这个浏览器收不到后台通知', '⚠️', isIOS() ? '需要 iOS 16.4 以上，从主屏幕图标打开' : '安卓需要手机有谷歌服务，或换用 App 版');
+    if (pushState === 'denied') return toast('通知权限被关掉了', '⚠️', isIOS() ? '去「设置 → 通知 → us.」里打开' : '在浏览器的网站设置里允许 us. 发通知');
+    setPushBusy(true);
+    try {
+      if (pushState === 'on') {
+        if (!(await confirm('通知已开启', 'TA 发动态、评论、点赞、戳你时，App 没开着也会提醒你。发一条测试通知看看？', '发送', { tone: 'normal' }))) return;
+        const r = await testWebPush();
+        toast(r.ok ? '已发送，看看通知栏' : '没发出去，稍后再试', r.ok ? '🔔' : '⚠️');
+        return;
+      }
+      const next = await enableWebPush();
+      setPushState(next);
+      if (next === 'on') {
+        haptic.success();
+        toast('通知已开启', '🔔', 'TA 发动态、评论、戳你时会提醒你');
+        testWebPush().catch(() => {});
+      } else if (next === 'denied') toast('没有通知权限', '⚠️', isIOS() ? '去「设置 → 通知 → us.」里打开' : '在浏览器的网站设置里允许');
+    } catch (e) {
+      toast((e as Error).message || '开启失败，稍后再试', '⚠️');
+    } finally {
+      setPushBusy(false);
+    }
   };
 
   const logout = async () => {
@@ -70,6 +106,7 @@ export default function Settings() {
           <Group title="账号">
             <SettingRow first icon={KeyRound} label="修改密码" onPress={() => router.push('/settings/password')} />
             {!web && <SettingRow icon={Bell} label="提醒通知" onPress={enableNotifications} />}
+            {web && <SettingRow icon={Bell} label="消息通知" value={pushState ? PUSH_LABEL[pushState] : undefined} badge={pushState === 'off' ? '去开启' : undefined} busy={pushBusy || !pushState} onPress={webNotifications} />}
           </Group>
         </Animated.View>
 
@@ -90,9 +127,10 @@ export default function Settings() {
 
       <Sheet visible={installGuide} onClose={() => setInstallGuide(false)}>
         <Txt v="heading">添加到主屏幕</Txt>
+        {pushState === 'needs-install' && <Txt v="secondary">iPhone 要先把 us. 添加到主屏幕，从主屏幕图标打开后才能开启消息通知。</Txt>}
         {(isIOS()
-          ? ['用 Safari 打开这个网页', '点底部的「分享」按钮', '选择「添加到主屏幕」']
-          : ['打开浏览器右上角的菜单', '选择「安装应用」或「添加到主屏幕」']
+          ? ['点浏览器的「分享」按钮（Chrome 在地址栏右边）', '选择「添加到主屏幕」', '以后从主屏幕的 us. 图标打开']
+          : ['打开 Chrome 右上角的 ⋮ 菜单', '选择「添加到主屏幕」→「安装」，不要选「创建快捷方式」（快捷方式图标会带 Chrome 小角标）']
         ).map((t, i) => (
           <View key={t} style={styles.step}>
             <View style={styles.stepNum}>

@@ -93,6 +93,7 @@ export const api = {
   patch: <T>(path: string, body: unknown) => request<T>('PATCH', path, body),
   del: <T = { ok: boolean }>(path: string) => request<T>('DELETE', path),
   deletePushToken: (pushToken: string) => request('DELETE', '/api/push-token', { token: pushToken }),
+  deleteWebPush: (endpoint: string) => request('DELETE', '/api/web-push/subscription', { endpoint }),
   login: (url: string, email: string, password: string) => request<AuthResult>('POST', '/api/auth/login', { email, password }, url),
   authStatus: (url: string) => request<{ registrationOpen: boolean; users: number; maxUsers: number; mail: boolean }>('GET', '/api/auth/status', undefined, url),
   sendCode: (url: string, email: string, purpose: 'register' | 'reset') =>

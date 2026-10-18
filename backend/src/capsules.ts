@@ -6,6 +6,7 @@ import { db, schema } from './db/index.ts';
 import { env } from './env.ts';
 import { removeFiles } from './files.ts';
 import { broadcast } from './realtime.ts';
+import { notifyPartner } from './webPush.ts';
 
 const t = schema.capsules;
 type Row = typeof t.$inferSelect;
@@ -58,6 +59,7 @@ export async function capsuleRoutes(app: FastifyInstance) {
     const id = crypto.randomUUID();
     await db.insert(t).values({ ...body, id, createdBy: req.user.sub });
     broadcast({ type: 'change', collection: 'capsules', id, by: req.user.sub });
+    notifyPartner(req.user.sub, { title: '{name}', body: `埋下了一颗时光胶囊，${body.unlockAt} 才能打开 ⏳`, url: '/capsules', tag: 'capsule' }, (e) => req.log.warn(e, 'web push failed'));
     return present((await find(id))!);
   });
 

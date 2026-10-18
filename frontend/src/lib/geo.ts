@@ -39,16 +39,64 @@ export function wgs84ToGcj02(lng: number, lat: number): [number, number] {
   return [lng + dLng, lat + dLat];
 }
 
-export async function currentPosition(includeAddress = true) {
+type Coords = { latitude: number; longitude: number };
+
+function browserPosition(highAccuracy: boolean, maxAge: number, timeout: number) {
+  return new Promise<Coords>((resolve, reject) => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return reject(new Error('这个浏览器不支持定位'));
+    navigator.geolocation.getCurrentPosition(
+      (p) => resolve(p.coords),
+      (e) => {
+        const error = new Error(e.code === 1 ? '需要定位权限：在系统设置里允许浏览器使用位置' : e.code === 3 ? '定位超时，换个信号好点的地方再试' : '暂时拿不到位置，稍后再试') as Error & { code?: number };
+        error.code = e.code;
+        reject(error);
+      },
+      { enableHighAccuracy: highAccuracy, maximumAge: maxAge, timeout }
+    );
+  });
+}
+
+/**
+ * 拿手机的位置（WGS-84）。maxAge 内系统缓存的位置直接用，不重新定位，几乎是瞬间返回。
+ * 网页版直接调用浏览器定位：只定位一次，带超时；先用省电的网络定位，拿不到再用 GPS。
+ */
+async function devicePosition(maxAge: number): Promise<Coords> {
+  if (Platform.OS === 'web') {
+    try {
+      return await browserPosition(false, maxAge, 8000);
+    } catch (e) {
+      if ((e as { code?: number }).code === 1) throw e;
+      return browserPosition(true, maxAge, 20000);
+    }
+  }
   const { status } = await Location.requestForegroundPermissionsAsync();
   if (status !== 'granted') throw new Error('需要定位权限才能获取当前位置');
-  const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-  const [lng, lat] = wgs84ToGcj02(pos.coords.longitude, pos.coords.latitude);
+  if (maxAge > 0) {
+    const last = await Location.getLastKnownPositionAsync({ maxAge });
+    if (last) return last.coords;
+  }
+  return (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })).coords;
+}
+
+/** 不弹权限框的前提下，现在能不能直接定位（已经允许过） */
+export async function canLocateSilently() {
+  if (Platform.OS !== 'web') return (await Location.getForegroundPermissionsAsync()).granted;
+  try {
+    const state = await navigator.permissions?.query({ name: 'geolocation' as PermissionName });
+    return state?.state === 'granted';
+  } catch {
+    return false;
+  }
+}
+
+export async function currentPosition(includeAddress = true, maxAge = 0) {
+  const coords = await devicePosition(maxAge);
+  const [lng, lat] = wgs84ToGcj02(coords.longitude, coords.latitude);
   let address = '';
   let city = '';
   try {
-    if (!includeAddress) return { lat, lng, address, city };
-    const [g] = await Location.reverseGeocodeAsync(pos.coords);
+    if (!includeAddress || Platform.OS === 'web') return { lat, lng, address, city };
+    const [g] = await Location.reverseGeocodeAsync(coords);
     if (g) {
       address = [g.district, g.street, g.streetNumber, g.name].filter((x, i, arr) => x && arr.indexOf(x) === i).join('');
       city = g.city ?? g.region ?? '';
