@@ -55,11 +55,19 @@ export function releaseVersions(repo, head = 'HEAD') {
   return versions;
 }
 
+const patch = (v) => Number(String(v ?? '').split('.')[2]);
+
 /** 两次部署之间新增的更新记录（带版本号），新的在前 */
 export function newReleases(repo, previous, current) {
   const known = new Set(previous ? releasesAt(repo, previous).map((r) => r.id) : []);
   const versions = releaseVersions(repo, current);
-  const list = releasesAt(repo, current).filter((r) => !known.has(r.id));
+  // 上次部署时还没有的记录，而且版本比上次部署新（补写的旧版本记录不算这次的）
+  const since = previous ? patch(versionAt(repo, previous)) : NaN;
+  const list = releasesAt(repo, current).filter((r) => {
+    if (known.has(r.id)) return false;
+    const v = patch(versions.get(r.id) ?? r.version);
+    return !Number.isFinite(since) || !Number.isFinite(v) || v > since;
+  });
   // 第一次部署（不知道上次是哪个版本）只带最新的一条，不把整份历史都发出来
   return (previous ? list : list.slice(0, 1)).map((r) => ({ ...r, version: versions.get(r.id) ?? r.version ?? null }));
 }
