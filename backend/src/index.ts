@@ -13,7 +13,7 @@ import { amapRoutes } from './amapRoutes.ts';
 import { capsuleRoutes } from './capsules.ts';
 import { runMigrations } from './db/index.ts';
 import { env } from './env.ts';
-import { fileRoutes } from './files.ts';
+import { fileRoutes, initStorage, storage } from './files.ts';
 import { ffmpegAvailable, initVideoPipeline } from './transcode.ts';
 import { galleryRoutes } from './gallery.ts';
 import { realtimeRoutes } from './realtime.ts';
@@ -56,7 +56,7 @@ app.setErrorHandler((err, req, reply) => {
 });
 
 decorateAuth(app);
-app.get('/api/health', async () => ({ ok: true, video: (await ffmpegAvailable()) ? 'ffmpeg' : 'passthrough' }));
+app.get('/api/health', async () => ({ ok: true, video: (await ffmpegAvailable()) ? 'ffmpeg' : 'passthrough', storage: storage.enabled ? 'oss' : 'local' }));
 await app.register(authRoutes);
 await app.register(registerRoutes);
 await app.register(realtimeRoutes);
@@ -71,4 +71,5 @@ await app.register(webPushRoutes);
 
 await app.listen({ port: env.port, host: env.host });
 // 启动后再检查以前上传的视频，不耽误 API 上线
-void initVideoPipeline(env.uploadDir, app.log);
+// 视频检查先启动，对象存储的搬运会跳过还没处理完的视频
+void initVideoPipeline(env.uploadDir, app.log).then(() => initStorage(app.log)).catch((e) => app.log.warn(e, 'object storage init failed'));

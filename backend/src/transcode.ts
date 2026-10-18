@@ -126,6 +126,12 @@ let indexFile = '';
 let index: Record<string, Status> = {};
 const queue: string[] = [];
 let running = false;
+let settledHook: ((name: string) => void) | null = null;
+
+/** 视频处理完（转好 / 不用转 / 转失败）后通知，用来把它传到对象存储 */
+export function onVideoSettled(fn: (name: string) => void) {
+  settledHook = fn;
+}
 
 export async function initVideoPipeline(uploadDir: string, log: { info: (o: object, m: string) => void; warn: (o: object, m: string) => void }) {
   dir = uploadDir;
@@ -194,6 +200,7 @@ async function drain(log?: { warn: (o: object, m: string) => void }) {
       log?.warn({ name, err: e }, 'video conversion failed');
     }
     await saveIndex().catch(() => {});
+    if (videoSettled(name)) settledHook?.(name);
   }
   running = false;
 }

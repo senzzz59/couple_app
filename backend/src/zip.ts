@@ -29,7 +29,7 @@ function dosTime(d: Date) {
   return { time, date };
 }
 
-export type ZipEntry = { name: string; path?: string; data?: Buffer; date?: Date };
+export type ZipEntry = { name: string; path?: string; data?: Buffer; open?: () => Promise<AsyncIterable<Buffer>>; date?: Date };
 
 /** 同名文件加上 (2)、(3)… */
 export function uniqueNames(names: string[]) {
@@ -67,7 +67,7 @@ export function zipStream(entries: ZipEntry[]): Readable {
 
       let crc = 0;
       let size = 0;
-      const chunks: Iterable<Buffer> | AsyncIterable<Buffer> = e.data ? [e.data] : (createReadStream(e.path!) as AsyncIterable<Buffer>);
+      const chunks: Iterable<Buffer> | AsyncIterable<Buffer> = e.data ? [e.data] : e.open ? await e.open() : (createReadStream(e.path!) as AsyncIterable<Buffer>);
       for await (const chunk of chunks) {
         crc = crc32(chunk, crc);
         size += chunk.length;
