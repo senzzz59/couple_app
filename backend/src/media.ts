@@ -100,3 +100,16 @@ export function downloadName(r: Downloadable) {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `us-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}${extension}`;
 }
+
+const MAX_VISIT_PHOTOS = 20;
+
+/** 动态里能当探店照片的图片：照片和 Live 图的静态照片（视频不算） */
+export function visitPhotosOf(media: MediaItem[]): string[] {
+  const names = media.filter((m) => m.kind !== 'video' && m.image).map((m) => m.image!);
+  return [...new Set(names)].slice(0, MAX_VISIT_PHOTOS);
+}
+
+/** 某一时刻在某个时区是哪一天（YYYY-MM-DD） */
+export function dayIn(tz: string, at: Date) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(at);
+}

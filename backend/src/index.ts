@@ -16,6 +16,7 @@ import { env } from './env.ts';
 import { fileRoutes, initStorage, storage } from './files.ts';
 import { ffmpegAvailable, initVideoPipeline } from './transcode.ts';
 import { galleryRoutes } from './gallery.ts';
+import { scheduleOrphanCleanup } from './orphans.ts';
 import { realtimeRoutes } from './realtime.ts';
 import { registerRoutes } from './register.ts';
 import { resourceRoutes } from './resources.ts';
@@ -73,3 +74,5 @@ await app.listen({ port: env.port, host: env.host });
 // 启动后再检查以前上传的视频，不耽误 API 上线
 // 视频检查先启动，对象存储的搬运会跳过还没处理完的视频
 void initVideoPipeline(env.uploadDir, app.log).then(() => initStorage(app.log)).catch((e) => app.log.warn(e, 'object storage init failed'));
+// 每天清理一次没人引用的照片 / 视频（本地和对象存储）
+scheduleOrphanCleanup(app.log);
