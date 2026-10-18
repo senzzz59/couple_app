@@ -21,6 +21,9 @@ const APP_CSS = [
   'input:focus,textarea:focus,input:focus-visible,textarea:focus-visible{outline:none}',
 ].join('');
 
+// 整页本身从不滚动（滚动都在页面里面）：刷新后不要恢复上次的滚动位置，否则 iOS 上整页错位、底部标签栏被挤出屏幕
+const NO_SCROLL_RESTORE = `try{history.scrollRestoration='manual'}catch(e){}window.addEventListener('pageshow',function(){if(window.scrollY)window.scrollTo(0,0)});`;
+
 const NO_MEDIA_MENU = `document.addEventListener('contextmenu',function(e){var t=e.target;if(t&&t.closest&&t.closest('img,video,[data-media]'))e.preventDefault();},{capture:true});`;
 
 export default function Root({ children }: PropsWithChildren) {
@@ -53,7 +56,7 @@ export default function Root({ children }: PropsWithChildren) {
         <ScrollViewStyleReset />
         <style dangerouslySetInnerHTML={{ __html: APP_CSS }} />
         <style dangerouslySetInnerHTML={{ __html: LAUNCH_CSS }} />
-        <script dangerouslySetInnerHTML={{ __html: NO_MEDIA_MENU + VIEWPORT_JS }} />
+        <script dangerouslySetInnerHTML={{ __html: NO_SCROLL_RESTORE + NO_MEDIA_MENU + VIEWPORT_JS }} />
         <script src="/web-build.js" />
         {headNodes}
       </head>

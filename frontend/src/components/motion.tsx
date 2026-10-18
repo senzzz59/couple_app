@@ -148,7 +148,7 @@ export function ConfettiHost() {
 // ================= 顶部提示条（戳一戳 / 出错 / 撤销）
 // 点一下或往上划就收起；带操作按钮（比如「撤销」）的提示会多停留一会儿
 export type ToastAction = { label: string; onPress: () => void };
-type ToastMsg = { id: number; emoji: string; title: string; body?: string; action?: ToastAction; duration: number; showEmoji?: boolean };
+type ToastMsg = { id: number; emoji: string; title: string; body?: string; action?: ToastAction; onPress?: () => void; duration: number; showEmoji?: boolean };
 const toastListeners = new Set<(t: ToastMsg) => void>();
 const dismissListeners = new Set<(id: number) => void>();
 let toastSeq = 0;
@@ -156,9 +156,9 @@ let toastSeq = 0;
  * 顶部提示。emoji 传 '⚠️' 表示出错（显示图标和补充说明）；其它情况只显示一句话，
  * showEmoji 时才把 emoji 显示出来（比如对方戳了你一下）。
  */
-export function toast(title: string, emoji = '', body?: string, opts: { action?: ToastAction; duration?: number; showEmoji?: boolean } = {}) {
+export function toast(title: string, emoji = '', body?: string, opts: { action?: ToastAction; onPress?: () => void; duration?: number; showEmoji?: boolean } = {}) {
   const id = Date.now() * 100 + (toastSeq++ % 100);
-  const msg: ToastMsg = { id, emoji, title, body, action: opts.action, duration: opts.duration ?? (opts.action ? 4500 : 2400), showEmoji: opts.showEmoji };
+  const msg: ToastMsg = { id, emoji, title, body, action: opts.action, onPress: opts.onPress, duration: opts.duration ?? (opts.action ? 4500 : 2400), showEmoji: opts.showEmoji };
   toastListeners.forEach((l) => l(msg));
   return id;
 }
@@ -204,7 +204,17 @@ function ToastCard({ t, onDone, gone }: { t: ToastMsg; onDone: () => void; gone:
   return (
     <GestureDetector gesture={pan}>
       <Animated.View style={[styles.toast, anim]}>
-        <Pressable accessibilityRole="alert" onPress={hide} style={styles.toastMain}>
+        <Pressable
+          accessibilityRole="alert"
+          onPress={() => {
+            // 点提示本身：有对应的操作就执行（比如打开「发现新版本」），然后收起
+            if (t.onPress) {
+              haptic.tap();
+              t.onPress();
+            }
+            hide();
+          }}
+          style={styles.toastMain}>
           {isError ? <CircleAlert size={18} color="#FF9AAE" /> : t.showEmoji ? <Text style={{ fontSize: 20 }}>{t.emoji}</Text> : t.emoji === '✓' ? <Check size={17} color="#9BE3B5" strokeWidth={2.6} /> : null}
           <View style={{ flexShrink: 1 }}>
             <Txt v="bodyStrong" color={colors.white} style={{ fontSize: 15, lineHeight: 21 }} numberOfLines={2}>

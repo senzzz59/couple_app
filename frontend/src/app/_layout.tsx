@@ -11,6 +11,7 @@ import { ConfirmHost } from '@/components/Confirm';
 import '@/lib/install';
 import { ConfettiHost, toast, ToastHost } from '@/components/motion';
 import { TravelPickerHost } from '@/components/TravelPicker';
+import { UpdateHost } from '@/components/UpdateCenter';
 import { useUpdateStartup } from '@/components/UpdateStartup';
 import { haptic } from '@/lib/haptics';
 import { hideLaunch } from '@/lib/launch';
@@ -139,6 +140,7 @@ function RootStack({ fontsLoaded }: { fontsLoaded: boolean }) {
           <Stack.Screen name="login" options={{ animation: 'fade' }} />
         </Stack.Protected>
       </Stack>
+      <UpdateHost signedIn={status === 'signedIn'} />
       {status === 'signedIn' && (
         <>
           <ReminderSync />

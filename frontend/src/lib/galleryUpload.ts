@@ -143,7 +143,7 @@ function finished() {
   if (!s) return;
   invalidate('albums');
   const parts = [s.instant ? `其中 ${s.instant} 项快速上传` : ''].filter(Boolean);
-  if (s.failed) toast(`${s.failed} 项没传上去`, '⚠️', '点上传条可以重试');
+  if (s.failed) toast(`${s.failed} 项没传上去`, '⚠️', '可在上传列表中重试');
   else {
     haptic.success();
     toast(`已上传 ${s.total} 项`, '✓', parts.join(''));

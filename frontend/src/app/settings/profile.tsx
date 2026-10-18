@@ -12,6 +12,7 @@ import { pickMedia, releaseLocal, uploadMedia } from '@/lib/media';
 import { useCouple } from '@/lib/session';
 import { invalidate } from '@/lib/store';
 import type { User } from '@/lib/types';
+import { useKept } from '@/lib/useKept';
 import { colors } from '@/theme';
 
 type Gender = 'male' | 'female' | 'none';
@@ -23,9 +24,9 @@ export default function Profile() {
 }
 
 function ProfileForm({ me }: { me: User }) {
-  const [name, setName] = useState(me.name);
-  const [gender, setGender] = useState<Gender>(me.gender ?? 'none');
-  const [birthday, setBirthday] = useState<string | null>(me.birthday);
+  const [name, setName] = useKept('profile:name', me.name);
+  const [gender, setGender] = useKept<Gender>('profile:gender', me.gender ?? 'none');
+  const [birthday, setBirthday] = useKept<string | null>('profile:birthday', me.birthday);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
 

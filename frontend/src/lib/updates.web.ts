@@ -1,7 +1,9 @@
 import { useSyncExternalStore } from 'react';
 import { createUpdateController } from './updateController';
 
-type WebBuild = { id: string; version: string; commit?: string | null; builtAt?: string; assets: string[]; releases?: Record<string, string> };
+import type { ReleaseNote } from './updates';
+
+type WebBuild = { id: string; version: string; commit?: string | null; builtAt?: string; assets: string[]; releases?: Record<string, string>; notes?: ReleaseNote[] };
 const current = typeof window === 'undefined' ? null : (window as unknown as { __US_BUILD__?: WebBuild }).__US_BUILD__ ?? null;
 let candidate: WebBuild | null = null;
 let registration: Promise<ServiceWorkerRegistration | null> | null = null;
@@ -48,6 +50,9 @@ export const appUpdates = createUpdateController({
   reload: async () => {
     const worker = await registerWebsite();
     worker?.waiting?.postMessage({ type: 'SKIP_WAITING' });
+    // 收起键盘、回到页面顶端再刷新：iOS 会记住刷新前的滚动位置，导致刷新后整页错位、底部标签栏被挤出屏幕
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    window.scrollTo(0, 0);
     window.location.reload();
   },
 });
@@ -59,3 +64,13 @@ export const buildInfo = { commit: current?.commit ?? null, builtAt: current?.bu
 /** 更新记录每一条的版本号（构建时从 git 历史算出来） */
 export const releaseVersions: Record<string, string> = current?.releases ?? {};
 export const updateVersion = current?.id.slice(0, 8);
+
+const validNote = (n: unknown): n is ReleaseNote => {
+  const r = n as ReleaseNote;
+  return !!r && typeof r.id === 'string' && typeof r.title === 'string' && typeof r.date === 'string' && Array.isArray(r.changes) && r.changes.every((c) => c && typeof c.text === 'string');
+};
+/** 检查到的新版本：版本号和它的更新内容（「发现新版本」弹窗用） */
+export function updateCandidate() {
+  if (!candidate || candidate.id === current?.id) return null;
+  return { version: candidate.version, notes: (Array.isArray(candidate.notes) ? candidate.notes : []).filter(validNote) };
+}

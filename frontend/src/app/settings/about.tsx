@@ -1,12 +1,11 @@
 import { Image } from 'expo-image';
 import { router, type Href } from 'expo-router';
-import { ChevronRight } from 'lucide-react-native';
 import { StyleSheet, View } from 'react-native';
 
 import { ReleaseTimeline } from '@/components/ReleaseNotes';
 import { Screen } from '@/components/Screen';
 import { Group, SettingRow } from '@/components/SettingsList';
-import { Button, PressScale, Row, Txt } from '@/components/ui';
+import { Button, Txt } from '@/components/ui';
 import { RELEASES } from '@/lib/changelog';
 import { appVersion, buildInfo } from '@/lib/updates';
 import { useUpdateCheck } from '@/lib/useUpdateCheck';
@@ -27,7 +26,6 @@ export default function About() {
       <View style={styles.hero}>
         <Image source={require('@/assets/images/icon.png')} style={styles.icon} />
         <Txt style={{ fontFamily: fonts.displayBold, fontSize: 28, color: colors.ink }}>us.</Txt>
-        <Txt v="secondary">版本 {appVersion}</Txt>
       </View>
       <View style={{ gap: 24 }}>
         <Group>
@@ -37,17 +35,9 @@ export default function About() {
         </Group>
         <Button title={update.pending ? '更新到新版本' : '检查更新'} variant={update.pending ? 'primary' : 'secondary'} loading={update.busy} onPress={update.check} />
         <View style={{ gap: 12 }}>
-          <Row style={{ justifyContent: 'space-between', paddingHorizontal: 4 }}>
-            <Txt v="heading">更新记录</Txt>
-            {RELEASES.length > 3 && (
-              <PressScale hitSlop={8} onPress={() => router.push(CHANGELOG_ROUTE)} style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
-                <Txt v="caption" color={colors.accentStrong} style={{ fontWeight: '600' }}>
-                  全部 {RELEASES.length} 次
-                </Txt>
-                <ChevronRight size={14} color={colors.accentStrong} />
-              </PressScale>
-            )}
-          </Row>
+          <Txt v="heading" style={{ paddingHorizontal: 4 }}>
+            更新记录
+          </Txt>
           <ReleaseTimeline releases={RELEASES.slice(0, 3)} currentVersion={appVersion} />
           {RELEASES.length > 3 && <Button title="查看全部更新记录" variant="ghost" onPress={() => router.push(CHANGELOG_ROUTE)} />}
         </View>

@@ -19,6 +19,7 @@ import { type AmapPlace, poiUrl } from '@/lib/amapLive';
 import { haptic } from '@/lib/haptics';
 import { invalidate, setQueryData, useQuery } from '@/lib/store';
 import type { Place, PlaceStatus } from '@/lib/types';
+import { useKept } from '@/lib/useKept';
 import { colors, fonts, radius } from '@/theme';
 
 export default function EditPlace() {
@@ -35,7 +36,7 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
   const [managing, setManaging] = useState(false);
   const [newCategory, setNewCategory] = useState('');
   const [categorySaving, setCategorySaving] = useState(false);
-  const [f, setF] = useState({
+  const [f, setF] = useKept(`place:${params.id ?? 'new'}:f`, {
     name: p?.name ?? '',
     status: p?.status ?? params.status ?? 'want',
     category: p?.category ?? '',
@@ -50,11 +51,11 @@ function PlaceForm({ params, initial: p }: { params: { id?: string; status?: Pla
     amapPhoto: p?.amapPhoto ?? null,
     note: p?.note ?? '',
   });
-  const [cover, setCover] = useState<PhotoItem[]>(p?.cover ? [{ remote: p.cover }] : []);
+  const [cover, setCover] = useKept<PhotoItem[]>(`place:${params.id ?? 'new'}:cover`, p?.cover ? [{ remote: p.cover }] : []);
   const [saving, setSaving] = useState(false);
   const [locating, setLocating] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [importedUrl, setImportedUrl] = useState(p?.amapUrl ?? '');
+  const [importedUrl, setImportedUrl] = useKept(`place:${params.id ?? 'new'}:importedUrl`, p?.amapUrl ?? '');
   const [searchState, setSearchState] = useState<{ key: string; places: AmapPlace[]; message: string }>();
   const [sourceOpen, setSourceOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);

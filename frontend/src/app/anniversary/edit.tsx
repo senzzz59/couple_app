@@ -14,6 +14,7 @@ import { haptic } from '@/lib/haptics';
 import { DEFAULT_REMINDER_TIME } from '@/lib/reminderPlans';
 import { invalidate, setQueryData, useQuery } from '@/lib/store';
 import type { Anniversary } from '@/lib/types';
+import { useKept } from '@/lib/useKept';
 import { colors, radius } from '@/theme';
 
 const EMOJIS = ['💞', '🎂', '🎁', '💍', '✈️', '🏠', '🐱', '🌹', '🎬', '🍰', '🌙', '⭐️'];
@@ -38,15 +39,15 @@ export default function EditAnniversary() {
 }
 
 function AnniversaryForm({ id, initial: a }: { id?: string; initial?: Anniversary }) {
-  const [title, setTitle] = useState(a?.title ?? '');
-  const [emoji, setEmoji] = useState(a?.emoji ?? '💞');
-  const [kind, setKind] = useState<Anniversary['kind']>(a?.kind ?? 'custom');
-  const [date, setDate] = useState<string | null>(a?.date ?? null);
-  const [lunar, setLunar] = useState(a?.lunar ?? false);
-  const [yearly, setYearly] = useState(a?.yearly ?? true);
-  const [remind, setRemind] = useState<number[]>(a?.remind ?? [0, 1]);
+  const [title, setTitle] = useKept(`anniversary:${id ?? 'new'}:title`, a?.title ?? '');
+  const [emoji, setEmoji] = useKept(`anniversary:${id ?? 'new'}:emoji`, a?.emoji ?? '💞');
+  const [kind, setKind] = useKept<Anniversary['kind']>(`anniversary:${id ?? 'new'}:kind`, a?.kind ?? 'custom');
+  const [date, setDate] = useKept<string | null>(`anniversary:${id ?? 'new'}:date`, a?.date ?? null);
+  const [lunar, setLunar] = useKept(`anniversary:${id ?? 'new'}:lunar`, a?.lunar ?? false);
+  const [yearly, setYearly] = useKept(`anniversary:${id ?? 'new'}:yearly`, a?.yearly ?? true);
+  const [remind, setRemind] = useKept<number[]>(`anniversary:${id ?? 'new'}:remind`, a?.remind ?? [0, 1]);
   const [saving, setSaving] = useState(false);
-  const [customDays, setCustomDays] = useState('');
+  const [customDays, setCustomDays] = useKept(`anniversary:${id ?? 'new'}:customDays`, '');
   const settings = useQuery<Settings>('/api/settings');
   const remindTime = settings.data?.reminderTime ?? DEFAULT_REMINDER_TIME;
   // 提醒时间是所有纪念日共用的设置，改了立刻保存
@@ -150,7 +151,7 @@ function AnniversaryForm({ id, initial: a }: { id?: string; initial?: Anniversar
           <Chip label="添加" onPress={addCustomDays} />
         </Row>
         <Txt v="label" style={{ marginLeft: 4, marginTop: 8 }}>
-          几点提醒 · 所有纪念日共用
+          提醒时间
         </Txt>
         <Row gap={8} style={{ flexWrap: 'wrap' }}>
           {REMIND_TIMES.map((t) => (

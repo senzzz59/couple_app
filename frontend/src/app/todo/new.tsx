@@ -18,6 +18,7 @@ import { TODO_CATEGORIES } from '@/lib/nudge';
 import { useCouple } from '@/lib/session';
 import { invalidate, setQueryData, useQuery } from '@/lib/store';
 import type { Todo } from '@/lib/types';
+import { useKept } from '@/lib/useKept';
 import { colors, radius } from '@/theme';
 
 // 常用时间，点一下就选上；其它时间点「自定义」
@@ -34,12 +35,12 @@ export default function EditTodo() {
 function TodoForm({ id, initial: t }: { id?: string; initial?: Todo }) {
   const { me, partner } = useCouple();
   const due0 = t?.due ? new Date(t.due) : null;
-  const [title, setTitle] = useState(t?.title ?? '');
-  const [note, setNote] = useState(t?.note ?? '');
-  const [category, setCategory] = useState<string | null>(t?.category ?? null);
-  const [assignee, setAssignee] = useState<string | null>(t?.assigneeId ?? null);
-  const [dueDay, setDueDay] = useState<string | null>(due0 ? toDay(due0) : null);
-  const [dueTime, setDueTime] = useState(due0 ? `${String(due0.getHours()).padStart(2, '0')}:${String(due0.getMinutes()).padStart(2, '0')}` : '09:00');
+  const [title, setTitle] = useKept(`todo:${id ?? 'new'}:title`, t?.title ?? '');
+  const [note, setNote] = useKept(`todo:${id ?? 'new'}:note`, t?.note ?? '');
+  const [category, setCategory] = useKept<string | null>(`todo:${id ?? 'new'}:category`, t?.category ?? null);
+  const [assignee, setAssignee] = useKept<string | null>(`todo:${id ?? 'new'}:assignee`, t?.assigneeId ?? null);
+  const [dueDay, setDueDay] = useKept<string | null>(`todo:${id ?? 'new'}:dueDay`, due0 ? toDay(due0) : null);
+  const [dueTime, setDueTime] = useKept(`todo:${id ?? 'new'}:dueTime`, due0 ? `${String(due0.getHours()).padStart(2, '0')}:${String(due0.getMinutes()).padStart(2, '0')}` : '09:00');
   const [saving, setSaving] = useState(false);
   const settings = useQuery<Settings>('/api/settings');
   const categories = settings.data?.todoCategories ?? TODO_CATEGORIES;
@@ -147,7 +148,6 @@ function TodoForm({ id, initial: t }: { id?: string; initial?: Todo }) {
 
       <Sheet visible={managing} onClose={() => setManaging(false)} dragAnywhere={false} style={{ gap: 14 }}>
         <Txt v="heading">待办分类</Txt>
-        <Txt v="caption">两个人共用。删掉分类不会影响已经有的待办。</Txt>
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 16, paddingBottom: 24 }}>
           <Row gap={8} style={{ flexWrap: 'wrap' }}>
             {categories.map((c) => (
@@ -160,7 +160,7 @@ function TodoForm({ id, initial: t }: { id?: string; initial?: Todo }) {
                 </PressScale>
               </View>
             ))}
-            {!categories.length && <Txt v="caption">还没有分类，加一个吧</Txt>}
+            {!categories.length && <Txt v="caption">暂无分类</Txt>}
           </Row>
           <Row gap={8}>
             <View style={{ flex: 1 }}>

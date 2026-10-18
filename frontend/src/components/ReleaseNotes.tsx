@@ -11,10 +11,10 @@ const TAG: Record<ChangeType, { bg: string; ink: string }> = {
   fix: { bg: colors.butter, ink: colors.butterInk },
 };
 
-/** 一次更新：版本号、日期、标题和每一条改动；current 是正在用的这个版本 */
-export function ReleaseCard({ r, current }: { r: Release; current?: boolean }) {
+/** 一次更新：版本号、日期、标题和每一条改动；current 是正在用的这个版本，flat 用在弹窗里（不带阴影） */
+export function ReleaseCard({ r, current, flat }: { r: Release; current?: boolean; flat?: boolean }) {
   return (
-    <View style={[styles.card, current && styles.cardCurrent]}>
+    <View style={[styles.card, current && styles.cardCurrent, flat && styles.cardFlat]}>
       <Row style={{ justifyContent: 'space-between' }}>
         <Row gap={8}>
           {r.version ? (
@@ -84,6 +84,7 @@ export function ReleaseTimeline({ releases, currentVersion }: { releases: Releas
 const styles = StyleSheet.create({
   card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 16, borderWidth: 1, borderColor: colors.line, ...shadow },
   cardCurrent: { borderColor: colors.accent },
+  cardFlat: { backgroundColor: colors.bg, borderWidth: 0, shadowOpacity: 0, elevation: 0, boxShadow: 'none' },
   version: { paddingHorizontal: 9, height: 22, borderRadius: radius.pill, backgroundColor: colors.surfaceAlt, justifyContent: 'center' },
   versionText: { fontWeight: '700', fontSize: 12 },
   tag: { paddingHorizontal: 7, height: 21, borderRadius: 7, justifyContent: 'center', marginTop: 0 },
