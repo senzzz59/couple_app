@@ -10,8 +10,9 @@ import { LAUNCH_CSS, LAUNCH_HTML, LAUNCH_JS, SPLASH, VIEWPORT, VIEWPORT_JS } fro
  */
 const APP_CSS = [
   'html,body{background:#FAF7F5;margin:0;overscroll-behavior:none}',
-  // 页面切换时滑进来的屏幕会暂时超出右边；iOS 会因此把整页缩小（看起来所有东西都变小），这里裁掉溢出
-  '#root{min-height:100dvh;overflow:hidden;overflow:clip}',
+  // 页面切换时滑进来的屏幕会暂时超出右边；iOS 会因此把整页缩小（看起来所有东西都变小），这里裁掉溢出。
+  // 高度严格等于可见区域（html/body/#root 都是 100%）：不用 100dvh，安卓刷新后它可能比屏幕高，底部标签栏会被裁掉一截
+  '#root{height:100%;overflow:hidden;overflow:clip}',
   'html{touch-action:manipulation;-webkit-text-size-adjust:100%}',
   '*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}',
   'body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}',
@@ -23,6 +24,9 @@ const APP_CSS = [
 
 // 整页本身从不滚动（滚动都在页面里面）：刷新后不要恢复上次的滚动位置，否则 iOS 上整页错位、底部标签栏被挤出屏幕
 const NO_SCROLL_RESTORE = `try{history.scrollRestoration='manual'}catch(e){}window.addEventListener('pageshow',function(){if(window.scrollY)window.scrollTo(0,0)});`;
+
+// 刷新后安卓偶尔拿到过时的屏幕高度（切后台再回来才恢复）：加载后再量几次，页面和可见区域对不上就让浏览器重新计算
+const FIT_VIEWPORT = `(function(){function fit(){var d=document.documentElement,r=document.getElementById('root');if(!r)return;if(Math.abs(r.offsetHeight-d.clientHeight)>1){var m=document.querySelector('meta[name=viewport]');if(m){var v=m.getAttribute('content');m.setAttribute('content',v+',height=device-height');requestAnimationFrame(function(){m.setAttribute('content',v)})}}window.dispatchEvent(new Event('resize'))}function soon(){setTimeout(fit,300);setTimeout(fit,1200)}window.addEventListener('load',soon);window.addEventListener('pageshow',function(e){if(e.persisted)soon()})})();`;
 
 const NO_MEDIA_MENU = `document.addEventListener('contextmenu',function(e){var t=e.target;if(t&&t.closest&&t.closest('img,video,[data-media]'))e.preventDefault();},{capture:true});`;
 
@@ -56,7 +60,7 @@ export default function Root({ children }: PropsWithChildren) {
         <ScrollViewStyleReset />
         <style dangerouslySetInnerHTML={{ __html: APP_CSS }} />
         <style dangerouslySetInnerHTML={{ __html: LAUNCH_CSS }} />
-        <script dangerouslySetInnerHTML={{ __html: NO_SCROLL_RESTORE + NO_MEDIA_MENU + VIEWPORT_JS }} />
+        <script dangerouslySetInnerHTML={{ __html: NO_SCROLL_RESTORE + FIT_VIEWPORT + NO_MEDIA_MENU + VIEWPORT_JS }} />
         <script src="/web-build.js" />
         {headNodes}
       </head>
