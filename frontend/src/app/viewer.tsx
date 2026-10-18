@@ -211,6 +211,14 @@ export default function Viewer() {
     setCur(next);
   };
 
+  // 转屏 / 窗口变宽变窄：每页宽度变了，回到当前这张
+  const lastWidth = useRef(width);
+  useEffect(() => {
+    if (lastWidth.current === width) return;
+    lastWidth.current = width;
+    setTimeout(() => list.current?.scrollToIndex({ index: curRef.current, animated: false }), 30);
+  }, [width]);
+
   // 电脑上：方向键翻页，Esc 关闭
   useEffect(() => {
     if (Platform.OS !== 'web') return;
@@ -335,29 +343,35 @@ export default function Viewer() {
   };
 
   // ---- 版面：顶栏两行、底下回应条 + 按钮；照片按自己的比例放进中间剩下的地方
-  const showReactions = chrome && shared && peer.online;
+  const showReactions = chrome && shared && peer.online && !(width > height && height < 500);
   const peerHere = shared && peer.online && peer.where === 'viewer' && peer.itemId === item.id;
   const peerElsewhere = shared && peer.online && peer.where === 'viewer' && !!peer.itemId && peer.itemId !== item.id;
   const canCoview = shared && peer.online && !!peer.where && coview.status !== 'active';
-  const chips = coview.status === 'active' || peerHere || peerElsewhere || (canCoview && chrome);
-  const topH = chrome || coview.status === 'active' ? insets.top + 8 + 44 + (chips ? 42 : 0) + 8 : insets.top;
-  const bottomH = chrome ? insets.bottom + 14 + 60 + 12 + (showReactions ? 56 : 0) : insets.bottom;
-  const area = { w: width, h: Math.max(160, height - topH - bottomH) };
+  const chips = coview.status === 'active' || peerHere || peerElsewhere || canCoview;
+  // 手机横过来：画面铺满，底下的按钮先收起来（竖回去就有）
+  const compactLandscape = width > height && height < 500;
+  const topBar = insets.top + 8 + 44 + (chips ? 42 : 0) + 8;
+  const bottomBar = compactLandscape ? insets.bottom : insets.bottom + 14 + 60 + 12 + (shared && peer.online ? 56 : 0);
+  // 照片 / 视频的位置和大小固定按「按钮都在」算：按钮出来或收起时画面不会跟着上下跑
+  const areaTop = compactLandscape ? 0 : topBar;
+  const area = { w: width, h: Math.max(160, height - areaTop - bottomBar) };
   const fitted = (e: ViewerEntry) => {
     if (!e.w || !e.h) return { width: area.w, height: area.h };
     const k = Math.min(area.w / e.w, area.h / e.h);
     return { width: Math.round(e.w * k), height: Math.round(e.h * k) };
   };
+  const toggleChrome = () => setChrome((c) => !c);
+
 
   const page = ({ item: e, index }: { item: ViewerEntry; index: number }) => {
     const active = index === cur;
     const box = fitted(e);
     return (
-      <Pressable onPress={() => setChrome((c) => !c)} style={{ width, height }}>
+      <Pressable onPress={toggleChrome} style={{ width, height }}>
         <View
           style={{
             position: 'absolute',
-            top: topH,
+            top: areaTop,
             left: 0,
             width: area.w,
             height: area.h,
@@ -367,12 +381,12 @@ export default function Viewer() {
           {e.kind === 'video' && e.video ? (
             active ? (
               // 视频大小正好等于画面：进度条贴着画面底边，跟着上下按钮一起显示 / 隐藏
-              <Video uri={mediaUrl(e.video)!} poster={mediaUrl(e.image)} autoPlay controlsVisible={chrome} style={box} />
+              <Video uri={mediaUrl(e.video)!} poster={mediaUrl(e.image)} autoPlay controlsVisible={chrome} onTap={toggleChrome} style={box} />
             ) : (
               <Image source={mediaUrl(e.image, 'thumb')} style={box} contentFit="contain" />
             )
           ) : e.kind === 'live' && e.video ? (
-            <LivePhoto key={active ? 'a' : 'i'} item={e} fit="cover" glow={false} autoPlay={active} onPress={() => setChrome((c) => !c)} style={box} />
+            <LivePhoto key={active ? 'a' : 'i'} item={e} fit="cover" glow={false} autoPlay={active} onPress={toggleChrome} style={box} />
           ) : (
             <Image source={mediaUrl(e.image)} placeholder={mediaUrl(e.image, 'thumb')} style={box} contentFit="contain" transition={200} />
           )}
@@ -388,7 +402,7 @@ export default function Viewer() {
       <FlatList
         ref={list}
         data={items}
-        extraData={`${cur}-${topH}-${bottomH}`}
+        extraData={`${cur}-${chrome}-${area.w}x${area.h}`}
         horizontal
         pagingEnabled
         initialScrollIndex={cur}
@@ -407,7 +421,7 @@ export default function Viewer() {
 
       {/* 对方发来的回应：团子从右下弹出来、往上飘，几秒后消失 */}
       {/* 外面套一层整屏宽、裁掉溢出的：粒子飞出屏幕右边时不能撑宽页面（iOS 会因此整页缩小） */}
-      <View pointerEvents="none" style={[styles.floatClip, { bottom: bottomH + 10 }]}>
+      <View pointerEvents="none" style={[styles.floatClip, { bottom: (chrome ? bottomBar : insets.bottom) + 10 }]}>
         <View style={styles.floatBox}>
           {floating.map((f) => {
             const blob = blobReaction(f.emoji);
@@ -503,7 +517,7 @@ export default function Viewer() {
         </>
       )}
 
-      {chrome && mode !== 'plain' && (
+      {chrome && mode !== 'plain' && !compactLandscape && (
         <Animated.View entering={FadeIn.duration(150)} exiting={FadeOut.duration(150)} style={[styles.bottom, { paddingBottom: insets.bottom + 14 }]}>
           {showReactions && (
             <Row gap={8} style={{ justifyContent: 'center', marginBottom: 12 }}>
@@ -534,7 +548,7 @@ export default function Viewer() {
           </Row>
         </Animated.View>
       )}
-      {mode === 'plain' && chrome && (
+      {mode === 'plain' && chrome && !compactLandscape && (
         <View style={[styles.bottom, { paddingBottom: insets.bottom + 14 }]}>
           <Row style={{ justifyContent: 'center' }}>
             <Action icon={Download} label="保存" onPress={save} />

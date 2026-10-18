@@ -11,6 +11,7 @@ export type VideoProps = {
   style?: StyleProp<ViewStyle>;
   controls?: boolean;
   controlsVisible?: boolean;
+  onTap?: () => void;
   autoPlay?: boolean;
   muted?: boolean;
   loop?: boolean;
