@@ -62,9 +62,45 @@ export function s3ConfigFrom(e: NodeJS.ProcessEnv): S3Config | null {
   return cfg;
 }
 
-const SUBDIR: Record<Area, string> = { main: '', thumb: 'thumb/', orig: 'orig/' };
+/**
+ * 对象存储里的目录（前面可以再加 S3_PREFIX）：
+ *   photos/     照片的展示版、视频封面
+ *   videos/     视频（转码后的成品）
+ *   thumbs/     缩略图
+ *   originals/  相册原图 / 原片（下载用）
+ *   uploading/  网页直传的临时文件，处理完就删
+ * 目录只由文件名决定，所以拿到文件名就能找到对象。
+ */
+export const FOLDERS = { photos: 'photos/', videos: 'videos/', thumbs: 'thumbs/', originals: 'originals/', uploading: 'uploading/' } as const;
+const VIDEO_NAME = /\.(mp4|mov|webm|m4v|3gp)$/i;
 
-export const objectKey = (prefix: string, area: Area, name: string) => `${prefix}${SUBDIR[area]}${name}`;
+export function objectKey(prefix: string, area: Area, name: string) {
+  const folder = area === 'thumb' ? FOLDERS.thumbs : area === 'orig' ? FOLDERS.originals : VIDEO_NAME.test(name) ? FOLDERS.videos : FOLDERS.photos;
+  return `${prefix}${folder}${name}`;
+}
+
+/** 早期版本的摆放方式（全放根目录 + thumb/ + orig/ + incoming/），启动时自动搬到新目录 */
+const LEGACY: Record<Area, string> = { main: '', thumb: 'thumb/', orig: 'orig/' };
+export const legacyKey = (prefix: string, area: Area, name: string) => `${prefix}${LEGACY[area]}${name}`;
+const LEGACY_INCOMING = 'incoming/';
+
+/** 把对象名（去掉前缀后）认成哪类文件；legacy 表示还在旧位置 */
+export function parseObjectKey(rest: string): { area: Area; name: string; legacy: boolean } | null {
+  const parts = rest.split('/');
+  if (parts.length === 1) return parts[0] ? { area: 'main', name: parts[0], legacy: true } : null;
+  if (parts.length !== 2 || !parts[1]) return null;
+  const [folder, name] = parts;
+  const dir = `${folder}/`;
+  if (dir === FOLDERS.photos || dir === FOLDERS.videos) return { area: 'main', name, legacy: false };
+  if (dir === FOLDERS.thumbs) return { area: 'thumb', name, legacy: false };
+  if (dir === FOLDERS.originals) return { area: 'orig', name, legacy: false };
+  if (dir === LEGACY.thumb) return { area: 'thumb', name, legacy: true };
+  if (dir === LEGACY.orig) return { area: 'orig', name, legacy: true };
+  return null;
+}
+
+/** 旧位置的对象搬过去以后，再留几天才删：浏览器缓存的跳转链接（最多 3 天）还会指向旧位置 */
+export const LEGACY_KEEP_MS = 4 * 24 * 3600_000;
 
 const TYPES: Record<string, string> = {
   jpg: 'image/jpeg',
@@ -186,13 +222,97 @@ export class Storage {
     return objectKey(this.cfg?.prefix ?? '', area, name);
   }
 
+  /** 搬目录期间：还没搬过去的对象用旧位置 */
+  private readonly legacyPending = new Map<string, string>();
+  /** 启动后第一次检查目录之前，不知道哪些还在旧位置 */
+  private layoutChecked = false;
+
+  private async resolveKey(area: Area, name: string) {
+    const pending = this.legacyPending.get(`${area}/${name}`);
+    if (pending) return pending;
+    const key = this.key(area, name);
+    if (this.layoutChecked || !this.cfg) return key;
+    const exists = await this.ops!.send(new HeadObjectCommand({ Bucket: this.cfg.bucket, Key: key })).then(
+      () => true,
+      () => false
+    );
+    return exists ? key : legacyKey(this.cfg.prefix, area, name);
+  }
+
+  /**
+   * 把旧位置的对象搬到新目录：对象存储内部复制、核对大小；旧的过几天再删。可以反复运行。
+   */
+  async migrateLayout() {
+    if (!this.cfg || !this.ready) {
+      // 对象存储连不上：不再每次请求都去探旧位置
+      this.layoutChecked = true;
+      return { moved: 0, removed: 0 };
+    }
+    const { bucket, prefix } = this.cfg;
+    const legacy: { area: Area; name: string; key: string; size: number }[] = [];
+    let token: string | undefined;
+    do {
+      const page = await this.ops!.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix || undefined, ContinuationToken: token }));
+      for (const o of page.Contents ?? []) {
+        if (!o.Key) continue;
+        const rest = o.Key.slice(prefix.length);
+        if (rest.startsWith(LEGACY_INCOMING)) {
+          // 旧的临时直传文件：一天后清掉
+          if (o.LastModified && Date.now() - o.LastModified.getTime() > 24 * 3600_000) await this.ops!.send(new DeleteObjectCommand({ Bucket: bucket, Key: o.Key })).catch(() => {});
+          continue;
+        }
+        const parsed = parseObjectKey(rest);
+        if (parsed?.legacy && this.names[parsed.area].test(parsed.name)) legacy.push({ ...parsed, key: o.Key, size: Number(o.Size ?? -1) });
+      }
+      token = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (token);
+    const fresh: typeof legacy = [];
+    for (const f of legacy) {
+      const head = await this.ops!.send(new HeadObjectCommand({ Bucket: bucket, Key: this.key(f.area, f.name) })).catch(() => null);
+      if (!head) {
+        this.legacyPending.set(`${f.area}/${f.name}`, f.key);
+        fresh.push(f);
+      } else if (Number(head.ContentLength) === f.size && head.LastModified && Date.now() - head.LastModified.getTime() > LEGACY_KEEP_MS) {
+        f.size = -2; // 标记：可以删旧的
+      }
+    }
+    this.layoutChecked = true;
+    let moved = 0;
+    for (const f of fresh) {
+      const target = this.key(f.area, f.name);
+      try {
+        await this.ops!.send(new CopyObjectCommand({ Bucket: bucket, Key: target, CopySource: `${bucket}/${f.key.split('/').map(encodeURIComponent).join('/')}`, MetadataDirective: 'COPY' }));
+        const head = await this.ops!.send(new HeadObjectCommand({ Bucket: bucket, Key: target }));
+        if (Number(head.ContentLength) !== f.size) throw new Error(`size mismatch (${head.ContentLength} != ${f.size})`);
+        moved++;
+        // 新位置确认好了，之后都用新位置；没搬成的继续用旧位置
+        this.legacyPending.delete(`${f.area}/${f.name}`);
+      } catch (e) {
+        this.log.warn({ key: f.key, err: (e as Error).message }, 'object storage: could not move file to its folder (kept in place)');
+      }
+    }
+    let removed = 0;
+    for (const f of legacy) {
+      if (f.size !== -2) continue;
+      await this.ops!.send(new DeleteObjectCommand({ Bucket: bucket, Key: f.key })).then(
+        () => removed++,
+        () => {}
+      );
+    }
+    if (moved || removed) this.log.info({ moved, removedOld: removed, waiting: legacy.length - removed - moved }, 'object storage: sorted files into folders');
+    return { moved, removed };
+  }
+
+  /** 文件名规则（main/thumb/orig 各自的），搬目录时只碰我们自己生成的文件 */
+  names: Record<Area, RegExp> = { main: /^$/, thumb: /^$/, orig: /^$/ };
+
   /** 浏览器可以直接打开的临时链接；dl 时带上下载文件名 */
   async signedUrl(area: Area, name: string, opts: { download?: string; now?: number } = {}) {
     if (!this.cfg || !this.signer) throw new Error('object storage is not configured');
     const { signingDate, cacheSeconds } = signWindow(opts.now ?? Date.now());
     const cmd = new GetObjectCommand({
       Bucket: this.cfg.bucket,
-      Key: this.key(area, name),
+      Key: await this.resolveKey(area, name),
       ResponseContentDisposition: opts.download
         ? `attachment; filename="${encodeURIComponent(opts.download)}"; filename*=UTF-8''${encodeURIComponent(opts.download)}`
         : undefined,
@@ -350,6 +470,7 @@ export class Storage {
       await this.ops!.send(new DeleteObjectCommand({ Bucket: cfg.bucket, Key: key })).catch(() => {});
       return;
     }
+    if (area === 'main') this.drafts.delete(name);
     // 上传期间文件被改过（比如视频重新转码）就留着，下次再传
     const after = await fs.stat(file).catch(() => null);
     if (!after || after.size !== stat.size || after.mtimeMs !== stat.mtimeMs) return;
@@ -362,7 +483,17 @@ export class Storage {
   }
 
   incomingKey(id: string) {
-    return `${this.cfg?.prefix ?? ''}incoming/${id}`;
+    return `${this.cfg?.prefix ?? ''}${FOLDERS.uploading}${id}`;
+  }
+
+  /** 部署那一刻正在直传的文件可能还在旧的 incoming/ 里 */
+  private async existingIncomingKey(id: string) {
+    const key = this.incomingKey(id);
+    const ok = await this.ops!.send(new HeadObjectCommand({ Bucket: this.cfg!.bucket, Key: key })).then(
+      () => true,
+      () => false
+    );
+    return ok ? key : `${this.cfg!.prefix}${LEGACY_INCOMING}${id}`;
   }
 
   /** 直传链接：只能 PUT 这一个文件，类型和大小都写进签名，1 小时有效 */
@@ -373,24 +504,31 @@ export class Storage {
 
   async headIncoming(id: string) {
     try {
-      const h = await this.ops!.send(new HeadObjectCommand({ Bucket: this.cfg!.bucket, Key: this.incomingKey(id) }));
-      return { size: Number(h.ContentLength ?? 0), type: h.ContentType ?? '' };
+      const key = await this.existingIncomingKey(id);
+      const h = await this.ops!.send(new HeadObjectCommand({ Bucket: this.cfg!.bucket, Key: key }));
+      return { size: Number(h.ContentLength ?? 0), type: h.ContentType ?? '', key };
     } catch {
       return null;
     }
   }
 
   async readIncoming(id: string): Promise<Readable> {
-    const res = await this.ops!.send(new GetObjectCommand({ Bucket: this.cfg!.bucket, Key: this.incomingKey(id) }));
+    const res = await this.ops!.send(new GetObjectCommand({ Bucket: this.cfg!.bucket, Key: await this.existingIncomingKey(id) }));
     return res.Body as Readable;
   }
 
   async removeIncoming(id: string) {
-    await this.ops!.send(new DeleteObjectCommand({ Bucket: this.cfg!.bucket, Key: this.incomingKey(id) })).catch(() => {});
+    for (const key of [this.incomingKey(id), `${this.cfg!.prefix}${LEGACY_INCOMING}${id}`]) await this.ops!.send(new DeleteObjectCommand({ Bucket: this.cfg!.bucket, Key: key })).catch(() => {});
   }
 
-  /** 对象存储内部复制（不经过服务器带宽），设置好成品的类型和缓存头 */
-  async copyObject(sourceKey: string, area: Area, name: string) {
+  /** 转码还没完成、先把原片放在对象存储里播放的视频（转好后会被成品覆盖） */
+  private readonly drafts = new Set<string>();
+  hasDraft(name: string) {
+    return this.drafts.has(name);
+  }
+
+  /** 对象存储内部复制（不经过服务器带宽），设置好成品的类型和缓存头；draft 表示临时版本，不让浏览器长期缓存 */
+  async copyObject(sourceKey: string, area: Area, name: string, opts: { draft?: boolean } = {}) {
     const cfg = this.cfg!;
     await this.ops!.send(
       new CopyObjectCommand({
@@ -399,9 +537,10 @@ export class Storage {
         CopySource: `${cfg.bucket}/${sourceKey.split('/').map(encodeURIComponent).join('/')}`,
         MetadataDirective: 'REPLACE',
         ContentType: this.contentType(area, name),
-        CacheControl: 'private, max-age=31536000, immutable',
+        CacheControl: opts.draft ? 'no-cache' : 'private, max-age=31536000, immutable',
       })
     );
+    if (opts.draft) this.drafts.add(name);
   }
 
   /** 传了一半就放弃的直传文件：一天后清掉 */
@@ -434,11 +573,8 @@ export class Storage {
     do {
       const page = await this.ops!.send(new ListObjectsV2Command({ Bucket: this.cfg.bucket, Prefix: prefix || undefined, ContinuationToken: token }));
       for (const o of page.Contents ?? []) {
-        const rest = o.Key?.slice(prefix.length) ?? '';
-        const [first, second, extra] = rest.split('/');
-        const where: [Area, string] | null =
-          second === undefined ? ['main', first] : extra === undefined && first === 'thumb' ? ['thumb', second] : extra === undefined && first === 'orig' ? ['orig', second] : null;
-        if (where && where[1]) out.push({ area: where[0], name: where[1], modifiedAt: o.LastModified?.getTime() ?? Date.now() });
+        const parsed = parseObjectKey(o.Key?.slice(prefix.length) ?? '');
+        if (parsed) out.push({ area: parsed.area, name: parsed.name, modifiedAt: o.LastModified?.getTime() ?? Date.now() });
       }
       token = page.IsTruncated ? page.NextContinuationToken : undefined;
     } while (token);
@@ -454,7 +590,7 @@ export class Storage {
   async existsRemote(area: Area, name: string) {
     if (!this.cfg) return false;
     try {
-      await this.ops!.send(new HeadObjectCommand({ Bucket: this.cfg.bucket, Key: this.key(area, name) }));
+      await this.ops!.send(new HeadObjectCommand({ Bucket: this.cfg.bucket, Key: await this.resolveKey(area, name) }));
       return true;
     } catch {
       return false;
@@ -462,13 +598,14 @@ export class Storage {
   }
 
   async readRemote(area: Area, name: string): Promise<Readable> {
-    const res = await this.ops!.send(new GetObjectCommand({ Bucket: this.cfg!.bucket, Key: this.key(area, name) }));
+    const res = await this.ops!.send(new GetObjectCommand({ Bucket: this.cfg!.bucket, Key: await this.resolveKey(area, name) }));
     return res.Body as Readable;
   }
 
   async copyRemote(area: Area, from: string, to: string) {
     const cfg = this.cfg!;
-    await this.ops!.send(new CopyObjectCommand({ Bucket: cfg.bucket, Key: this.key(area, to), CopySource: `${cfg.bucket}/${this.key(area, from).split('/').map(encodeURIComponent).join('/')}` }));
+    const source = await this.resolveKey(area, from);
+    await this.ops!.send(new CopyObjectCommand({ Bucket: cfg.bucket, Key: this.key(area, to), CopySource: `${cfg.bucket}/${source.split('/').map(encodeURIComponent).join('/')}` }));
   }
 
   /** 删除本地和对象存储里的文件 */
@@ -480,5 +617,7 @@ export class Storage {
     await this.ops!.send(new DeleteObjectCommand({ Bucket: this.cfg.bucket, Key: this.key(area, name) })).catch((e) =>
       this.log.warn({ area, name, err: (e as Error).message }, 'object storage delete failed')
     );
+    // 旧位置可能还留着一份（搬目录后要过几天才删）
+    await this.ops!.send(new DeleteObjectCommand({ Bucket: this.cfg.bucket, Key: legacyKey(this.cfg.prefix, area, name) })).catch(() => {});
   }
 }
