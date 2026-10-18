@@ -366,8 +366,8 @@ export default function Viewer() {
           }}>
           {e.kind === 'video' && e.video ? (
             active ? (
-              // 视频大小正好等于画面：浏览器自带的进度条贴着画面底边，不会压到下面的按钮
-              <Video uri={mediaUrl(e.video)!} poster={mediaUrl(e.image)} autoPlay style={box} />
+              // 视频大小正好等于画面：进度条贴着画面底边，跟着上下按钮一起显示 / 隐藏
+              <Video uri={mediaUrl(e.video)!} poster={mediaUrl(e.image)} autoPlay controlsVisible={chrome} style={box} />
             ) : (
               <Image source={mediaUrl(e.image, 'thumb')} style={box} contentFit="contain" />
             )
