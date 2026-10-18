@@ -1,11 +1,14 @@
 import { router, useLocalSearchParams } from 'expo-router';
+import { Plus, Settings2, X } from 'lucide-react-native';
 import { useState } from 'react';
-import { View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { DatePicker } from '@/components/DatePicker';
 import { toast } from '@/components/motion';
 import { SheetLoading, SheetScreen } from '@/components/Screen';
+import { Sheet } from '@/components/Sheet';
+import { TimeField } from '@/components/TimeField';
 import { Avatar, Button, Chip, Field, PressScale, Row, Txt } from '@/components/ui';
 import { api } from '@/lib/api';
 import { confirm } from '@/lib/confirm';
@@ -13,11 +16,13 @@ import { parseDay, toDay } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { TODO_CATEGORIES } from '@/lib/nudge';
 import { useCouple } from '@/lib/session';
-import { invalidate, useQuery } from '@/lib/store';
+import { invalidate, setQueryData, useQuery } from '@/lib/store';
 import type { Todo } from '@/lib/types';
 import { colors, radius } from '@/theme';
 
+// 常用时间，点一下就选上；其它时间点「自定义」
 const TIMES = ['09:00', '12:00', '18:00', '21:00'];
+type Settings = { todoCategories?: string[] };
 
 export default function EditTodo() {
   const { id } = useLocalSearchParams<{ id?: string }>();
@@ -36,6 +41,36 @@ function TodoForm({ id, initial: t }: { id?: string; initial?: Todo }) {
   const [dueDay, setDueDay] = useState<string | null>(due0 ? toDay(due0) : null);
   const [dueTime, setDueTime] = useState(due0 ? `${String(due0.getHours()).padStart(2, '0')}:${String(due0.getMinutes()).padStart(2, '0')}` : '09:00');
   const [saving, setSaving] = useState(false);
+  const settings = useQuery<Settings>('/api/settings');
+  const categories = settings.data?.todoCategories ?? TODO_CATEGORIES;
+  // 这条待办原来的分类后来被删掉了，也照样显示出来
+  const shownCategories = category && !categories.includes(category) ? [...categories, category] : categories;
+  const [managing, setManaging] = useState(false);
+  const [newCategory, setNewCategory] = useState('');
+  const [categorySaving, setCategorySaving] = useState(false);
+
+  const saveCategories = async (next: string[]) => {
+    setCategorySaving(true);
+    try {
+      const res = await api.put<Settings>('/api/settings/todoCategories', { value: next });
+      setQueryData<Settings>('/api/settings', (prev) => ({ ...prev, ...res }));
+      return true;
+    } catch (e) {
+      toast((e as Error).message, '⚠️');
+      return false;
+    } finally {
+      setCategorySaving(false);
+    }
+  };
+  const addCategory = async () => {
+    const name = newCategory.trim();
+    if (!name || categorySaving) return;
+    if (categories.includes(name)) return toast('这个分类已经有了', '🗂️');
+    if (await saveCategories([...categories, name])) {
+      setNewCategory('');
+      setCategory(name);
+    }
+  };
 
   const save = async () => {
     if (!title.trim()) return toast('写一下要做什么', '✏️');
@@ -94,15 +129,47 @@ function TodoForm({ id, initial: t }: { id?: string; initial?: Todo }) {
       </View>
 
       <View style={{ gap: 8 }}>
-        <Txt v="label" style={{ marginLeft: 4 }}>
-          分类
-        </Txt>
+        <Row style={{ justifyContent: 'space-between', marginHorizontal: 4 }}>
+          <Txt v="label">分类</Txt>
+          <PressScale scaleTo={0.93} hitSlop={8} onPress={() => setManaging(true)} accessibilityLabel="管理分类" style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Settings2 size={13} color={colors.accentStrong} />
+            <Txt v="caption" color={colors.accentStrong} style={{ fontWeight: '600' }}>
+              管理
+            </Txt>
+          </PressScale>
+        </Row>
         <Row gap={8} style={{ flexWrap: 'wrap' }}>
-          {TODO_CATEGORIES.map((c) => (
+          {shownCategories.map((c) => (
             <Chip key={c} label={c} active={category === c} onPress={() => setCategory(category === c ? null : c)} />
           ))}
         </Row>
       </View>
+
+      <Sheet visible={managing} onClose={() => setManaging(false)} dragAnywhere={false} style={{ gap: 14 }}>
+        <Txt v="heading">待办分类</Txt>
+        <Txt v="caption">两个人共用。删掉分类不会影响已经有的待办。</Txt>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 16, paddingBottom: 24 }}>
+          <Row gap={8} style={{ flexWrap: 'wrap' }}>
+            {categories.map((c) => (
+              <View key={c} style={{ flexDirection: 'row', alignItems: 'center', height: 34, paddingLeft: 14, paddingRight: 6, gap: 2, borderRadius: radius.pill, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line }}>
+                <Txt v="secondary" style={{ fontWeight: '600' }}>
+                  {c}
+                </Txt>
+                <PressScale accessibilityLabel={`删除分类${c}`} disabled={categorySaving} onPress={() => saveCategories(categories.filter((x) => x !== c))} style={{ width: 26, height: 26, alignItems: 'center', justifyContent: 'center' }}>
+                  <X size={14} color={colors.muted} />
+                </PressScale>
+              </View>
+            ))}
+            {!categories.length && <Txt v="caption">还没有分类，加一个吧</Txt>}
+          </Row>
+          <Row gap={8}>
+            <View style={{ flex: 1 }}>
+              <Field value={newCategory} onChangeText={setNewCategory} maxLength={10} placeholder="新分类，例如：家务" onSubmitEditing={addCategory} />
+            </View>
+            <Button title="添加" icon={Plus} onPress={addCategory} loading={categorySaving} disabled={!newCategory.trim()} />
+          </Row>
+        </ScrollView>
+      </Sheet>
 
       <View style={{ gap: 10 }}>
         <DatePicker label="提醒时间（可选）" value={dueDay} onChange={setDueDay} />
@@ -112,6 +179,7 @@ function TodoForm({ id, initial: t }: { id?: string; initial?: Todo }) {
               {TIMES.map((t) => (
                 <Chip key={t} label={t} active={dueTime === t} onPress={() => setDueTime(t)} />
               ))}
+              <TimeField value={dueTime} active={!TIMES.includes(dueTime)} onChange={setDueTime} />
               <Chip label="不提醒" onPress={() => setDueDay(null)} />
             </Row>
           </Animated.View>

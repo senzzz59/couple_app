@@ -3,12 +3,13 @@ import type { Anniversary, Capsule, Todo } from './types';
 
 type Plan = { at: Date; title: string; body: string };
 
-function at9(d: Date, offsetDays = 0) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - offsetDays, 9, 0, 0);
-}
+/** 纪念日等提醒的默认时间；用户可以在纪念日页面改 */
+export const DEFAULT_REMINDER_TIME = '09:00';
 
-export function reminderPlans(anns: Anniversary[], todos: Todo[], startDate?: string | null, capsules: Capsule[] = [], now = Date.now()): Plan[] {
+export function reminderPlans(anns: Anniversary[], todos: Todo[], startDate?: string | null, capsules: Capsule[] = [], now = Date.now(), remindAt = DEFAULT_REMINDER_TIME): Plan[] {
   const plans: Plan[] = [];
+  const [hh, mm] = (/^\d{2}:\d{2}$/.test(remindAt) ? remindAt : DEFAULT_REMINDER_TIME).split(':').map(Number);
+  const at9 = (d: Date, offsetDays = 0) => new Date(d.getFullYear(), d.getMonth(), d.getDate() - offsetDays, hh, mm, 0);
 
   for (const a of anns) {
     let from = new Date(new Date(now).getFullYear(), new Date(now).getMonth(), new Date(now).getDate());

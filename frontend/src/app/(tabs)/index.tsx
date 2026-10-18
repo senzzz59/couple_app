@@ -17,6 +17,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { EmojiTile } from '@/components/EmojiTile';
 import { Envelope } from '@/components/Envelope';
 import { BlobCouple, FlatHeart } from '@/components/Mascot';
 import { MediaThumb } from '@/components/Media';
@@ -227,6 +228,7 @@ function MoodSheetBody({ onClose }: { onClose: () => void }) {
             <Text style={{ fontSize: 28 }}>{m}</Text>
           </PressScale>
         ))}
+        <EmojiTile value={mood} presets={MOODS} onChange={setMood} fontSize={28} style={styles.moodItem} activeStyle={{ backgroundColor: colors.accentSoft, borderColor: colors.accent }} />
       </View>
       <TextInput value={text} onChangeText={setText} placeholder="说一句" placeholderTextColor={colors.faint} maxLength={60} style={styles.moodInput} />
       <Button title="更新" onPress={save} />

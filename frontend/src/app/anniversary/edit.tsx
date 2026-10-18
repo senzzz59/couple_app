@@ -1,15 +1,18 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { ScrollView, Switch, Text, View } from 'react-native';
+import { ScrollView, Switch, Text, TextInput, View } from 'react-native';
 
 import { DatePicker } from '@/components/DatePicker';
+import { EmojiTile } from '@/components/EmojiTile';
+import { TimeField } from '@/components/TimeField';
 import { Segmented, toast } from '@/components/motion';
 import { SheetLoading, SheetScreen } from '@/components/Screen';
 import { Button, Chip, Field, PressScale, Row, Txt } from '@/components/ui';
 import { api } from '@/lib/api';
 import { confirm } from '@/lib/confirm';
 import { haptic } from '@/lib/haptics';
-import { invalidate, useQuery } from '@/lib/store';
+import { DEFAULT_REMINDER_TIME } from '@/lib/reminderPlans';
+import { invalidate, setQueryData, useQuery } from '@/lib/store';
 import type { Anniversary } from '@/lib/types';
 import { colors, radius } from '@/theme';
 
@@ -20,6 +23,12 @@ const REMINDS = [
   { d: 3, label: '提前 3 天' },
   { d: 7, label: '提前 1 周' },
 ];
+// 和服务器的限制一致
+const MAX_REMINDS = 5;
+const MAX_DAYS = 60;
+const remindLabel = (d: number) => REMINDS.find((r) => r.d === d)?.label ?? `提前 ${d} 天`;
+const REMIND_TIMES = ['09:00', '12:00', '20:00'];
+type Settings = { reminderTime?: string };
 
 export default function EditAnniversary() {
   const { id } = useLocalSearchParams<{ id?: string }>();
@@ -37,6 +46,31 @@ function AnniversaryForm({ id, initial: a }: { id?: string; initial?: Anniversar
   const [yearly, setYearly] = useState(a?.yearly ?? true);
   const [remind, setRemind] = useState<number[]>(a?.remind ?? [0, 1]);
   const [saving, setSaving] = useState(false);
+  const [customDays, setCustomDays] = useState('');
+  const settings = useQuery<Settings>('/api/settings');
+  const remindTime = settings.data?.reminderTime ?? DEFAULT_REMINDER_TIME;
+  // 提醒时间是所有纪念日共用的设置，改了立刻保存
+  const setRemindTime = async (value: string) => {
+    if (value === remindTime) return;
+    setQueryData<Settings>('/api/settings', (prev) => ({ ...prev, reminderTime: value }));
+    try {
+      await api.put('/api/settings/reminderTime', { value });
+    } catch (e) {
+      toast((e as Error).message, '⚠️');
+      invalidate('settings');
+    }
+  };
+  const toggleRemind = (d: number) => {
+    if (remind.includes(d)) return setRemind(remind.filter((x) => x !== d));
+    if (remind.length >= MAX_REMINDS) return toast(`最多 ${MAX_REMINDS} 个提醒`, '⏰');
+    setRemind([...remind, d].sort((a, b) => a - b));
+  };
+  const addCustomDays = () => {
+    const d = Number(customDays);
+    if (!Number.isInteger(d) || d < 0 || d > MAX_DAYS) return toast(`填 0 到 ${MAX_DAYS} 之间的天数`, '⏰');
+    setCustomDays('');
+    if (!remind.includes(d)) toggleRemind(d);
+  };
 
   const save = async () => {
     if (!title.trim() || !date) return toast('名字和日期都要填');
@@ -63,6 +97,7 @@ function AnniversaryForm({ id, initial: a }: { id?: string; initial?: Anniversar
             <Text style={{ fontSize: 26 }}>{e}</Text>
           </PressScale>
         ))}
+        <EmojiTile value={emoji} presets={EMOJIS} onChange={setEmoji} size={50} fontSize={26} style={{ borderRadius: radius.md, backgroundColor: colors.surface }} activeStyle={{ backgroundColor: colors.lilac }} />
       </ScrollView>
       <Field label="名字" value={title} onChangeText={setTitle} placeholder="例如：第一次约会" />
       <Segmented
@@ -92,12 +127,36 @@ function AnniversaryForm({ id, initial: a }: { id?: string; initial?: Anniversar
       </View>
       <View style={{ gap: 8 }}>
         <Txt v="label" style={{ marginLeft: 4 }}>
-          提醒（上午 9 点）
+          提醒
         </Txt>
         <Row gap={8} style={{ flexWrap: 'wrap' }}>
-          {REMINDS.map((r) => (
-            <Chip key={r.d} label={r.label} active={remind.includes(r.d)} onPress={() => setRemind(remind.includes(r.d) ? remind.filter((x) => x !== r.d) : [...remind, r.d].sort())} />
+          {[...new Set([...REMINDS.map((r) => r.d), ...remind])].sort((a, b) => a - b).map((d) => (
+            <Chip key={d} label={remindLabel(d)} active={remind.includes(d)} onPress={() => toggleRemind(d)} />
           ))}
+        </Row>
+        <Row gap={8} style={{ alignItems: 'center' }}>
+          <Txt v="secondary">自定义：提前</Txt>
+          <TextInput
+            value={customDays}
+            onChangeText={(t) => setCustomDays(t.replace(/[^0-9]/g, '').slice(0, 2))}
+            keyboardType="number-pad"
+            placeholder="天数"
+            placeholderTextColor={colors.faint}
+            onSubmitEditing={addCustomDays}
+            accessibilityLabel="提前几天提醒"
+            style={{ width: 64, height: 34, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface, textAlign: 'center', fontSize: 16, color: colors.ink }}
+          />
+          <Txt v="secondary">天</Txt>
+          <Chip label="添加" onPress={addCustomDays} />
+        </Row>
+        <Txt v="label" style={{ marginLeft: 4, marginTop: 8 }}>
+          几点提醒 · 所有纪念日共用
+        </Txt>
+        <Row gap={8} style={{ flexWrap: 'wrap' }}>
+          {REMIND_TIMES.map((t) => (
+            <Chip key={t} label={t} active={remindTime === t} onPress={() => setRemindTime(t)} />
+          ))}
+          <TimeField value={remindTime} active={!REMIND_TIMES.includes(remindTime)} onChange={setRemindTime} />
         </Row>
       </View>
       {id && (

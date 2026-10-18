@@ -17,6 +17,7 @@ import { fileRoutes, initStorage, storage } from './files.ts';
 import { ffmpegAvailable, initVideoPipeline } from './transcode.ts';
 import { galleryRoutes } from './gallery.ts';
 import { scheduleOrphanCleanup } from './orphans.ts';
+import { settingsRoutes } from './settings.ts';
 import { realtimeRoutes } from './realtime.ts';
 import { registerRoutes } from './register.ts';
 import { resourceRoutes } from './resources.ts';
@@ -69,6 +70,7 @@ await app.register(capsuleRoutes);
 await app.register(galleryRoutes);
 await app.register(pushRoutes);
 await app.register(webPushRoutes);
+await app.register(settingsRoutes);
 
 await app.listen({ port: env.port, host: env.host });
 // 启动后再检查以前上传的视频，不耽误 API 上线

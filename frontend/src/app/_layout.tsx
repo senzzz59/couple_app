@@ -30,12 +30,14 @@ function ReminderSync() {
   const anns = useQuery<Anniversary[]>('/api/anniversaries');
   const todos = useQuery<Todo[]>('/api/todos');
   const capsules = useQuery<Capsule[]>('/api/capsules');
+  const settings = useQuery<{ reminderTime?: string }>('/api/settings');
   const { space } = useCouple();
+  const remindAt = settings.data?.reminderTime;
   useEffect(() => {
     if (!anns.data || !todos.data) return;
-    const t = setTimeout(() => rescheduleAll(anns.data!, todos.data!, space?.startDate, capsules.data ?? []).catch(() => {}), 1500);
+    const t = setTimeout(() => rescheduleAll(anns.data!, todos.data!, space?.startDate, capsules.data ?? [], remindAt).catch(() => {}), 1500);
     return () => clearTimeout(t);
-  }, [anns.data, todos.data, space?.startDate, capsules.data]);
+  }, [anns.data, todos.data, space?.startDate, capsules.data, remindAt]);
   return null;
 }
 

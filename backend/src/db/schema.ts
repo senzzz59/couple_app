@@ -66,6 +66,15 @@ export const pushReceipts = mysqlTable('push_receipts', {
   createdAt: timestamp('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+/**
+ * 两个人共用的自定义设置（键值）：待办分类等。值的格式由 src/settings.ts 校验。
+ */
+export const sharedSettings = mysqlTable('shared_settings', {
+  key: varchar('key', { length: 64 }).primaryKey(),
+  value: json('value').$type<unknown>().notNull(),
+  updatedAt: timestamp('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`).onUpdateNow(),
+});
+
 /** 涓や汉绌洪棿璁剧疆锛屽彧鏈?id=1 涓€琛?*/
 export const space = mysqlTable('space', {
   id: int('id').primaryKey(),
