@@ -128,6 +128,6 @@ export function CommentComposer({
 const styles = StyleSheet.create({
   replying: { backgroundColor: colors.accentSoft, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 5, alignSelf: 'flex-start', maxWidth: '100%' },
   box: { backgroundColor: colors.surfaceAlt, borderRadius: radius.pill, paddingLeft: 14, paddingRight: 4, height: 44 },
-  input: { flex: 1, minWidth: 0, fontSize: 15, color: colors.ink, height: 44 },
+  input: { flex: 1, minWidth: 0, fontSize: 16, color: colors.ink, height: 44 },
   send: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
 });

@@ -3,10 +3,12 @@ import { useLocalSearchParams } from 'expo-router';
 import { ChevronLeft, ChevronRight, Download, FolderPlus, Heart, ImageDown, PenLine, Send, Trash2, Users, X } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown, FadeOut } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInDown, FadeOut, ZoomIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AlbumPicker } from '@/components/AlbumPicker';
+import { emojiRain, SparkleOnMount, useSparkle } from '@/components/Effects';
+import { Blob } from '@/components/Mascot';
 import { LivePhoto } from '@/components/Media';
 import { toast } from '@/components/motion';
 import { goBack } from '@/components/Screen';
@@ -17,8 +19,10 @@ import { confirm } from '@/lib/confirm';
 import { haptic } from '@/lib/haptics';
 import { fmtSize, mediaUrl } from '@/lib/media';
 import { claimLook, coviewGoto, inviteCoview, leaveCoview, onCoview, sendReaction, setViewerOpen, useCoview, usePeer, type Reaction } from '@/lib/peer';
+import { mascotFor } from '@/lib/profile';
 import { onRealtime } from '@/lib/realtime';
 import { useCouple } from '@/lib/session';
+import { BLOB_REACTIONS, blobReaction, reactionText } from '@/lib/stickers';
 import { invalidate } from '@/lib/store';
 import type { GalleryItem } from '@/lib/types';
 import { galleryEntry, saveEntry, viewerSession, type ViewerEntry, type ViewerSession } from '@/lib/viewer';
@@ -30,21 +34,30 @@ const fmtWhen = (iso?: string) => {
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
-const QUICK = ['💗', '😂', '😍', '👀'];
 const QUICK_TEXT = '就这张！';
 
 type Floating = Reaction & { key: number };
 
 /** 全屏查看：左右滑动翻页，图片 / 视频 / Live 图都能看；相册里的还能收藏、加入相册、删除，给 TA 看、一起看 */
 export default function Viewer() {
-  const params = useLocalSearchParams<{ photos?: string; index?: string; item?: string }>();
+  const params = useLocalSearchParams<{
+    photos?: string;
+    index?: string;
+    item?: string;
+  }>();
   // 旧入口：?photos=a.jpg,b.jpg；通知点进来：?item=<相册照片 id>
   const [session] = useState<ViewerSession | null>(() => {
     const s = viewerSession();
     if (params.item) return s && s.items[s.index]?.id === params.item ? s : null;
     if (s) return s;
     const list = (params.photos ?? '').split(',').filter(Boolean);
-    return list.length ? { items: list.map((image) => ({ kind: 'image', image })), index: Number(params.index) || 0, mode: 'plain' } : null;
+    return list.length
+      ? {
+          items: list.map((image) => ({ kind: 'image', image })),
+          index: Number(params.index) || 0,
+          mode: 'plain',
+        }
+      : null;
   });
   const [items, setItems] = useState<ViewerEntry[]>(session?.items ?? []);
   const [loadingItem, setLoadingItem] = useState(!session && !!params.item);
@@ -151,8 +164,13 @@ export default function Viewer() {
         if (e.action === 'goto' && e.itemId) jumpTo(e.itemId);
         else if (e.action === 'join') {
           haptic.success();
-          toast(`${partnerName} 加入了，一起看吧`, '👥', undefined, { showEmoji: true });
-        } else if (e.action === 'leave') toast(`${partnerName} 退出了一起看`, '👋', undefined, { showEmoji: true });
+          toast(`${partnerName} 加入了，一起看吧`, '👥', undefined, {
+            showEmoji: true,
+          });
+        } else if (e.action === 'leave')
+          toast(`${partnerName} 退出了一起看`, '👋', undefined, {
+            showEmoji: true,
+          });
       }),
     [partnerName]
   );
@@ -171,13 +189,17 @@ export default function Viewer() {
     () =>
       onRealtime<Reaction>('react', (r) => {
         const here = itemsRef.current[curRef.current]?.id === r.itemId;
+        if (r.emoji === 'blob:love') emojiRain('💗');
         if (here) {
           haptic.tap();
           const key = Date.now() + Math.random();
           setFloating((xs) => [...xs.slice(-4), { ...r, key }]);
           setTimeout(() => setFloating((xs) => xs.filter((x) => x.key !== key)), 3200);
         } else {
-          toast(`${partnerName} 对另一张：${r.emoji ?? r.text}`, '💬', undefined, { action: { label: '看看', onPress: () => jumpTo(r.itemId) }, showEmoji: true });
+          toast(`${partnerName} 对另一张：${reactionText(r)}`, '💬', undefined, {
+            action: { label: '看看', onPress: () => jumpTo(r.itemId) },
+            showEmoji: true,
+          });
         }
       }),
     [partnerName]
@@ -204,7 +226,13 @@ export default function Viewer() {
 
   if (!item)
     return (
-      <View style={{ flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' }}>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: '#000',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
         {loadingItem && <ActivityIndicator color={colors.white} />}
       </View>
     );
@@ -237,7 +265,10 @@ export default function Viewer() {
   const remove = async () => {
     if (!item.id || !(await confirm('从相册删除？', '两个人的相册里都会删除，所在的所有相册里也会一起消失'))) return;
     try {
-      await api.post('/api/gallery/batch', { ids: [item.id], action: 'delete' });
+      await api.post('/api/gallery/batch', {
+        ids: [item.id],
+        action: 'delete',
+      });
       haptic.success();
       invalidate('gallery');
       const next = items.filter((_, i) => i !== cur);
@@ -250,7 +281,19 @@ export default function Viewer() {
 
   const importToGallery = async () => {
     try {
-      await api.post('/api/gallery/import', { media: [{ kind: item.kind, image: item.image, video: item.video, w: item.w, h: item.h, duration: item.duration }], takenAt: session?.takenAt });
+      await api.post('/api/gallery/import', {
+        media: [
+          {
+            kind: item.kind,
+            image: item.image,
+            video: item.video,
+            w: item.w,
+            h: item.h,
+            duration: item.duration,
+          },
+        ],
+        takenAt: session?.takenAt,
+      });
       haptic.success();
       toast('已存入相册', '✓');
       invalidate('gallery');
@@ -264,7 +307,10 @@ export default function Viewer() {
     if (!item.id || showing) return;
     setShowing(true);
     try {
-      await api.post('/api/chat/messages', { kind: 'photo', galleryId: item.id });
+      await api.post('/api/chat/messages', {
+        kind: 'photo',
+        galleryId: item.id,
+      });
       haptic.success();
       toast(peer.online ? `已经给${partnerName}看了` : `已发给${partnerName}，TA 打开就能看到`, '👉');
       invalidate('chat');
@@ -288,40 +334,69 @@ export default function Viewer() {
     if (inviteCoview(item.id)) toast(`已邀请${partnerName}一起看`, '👥');
   };
 
+  // ---- 版面：顶栏两行、底下回应条 + 按钮；照片按自己的比例放进中间剩下的地方
+  const showReactions = chrome && shared && peer.online;
+  const peerHere = shared && peer.online && peer.where === 'viewer' && peer.itemId === item.id;
+  const peerElsewhere = shared && peer.online && peer.where === 'viewer' && !!peer.itemId && peer.itemId !== item.id;
+  const canCoview = shared && peer.online && !!peer.where && coview.status !== 'active';
+  const chips = coview.status === 'active' || peerHere || peerElsewhere || (canCoview && chrome);
+  const topH = chrome || coview.status === 'active' ? insets.top + 8 + 44 + (chips ? 42 : 0) + 8 : insets.top;
+  const bottomH = chrome ? insets.bottom + 14 + 60 + 12 + (showReactions ? 56 : 0) : insets.bottom;
+  const area = { w: width, h: Math.max(160, height - topH - bottomH) };
+  const fitted = (e: ViewerEntry) => {
+    if (!e.w || !e.h) return { width: area.w, height: area.h };
+    const k = Math.min(area.w / e.w, area.h / e.h);
+    return { width: Math.round(e.w * k), height: Math.round(e.h * k) };
+  };
+
   const page = ({ item: e, index }: { item: ViewerEntry; index: number }) => {
     const active = index === cur;
-    const box = { width, height };
+    const box = fitted(e);
     return (
-      <Pressable onPress={() => setChrome((c) => !c)} style={[box, { justifyContent: 'center', alignItems: 'center' }]}>
-        {e.kind === 'video' && e.video ? (
-          active ? (
-            <Video uri={mediaUrl(e.video)!} poster={mediaUrl(e.image)} autoPlay style={{ width, height: height - insets.top - insets.bottom - 140 }} />
+      <Pressable onPress={() => setChrome((c) => !c)} style={{ width, height }}>
+        <View
+          style={{
+            position: 'absolute',
+            top: topH,
+            left: 0,
+            width: area.w,
+            height: area.h,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+          {e.kind === 'video' && e.video ? (
+            active ? (
+              // 视频大小正好等于画面：浏览器自带的进度条贴着画面底边，不会压到下面的按钮
+              <Video uri={mediaUrl(e.video)!} poster={mediaUrl(e.image)} autoPlay style={box} />
+            ) : (
+              <Image source={mediaUrl(e.image, 'thumb')} style={box} contentFit="contain" />
+            )
+          ) : e.kind === 'live' && e.video ? (
+            <LivePhoto key={active ? 'a' : 'i'} item={e} fit="cover" glow={false} autoPlay={active} onPress={() => setChrome((c) => !c)} style={box} />
           ) : (
-            <Image source={mediaUrl(e.image, 'thumb')} style={{ width, height: height * 0.8 }} contentFit="contain" />
-          )
-        ) : e.kind === 'live' && e.video ? (
-          <LivePhoto key={active ? 'a' : 'i'} item={e} fit="contain" autoPlay={active} onPress={() => setChrome((c) => !c)} style={{ width, height: height * 0.8 }} />
-        ) : (
-          <Image source={mediaUrl(e.image)} placeholder={mediaUrl(e.image, 'thumb')} style={{ width, height: height * 0.8 }} contentFit="contain" transition={200} />
-        )}
+            <Image source={mediaUrl(e.image)} placeholder={mediaUrl(e.image, 'thumb')} style={box} contentFit="contain" transition={200} />
+          )}
+        </View>
       </Pressable>
     );
   };
 
   const who = item.createdBy ? userName(item.createdBy) : '';
-  const peerHere = shared && peer.online && peer.where === 'viewer' && peer.itemId === item.id;
-  const peerElsewhere = shared && peer.online && peer.where === 'viewer' && !!peer.itemId && peer.itemId !== item.id;
-  const canCoview = shared && peer.online && !!peer.where && coview.status !== 'active';
+  const meta = [fmtWhen(item.takenAt), who && `${who} 上传`, fmtSize(item.size)].filter(Boolean).join(' · ');
   return (
-    <Animated.View entering={FadeIn.duration(200)} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.97)' }}>
+    <Animated.View entering={FadeIn.duration(200)} style={{ flex: 1, backgroundColor: '#000' }}>
       <FlatList
         ref={list}
         data={items}
-        extraData={cur}
+        extraData={`${cur}-${topH}-${bottomH}`}
         horizontal
         pagingEnabled
         initialScrollIndex={cur}
-        getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
+        getItemLayout={(_, i) => ({
+          length: width,
+          offset: width * i,
+          index: i,
+        })}
         showsHorizontalScrollIndicator={false}
         keyExtractor={(x, i) => `${x.id ?? x.image ?? x.video}-${i}`}
         onMomentumScrollEnd={(e) => setCur(Math.round(e.nativeEvent.contentOffset.x / width))}
@@ -330,68 +405,86 @@ export default function Viewer() {
         renderItem={page}
       />
 
-      {/* 对方发来的回应：从右下往上飘，几秒后消失 */}
-      <View pointerEvents="none" style={[styles.floatBox, { bottom: insets.bottom + (shared ? 190 : 120) }]}>
-        {floating.map((f) => (
-          <Animated.View key={f.key} entering={FadeInDown.springify().damping(14)} exiting={FadeOut.duration(400)} style={styles.floatItem}>
-            <Avatar user={partner} size={26} ring="rgba(255,255,255,0.9)" />
-            {f.emoji ? (
-              <Text style={{ fontSize: 30 }}>{f.emoji}</Text>
-            ) : (
-              <View style={styles.floatText}>
-                <Txt v="bodyStrong" color={colors.ink}>
-                  {f.text}
-                </Txt>
-              </View>
-            )}
-          </Animated.View>
-        ))}
+      {/* 对方发来的回应：团子从右下弹出来、往上飘，几秒后消失 */}
+      {/* 外面套一层整屏宽、裁掉溢出的：粒子飞出屏幕右边时不能撑宽页面（iOS 会因此整页缩小） */}
+      <View pointerEvents="none" style={[styles.floatClip, { bottom: bottomH + 10 }]}>
+        <View style={styles.floatBox}>
+          {floating.map((f) => {
+            const blob = blobReaction(f.emoji);
+            return (
+              <Animated.View key={f.key} entering={ZoomIn.springify().damping(10)} exiting={FadeOut.duration(400)} style={styles.floatItem}>
+                {blob ? (
+                  <View>
+                    <Blob who={mascotFor(partner) ?? 'her'} mood={blob.mood} size={64} />
+                    <SparkleOnMount symbol={blob.burst} spread={70} />
+                    <View style={styles.floatLabel}>
+                      <Txt v="caption" color={colors.ink} style={{ fontWeight: '700' }} numberOfLines={1}>
+                        {blob.label}
+                      </Txt>
+                    </View>
+                  </View>
+                ) : (
+                  <>
+                    <Avatar user={partner} size={26} ring="rgba(255,255,255,0.9)" />
+                    {f.emoji ? (
+                      <Text style={{ fontSize: 30 }}>{f.emoji}</Text>
+                    ) : (
+                      <View style={styles.floatText}>
+                        <Txt v="bodyStrong" color={colors.ink} numberOfLines={2}>
+                          {f.text}
+                        </Txt>
+                      </View>
+                    )}
+                  </>
+                )}
+              </Animated.View>
+            );
+          })}
+        </View>
       </View>
 
       {(chrome || coview.status === 'active') && (
         <Animated.View entering={FadeIn.duration(150)} exiting={FadeOut.duration(150)} pointerEvents="box-none" style={[styles.top, { paddingTop: insets.top + 8 }]}>
-          <View style={{ flex: 1 }}>
-            <Txt v="bodyStrong" color={colors.white}>
-              {items.length > 1 ? `${cur + 1} / ${items.length}` : ' '}
-            </Txt>
-            {(item.takenAt || who) && (
-              <Txt v="caption" color="rgba(255,255,255,0.65)" numberOfLines={1}>
-                {[fmtWhen(item.takenAt), who && `${who} 上传`, fmtSize(item.size)].filter(Boolean).join(' · ')}
+          <Row gap={10}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Txt v="bodyStrong" color={colors.white} numberOfLines={1}>
+                {items.length > 1 ? `${cur + 1} / ${items.length}` : ' '}
               </Txt>
-            )}
-          </View>
-          {coview.status === 'active' ? (
-            <PressScale onPress={leaveCoview} style={[styles.pill, styles.pillLive]} accessibilityLabel="退出一起看">
-              <Users size={14} color={colors.white} />
-              <Txt v="caption" color={colors.white} style={styles.pillText}>
-                和{partnerName}一起看 · 退出
-              </Txt>
-            </PressScale>
-          ) : peerHere ? (
-            <View style={[styles.pill, styles.pillHere]}>
-              <Avatar user={partner} size={20} />
-              <Txt v="caption" color={colors.white} style={styles.pillText}>
-                {partnerName}也在看这张
-              </Txt>
+              {!!meta && (
+                <Txt v="caption" color="rgba(255,255,255,0.65)" numberOfLines={1}>
+                  {meta}
+                </Txt>
+              )}
             </View>
-          ) : peerElsewhere ? (
-            <PressScale onPress={() => jumpTo(peer.itemId!)} style={styles.pill} accessibilityLabel={`去看${partnerName}在看的那张`}>
-              <Avatar user={partner} size={20} />
-              <Txt v="caption" color={colors.white} style={styles.pillText}>
-                {partnerName}在看另一张
-              </Txt>
-              <ChevronRight size={14} color={colors.white} />
-            </PressScale>
-          ) : null}
-          {canCoview && chrome && (
-            <PressScale onPress={startCoview} style={[styles.pill, coview.status === 'inviting' && styles.pillLive]} accessibilityLabel="一起看">
-              <Users size={14} color={colors.white} />
-              <Txt v="caption" color={colors.white} style={styles.pillText}>
-                {coview.status === 'inviting' ? '等 TA 加入…' : '一起看'}
-              </Txt>
-            </PressScale>
+            <IconButton icon={X} bg="rgba(255,255,255,0.15)" color={colors.white} onPress={goBack} label="关闭" />
+          </Row>
+          {chips && (
+            <Row gap={8} style={{ marginTop: 10 }}>
+              {coview.status === 'active' ? (
+                <Chip onPress={leaveCoview} tone="live" label={`和${partnerName}一起看中，点一下退出`}>
+                  <Users size={14} color={colors.white} />
+                  <ChipText>一起看中 · 退出</ChipText>
+                </Chip>
+              ) : peerHere ? (
+                <Chip tone="here" label={`${partnerName}也在看这张`}>
+                  <Avatar user={partner} size={20} />
+                  <ChipText>也在看这张</ChipText>
+                </Chip>
+              ) : peerElsewhere ? (
+                <Chip onPress={() => jumpTo(peer.itemId!)} label={`${partnerName}在看另一张，点一下过去`}>
+                  <Avatar user={partner} size={20} />
+                  <ChipText>在看别的</ChipText>
+                  <ChevronRight size={14} color={colors.white} />
+                </Chip>
+              ) : null}
+              {canCoview && chrome && (
+                <Chip onPress={startCoview} tone={coview.status === 'inviting' ? 'live' : undefined} label="一起看">
+                  <Users size={14} color={colors.white} />
+                  <ChipText>{coview.status === 'inviting' ? '等TA加入 · 取消' : '一起看'}</ChipText>
+                </Chip>
+              )}
+            </Row>
           )}
-          <IconButton icon={X} bg="rgba(255,255,255,0.15)" color={colors.white} onPress={goBack} label="关闭" />
         </Animated.View>
       )}
 
@@ -412,12 +505,10 @@ export default function Viewer() {
 
       {chrome && mode !== 'plain' && (
         <Animated.View entering={FadeIn.duration(150)} exiting={FadeOut.duration(150)} style={[styles.bottom, { paddingBottom: insets.bottom + 14 }]}>
-          {shared && peer.online && (
+          {showReactions && (
             <Row gap={8} style={{ justifyContent: 'center', marginBottom: 12 }}>
-              {QUICK.map((e) => (
-                <PressScale key={e} scaleTo={0.8} onPress={() => react({ emoji: e })} style={styles.quick} accessibilityLabel={`回应 ${e}`}>
-                  <Text style={{ fontSize: 20 }}>{e}</Text>
-                </PressScale>
+              {BLOB_REACTIONS.map((r) => (
+                <ReactionButton key={r.id} who={mascotFor(me) ?? 'him'} reaction={r} onPress={() => react({ emoji: r.id })} />
               ))}
               <PressScale scaleTo={0.9} onPress={() => react({ text: QUICK_TEXT })} style={[styles.quick, styles.quickWide]}>
                 <Txt v="caption" color={colors.white} style={{ fontWeight: '700' }} numberOfLines={1}>
@@ -453,6 +544,47 @@ export default function Viewer() {
       {writing && <SayLine onClose={() => setWriting(false)} onSend={(text) => react({ text })} bottom={insets.bottom} />}
       {item.id && <AlbumPicker visible={picker} onClose={() => setPicker(false)} ids={[item.id]} exclude={session?.albumId} />}
     </Animated.View>
+  );
+}
+
+/** 团子回应按钮：按一下弹一下、迸一圈粒子 */
+function ReactionButton({ who, reaction, onPress }: { who: 'her' | 'him'; reaction: (typeof BLOB_REACTIONS)[number]; onPress: () => void }) {
+  const { fire, node } = useSparkle(44);
+  return (
+    <PressScale
+      scaleTo={0.78}
+      onPress={() => {
+        fire(reaction.burst);
+        onPress();
+      }}
+      style={styles.quick}
+      accessibilityLabel={`回应：${reaction.label}`}>
+      <Blob who={who} mood={reaction.mood} size={36} bob={false} />
+      {node}
+    </PressScale>
+  );
+}
+
+function Chip({ children, onPress, tone, label }: { children: React.ReactNode; onPress?: () => void; tone?: 'here' | 'live'; label: string }) {
+  const style = [styles.pill, tone === 'here' && styles.pillHere, tone === 'live' && styles.pillLive];
+  if (!onPress)
+    return (
+      <View style={style} accessibilityLabel={label}>
+        {children}
+      </View>
+    );
+  return (
+    <PressScale onPress={onPress} style={style} accessibilityLabel={label}>
+      {children}
+    </PressScale>
+  );
+}
+
+function ChipText({ children }: { children: React.ReactNode }) {
+  return (
+    <Txt v="caption" color={colors.white} style={styles.pillText} numberOfLines={1}>
+      {children}
+    </Txt>
   );
 }
 
@@ -499,21 +631,116 @@ function Action({ icon: Icon, label, onPress, active }: { icon: typeof Heart; la
 }
 
 const styles = StyleSheet.create({
-  top: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingTop: 12, paddingHorizontal: 8 },
+  top: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 16,
+  },
+  bottom: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingTop: 12,
+    paddingHorizontal: 8,
+  },
   arrow: { position: 'absolute', top: '50%', marginTop: -22 },
-  action: { minWidth: 58, flexShrink: 1, alignItems: 'center', gap: 4, paddingVertical: 8, paddingHorizontal: 6, borderRadius: radius.md, backgroundColor: 'rgba(255,255,255,0.1)' },
-  pill: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 32, paddingLeft: 6, paddingRight: 10, borderRadius: radius.pill, backgroundColor: 'rgba(255,255,255,0.15)', flexShrink: 1 },
+  action: {
+    minWidth: 58,
+    flexShrink: 1,
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    borderRadius: radius.md,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    height: 32,
+    paddingLeft: 6,
+    paddingRight: 12,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    flexShrink: 0,
+  },
   pillHere: { backgroundColor: 'rgba(76,175,120,0.55)' },
   pillLive: { backgroundColor: colors.accentStrong, paddingLeft: 10 },
-  pillText: { fontWeight: '700', flexShrink: 1 },
-  quick: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.14)', alignItems: 'center', justifyContent: 'center' },
+  pillText: { fontWeight: '700' },
+  quick: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   quickWide: { width: 'auto', paddingHorizontal: 12 },
-  floatBox: { position: 'absolute', right: 18, alignItems: 'flex-end', gap: 8 },
+  floatClip: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    overflow: 'hidden',
+    justifyContent: 'flex-end',
+  },
+  floatBox: {
+    alignItems: 'flex-end',
+    gap: 8,
+    paddingRight: 18,
+    paddingBottom: 4,
+  },
   floatItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  floatText: { backgroundColor: colors.white, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 6, maxWidth: 240 },
-  say: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 14, paddingTop: 10, backgroundColor: 'rgba(0,0,0,0.85)' },
-  sayBox: { backgroundColor: colors.white, borderRadius: radius.pill, paddingLeft: 16, paddingRight: 4, height: 46 },
-  sayInput: { flex: 1, minWidth: 0, fontSize: 15, color: colors.ink, height: 46 },
-  saySend: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.accentStrong, alignItems: 'center', justifyContent: 'center' },
+  floatLabel: {
+    position: 'absolute',
+    bottom: -6,
+    alignSelf: 'center',
+    backgroundColor: colors.white,
+    borderRadius: radius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 1,
+  },
+  floatText: {
+    backgroundColor: colors.white,
+    borderRadius: radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    maxWidth: 240,
+  },
+  say: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+  },
+  sayBox: {
+    backgroundColor: colors.white,
+    borderRadius: radius.pill,
+    paddingLeft: 16,
+    paddingRight: 4,
+    height: 46,
+  },
+  // 16 号字：iOS 上小于 16 的输入框一点就会把页面放大
+  sayInput: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 16,
+    color: colors.ink,
+    height: 46,
+  },
+  saySend: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: colors.accentStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

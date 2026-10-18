@@ -5,7 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, FlatList, KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ChatBubble } from '@/components/chat/ChatBubble';
+import { ChatBubble, expressiveSymbol } from '@/components/chat/ChatBubble';
+import { emojiRain } from '@/components/Effects';
 import { ChatComposer, type ReplyTarget } from '@/components/chat/ChatComposer';
 import { toast } from '@/components/motion';
 import { CENTERED, goBack } from '@/components/Screen';
@@ -13,9 +14,11 @@ import { Sheet } from '@/components/Sheet';
 import { LoadError } from '@/components/Skeleton';
 import { Avatar, IconButton, PressScale, Row, Txt } from '@/components/ui';
 import { api } from '@/lib/api';
-import { chatTime, RECALL_MS, TIME_GAP_MS } from '@/lib/chat';
+import { chatTime, freshMessage, onFreshMessage, RECALL_MS, TIME_GAP_MS } from '@/lib/chat';
 import { haptic } from '@/lib/haptics';
 import { usePeer } from '@/lib/peer';
+import { onRealtime } from '@/lib/realtime';
+import { rainFor } from '@/lib/stickers';
 import { useCouple } from '@/lib/session';
 import { invalidate, setQueryData, useQuery } from '@/lib/store';
 import type { ChatMessage, ChatUnread } from '@/lib/types';
@@ -42,6 +45,27 @@ export default function Chat() {
   const [focusSignal, setFocusSignal] = useState(0);
   const replyPicked = useRef(false);
   const list = useRef<FlatList<ChatMessage>>(null);
+
+  // ---- 表情特效：自己刚发的、对方刚发来的（翻历史不放）
+  const [fresh, setFresh] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    const offFresh = onFreshMessage((m) => {
+      if (!expressiveSymbol(m)) return;
+      setFresh((s) => new Set(s).add(m.id));
+      const rain = rainFor(m);
+      if (rain) emojiRain(rain);
+      if (m.createdBy !== me?.id) haptic.medium();
+    });
+    // 对方的新消息只会从实时通道来
+    const offChat = onRealtime<{ message: ChatMessage }>('chat', ({ message }) => {
+      setQueryData<ChatMessage[]>('/api/chat/messages', (prev) => [message, ...(prev ?? []).filter((x) => x.id !== message.id)]);
+      freshMessage(message);
+    });
+    return () => {
+      offFresh();
+      offChat();
+    };
+  }, [me?.id]);
 
   useFocusEffect(
     useCallback(() => {
@@ -136,6 +160,7 @@ export default function Chat() {
           author={userById(m.createdBy)}
           authorName={(id) => userName(id) || 'TA'}
           read={m.id === readId}
+          fresh={fresh.has(m.id)}
           onLongPress={() => {
             haptic.medium();
             setMenuAt(Date.now());

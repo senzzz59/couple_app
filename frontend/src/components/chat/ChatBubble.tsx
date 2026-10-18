@@ -2,14 +2,17 @@ import { Image } from 'expo-image';
 import { ImageOff, Pause, Play } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import Animated, { ZoomIn } from 'react-native-reanimated';
 
 import { chatPreview } from '@/lib/chat';
+import { builtinSticker, isEmojiOnly } from '@/lib/stickers';
 import { mediaUrl } from '@/lib/media';
 import type { ChatMessage, User } from '@/lib/types';
 import { openViewer, openViewerById } from '@/lib/viewer';
 import { playbackSupported, playVoice } from '@/lib/voice';
 import { colors, radius } from '@/theme';
 
+import { SparkleOnMount } from '../Effects';
 import { MediaThumb } from '../Media';
 import { toast } from '../motion';
 import { Sticker } from '../Sticker';
@@ -97,22 +100,39 @@ function Body({ m, mine, onLongPress }: { m: ChatMessage; mine: boolean; onLongP
     );
   if (m.kind === 'voice' && m.voice) return <VoiceBody m={m} mine={mine} onLongPress={onLongPress} />;
   if (m.kind === 'photo') return <PhotoCard m={m} mine={mine} onLongPress={onLongPress} />;
+  const big = isEmojiOnly(m.content);
   return (
-    <PressScale haptics={false} scaleTo={1} {...hold} style={[styles.bubble, mine ? styles.mine : styles.theirs]}>
-      <Txt v="body" color={mine ? colors.white : colors.ink}>
+    <PressScale haptics={false} scaleTo={1} {...hold} style={[styles.bubble, mine ? styles.mine : styles.theirs, big && styles.bigBubble]}>
+      <Txt v="body" color={mine ? colors.white : colors.ink} style={big ? styles.bigEmoji : undefined}>
         {m.content}
       </Txt>
     </PressScale>
   );
 }
 
-export function ChatBubble({ m, mine, author, authorName, onLongPress, read }: { m: ChatMessage; mine: boolean; author?: User | null; authorName: (id: string | null) => string; onLongPress: () => void; read?: boolean }) {
+/** 表情包、纯表情这种「表情」消息：新到的要有特效 */
+export function expressiveSymbol(m: ChatMessage): string | null {
+  if (m.kind === 'sticker' && m.sticker) return builtinSticker(m.sticker)?.emoji ?? '💗';
+  if (m.kind === 'text' && isEmojiOnly(m.content)) return Array.from(m.content!.trim())[0] ?? null;
+  return null;
+}
+
+export function ChatBubble({ m, mine, author, authorName, onLongPress, read, fresh }: { m: ChatMessage; mine: boolean; author?: User | null; authorName: (id: string | null) => string; onLongPress: () => void; read?: boolean; fresh?: boolean }) {
+  const symbol = fresh ? expressiveSymbol(m) : null;
   const quote = m.replyToId ? (m.replyTo ? `${authorName(m.replyTo.createdBy)}：${chatPreview(m.replyTo)}` : '消息已撤回') : null;
   return (
     <View style={[styles.row, mine && { flexDirection: 'row-reverse' }]}>
       {!mine && <Avatar user={author} size={34} />}
       <View style={{ maxWidth: '76%', alignItems: mine ? 'flex-end' : 'flex-start', gap: 4 }}>
-        <Body m={m} mine={mine} onLongPress={onLongPress} />
+        {symbol ? (
+          // 刚发出 / 刚收到的表情：弹出来，四周迸一圈小爱心
+          <Animated.View entering={ZoomIn.springify().damping(9).stiffness(220)}>
+            <Body m={m} mine={mine} onLongPress={onLongPress} />
+            <SparkleOnMount symbol={symbol} spread={m.kind === 'sticker' ? 78 : 56} />
+          </Animated.View>
+        ) : (
+          <Body m={m} mine={mine} onLongPress={onLongPress} />
+        )}
         {quote && (
           <View style={styles.quote}>
             <Txt v="caption" numberOfLines={2}>
@@ -139,5 +159,7 @@ const styles = StyleSheet.create({
   card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 6 },
   cardGone: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 12 },
   quote: { backgroundColor: colors.surfaceAlt, borderRadius: radius.sm, paddingHorizontal: 10, paddingVertical: 5 },
+  bigBubble: { paddingHorizontal: 12, paddingVertical: 6 },
+  bigEmoji: { fontSize: 38, lineHeight: 48 },
   unheard: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.danger },
 });

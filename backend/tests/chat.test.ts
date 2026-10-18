@@ -99,6 +99,8 @@ test('reactions and co-viewing are relayed to the partner and validated', async 
   rt.attachSocket(b, B);
   const relayed = () => b.got.filter((e) => e.type === 'react' || e.type === 'coview');
   rt.handleMessage(a, JSON.stringify({ type: 'react', itemId: ITEM, emoji: '😍' }), 1000);
+  rt.handleMessage(a, JSON.stringify({ type: 'react', itemId: ITEM, emoji: 'blob:love' }), 1000);
+  rt.handleMessage(a, JSON.stringify({ type: 'react', itemId: ITEM, emoji: 'blob:evil' }), 1000);
   rt.handleMessage(a, JSON.stringify({ type: 'react', itemId: ITEM, text: '  就这张！ ' }), 1001);
   rt.handleMessage(a, JSON.stringify({ type: 'react', itemId: ITEM, emoji: '💩' }), 1002);
   rt.handleMessage(a, JSON.stringify({ type: 'react', itemId: 'not-a-uuid', emoji: '😍' }), 1003);
@@ -112,6 +114,7 @@ test('reactions and co-viewing are relayed to the partner and validated', async 
   const got = relayed().map(({ at: _, ...e }) => e);
   assert.deepEqual(got, [
     { type: 'react', from: A, itemId: ITEM, emoji: '😍' },
+    { type: 'react', from: A, itemId: ITEM, emoji: 'blob:love' },
     { type: 'react', from: A, itemId: ITEM, text: '就这张！' },
     { type: 'react', from: A, itemId: ITEM, text: 'x'.repeat(30) },
     { type: 'coview', from: A, action: 'invite', itemId: ITEM2 },

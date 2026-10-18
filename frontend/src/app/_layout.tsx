@@ -11,6 +11,7 @@ import { ConfirmHost } from '@/components/Confirm';
 import '@/lib/install';
 import { ConfettiHost, toast, ToastHost } from '@/components/motion';
 import { RealtimeToasts } from '@/components/RealtimeToasts';
+import { EffectsHost } from '@/components/Effects';
 import { TravelPickerHost } from '@/components/TravelPicker';
 import { UpdateHost } from '@/components/UpdateCenter';
 import { useUpdateStartup } from '@/components/UpdateStartup';
@@ -179,6 +180,7 @@ export default function RootLayout() {
           <RootStack fontsLoaded={fontsLoaded || !!fontError} />
         </View>
         <ConfettiHost />
+        <EffectsHost />
         <ConfirmHost />
         <ToastHost />
       </SessionProvider>

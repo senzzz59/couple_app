@@ -4,7 +4,7 @@ import { ActivityIndicator, Platform, Pressable, StyleSheet, TextInput, View } f
 import Animated, { FadeIn, FadeInDown, FadeOut } from 'react-native-reanimated';
 
 import { api } from '@/lib/api';
-import { chatPreview } from '@/lib/chat';
+import { chatPreview, freshMessage } from '@/lib/chat';
 import { haptic } from '@/lib/haptics';
 import { pickMedia, releaseLocal, uploadMedia } from '@/lib/media';
 import { setQueryData } from '@/lib/store';
@@ -26,6 +26,7 @@ const MAX_SECONDS = 60;
 export async function sendChat(body: Body & { replyToId?: string | null }) {
   const msg = await api.post<ChatMessage>('/api/chat/messages', body);
   setQueryData<ChatMessage[]>('/api/chat/messages', (prev) => [msg, ...(prev ?? []).filter((m) => m.id !== msg.id)]);
+  freshMessage(msg);
   return msg;
 }
 
@@ -263,7 +264,7 @@ function HoldToTalk({ busy, onRecorded, onBusy }: { busy: boolean; onRecorded: (
 const styles = StyleSheet.create({
   replying: { backgroundColor: colors.accentSoft, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 5, alignSelf: 'flex-start', maxWidth: '100%' },
   box: { backgroundColor: colors.surfaceAlt, borderRadius: radius.pill, paddingLeft: 4, paddingRight: 4, height: 46 },
-  input: { flex: 1, minWidth: 0, fontSize: 15, color: colors.ink, height: 46 },
+  input: { flex: 1, minWidth: 0, fontSize: 16, color: colors.ink, height: 46 },
   send: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
   hold: { height: 36, borderRadius: radius.pill, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
   holdOn: { backgroundColor: colors.faint },
