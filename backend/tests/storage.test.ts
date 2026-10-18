@@ -35,3 +35,24 @@ test('transcoded videos are stored as mp4 regardless of extension', () => {
   assert.equal(contentTypeOf('x.jpg', true), 'image/jpeg');
   assert.equal(contentTypeOf('x.HEIC'), 'image/heic');
 });
+
+test('checksum-required requests use Content-MD5 instead of CRC32 headers (Rainyun rejects x-amz-checksum-*)', async () => {
+  const http = await import('node:http');
+  const { S3Client, PutBucketCorsCommand } = await import('@aws-sdk/client-s3');
+  const { useContentMd5 } = await import('../src/storage.ts');
+  let headers: Record<string, unknown> = {};
+  const srv = http.createServer((req, res) => {
+    headers = req.headers;
+    req.resume();
+    req.on('end', () => res.end());
+  });
+  await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+  const c = useContentMd5(
+    new S3Client({ endpoint: `http://127.0.0.1:${(srv.address() as { port: number }).port}`, region: 'us-east-1', forcePathStyle: true, credentials: { accessKeyId: 'a', secretAccessKey: 'b' }, requestChecksumCalculation: 'WHEN_REQUIRED' })
+  );
+  await c.send(new PutBucketCorsCommand({ Bucket: 'b', CORSConfiguration: { CORSRules: [{ AllowedMethods: ['GET'], AllowedOrigins: ['*'] }] } }));
+  srv.close();
+  assert.ok(headers['content-md5']);
+  assert.ok(!Object.keys(headers).some((h) => h.startsWith('x-amz-checksum') || h === 'x-amz-sdk-checksum-algorithm'));
+  assert.match(String(headers['x-amz-content-sha256'] ?? headers.authorization), /./);
+});
