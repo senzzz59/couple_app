@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { ChevronRight, Dices, MoreHorizontal } from 'lucide-react-native';
+import { ChevronRight, Dices, MessageCircle, MoreHorizontal } from 'lucide-react-native';
 import { ReactNode, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, {
@@ -36,7 +36,7 @@ import { MOODS, NUDGES } from '@/lib/nudge';
 import { questionOfDay } from '@/lib/questions';
 import { useCouple } from '@/lib/session';
 import { invalidate, useQuery } from '@/lib/store';
-import type { Anniversary, Answer, Capsule, GallerySummary, Moment, Place, Todo } from '@/lib/types';
+import type { Anniversary, Answer, Capsule, ChatUnread, GallerySummary, Moment, Place, Todo } from '@/lib/types';
 import { usePendingDeletes } from '@/lib/undo';
 import { colors, fonts, radius, springs } from '@/theme';
 
@@ -445,6 +445,22 @@ function RecentPhotos() {
   );
 }
 
+// ---------------- 聊天入口：有未读显示红点和数字
+function ChatButton() {
+  const unread = useQuery<ChatUnread>('/api/chat/unread');
+  const n = unread.data?.count ?? 0;
+  return (
+    <PressScale scaleTo={0.9} onPress={() => router.push('/chat')} accessibilityLabel={n ? `聊天，${n} 条未读` : '聊天'} style={styles.chatBtn}>
+      <MessageCircle size={20} color={colors.ink} strokeWidth={2.2} />
+      {n > 0 && (
+        <View style={styles.chatBadge}>
+          <Text style={styles.chatBadgeText}>{n > 99 ? '99+' : n}</Text>
+        </View>
+      )}
+    </PressScale>
+  );
+}
+
 export default function Home() {
   const insets = useSafeAreaInsets();
   const { me, partner } = useCouple();
@@ -491,14 +507,17 @@ export default function Home() {
                 {greeting()}，{me?.name ?? ''}
               </Txt>
             </View>
-            <Pressable onPress={() => router.push('/settings')} accessibilityLabel="设置">
-              <Row gap={0}>
-                <Avatar user={me} size={40} ring={colors.bg} />
-                <View style={{ marginLeft: -12 }}>
-                  <Avatar user={partner} size={40} ring={colors.bg} />
-                </View>
-              </Row>
-            </Pressable>
+            <Row gap={10}>
+              <ChatButton />
+              <Pressable onPress={() => router.push('/settings')} accessibilityLabel="设置">
+                <Row gap={0}>
+                  <Avatar user={me} size={40} ring={colors.bg} />
+                  <View style={{ marginLeft: -12 }}>
+                    <Avatar user={partner} size={40} ring={colors.bg} />
+                  </View>
+                </Row>
+              </Pressable>
+            </Row>
           </Row>
         </Animated.View>
         {blocks.map((b, i) => (
@@ -513,6 +532,9 @@ export default function Home() {
 }
 
 const styles = StyleSheet.create({
+  chatBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
+  chatBadge: { position: 'absolute', top: -3, right: -4, minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4, backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.bg },
+  chatBadgeText: { color: colors.white, fontSize: 10, fontWeight: '800', lineHeight: 12 },
   hero: { borderRadius: radius.xl, padding: 22, overflow: 'hidden', minHeight: 196, borderCurve: 'continuous', backgroundColor: colors.pink, justifyContent: 'center' },
   heroBlobs: { position: 'absolute', right: 4, bottom: -6 },
   heroPill: { alignSelf: 'flex-start', marginTop: 10, backgroundColor: 'rgba(255,255,255,0.8)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill },

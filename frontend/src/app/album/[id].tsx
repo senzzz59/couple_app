@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AlbumEditor } from '@/components/AlbumEditor';
 import { AlbumPicker } from '@/components/AlbumPicker';
 import { GalleryGrid, UploadBanner } from '@/components/GalleryGrid';
+import { PeerBanner, useGalleryPresence } from '@/components/PeerBanner';
 import { toast } from '@/components/motion';
 import { CENTERED, goBack } from '@/components/Screen';
 import { SelectionBar } from '@/components/SelectionBar';
@@ -46,6 +47,7 @@ export default function AlbumScreen() {
   const [menu, setMenu] = useState(false);
   const [editing, setEditing] = useState(false);
   const sel = useGallerySelection(items, { albumId: smart ? undefined : id, onPickAlbum: () => setPicker(true) });
+  const presence = useGalleryPresence();
 
   const y = useSharedValue(0);
   const onScroll = useAnimatedScrollHandler((e) => {
@@ -121,6 +123,7 @@ export default function AlbumScreen() {
 
             <View style={{ marginTop: 18 }}>
               <UploadBanner />
+              {!sel.selecting && <PeerBanner items={items} />}
               <QueryFallback q={list} kind="grid" count={6} />
               {list.data && items.length === 0 ? (
                 <Empty emoji={emoji} title="这里还空空的"  />
@@ -132,6 +135,7 @@ export default function AlbumScreen() {
                   onToggle={sel.toggle}
                   onStartSelect={sel.start}
                   onOpen={(i) => openViewer(items.map(galleryEntry), i, { mode: 'gallery', albumId: smart ? undefined : id })}
+                  peer={presence.grid}
                 />
               )}
             </View>

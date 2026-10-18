@@ -11,6 +11,7 @@ import { AlbumPicker } from '@/components/AlbumPicker';
 import { GalleryGrid, UploadBanner } from '@/components/GalleryGrid';
 import { Segmented, toast } from '@/components/motion';
 import { MonthJump, type MonthCount } from '@/components/MonthJump';
+import { PeerBanner, useGalleryPresence } from '@/components/PeerBanner';
 import { Screen } from '@/components/Screen';
 import { SelectionBar } from '@/components/SelectionBar';
 import { QueryFallback } from '@/components/Skeleton';
@@ -132,6 +133,7 @@ export default function Gallery() {
   const list = useQuery<GalleryItem[]>(`/api/gallery?limit=${limit}${filterQuery(filter)}`);
   const items = list.data ?? [];
   const sel = useGallerySelection(items, { onPickAlbum: () => setPicker(true) });
+  const presence = useGalleryPresence();
 
   // ---- 跳到某年某月：先把那个月之前（更新）的都加载出来，再滚到那个月
   const insets = useSafeAreaInsets();
@@ -198,6 +200,7 @@ export default function Gallery() {
           await Promise.all([invalidate('gallery'), invalidate('albums')]);
         }}>
         <UploadBanner />
+        {!sel.selecting && <PeerBanner items={items} />}
         {!sel.selecting && (
           <Segmented
             options={[
@@ -243,6 +246,7 @@ export default function Gallery() {
                     onStartSelect={sel.start}
                     onOpen={(i) => openViewer(items.map(galleryEntry), i, { mode: 'gallery' })}
                     onPressMonth={(months.data?.length ?? 0) > 1 ? openJump : undefined}
+                    peer={presence.grid}
                     onMonthLayout={(month, y) => {
                       monthY.current.set(month, y);
                       if (month === target.current) tryJump();

@@ -36,6 +36,8 @@ export const users = mysqlTable('users', {
   mood: varchar('mood', { length: 16 }),
   moodText: varchar('mood_text', { length: 60 }),
   moodAt: datetime('mood_at', { fsp: 3 }),
+  /** 在相册里让另一半看到自己正在看哪张 */
+  shareViewing: boolean('share_viewing').notNull().default(true),
   ...timestamps,
 });
 
@@ -334,3 +336,29 @@ export const uploadHashes = mysqlTable(
   },
   (t) => [primaryKey({ columns: [t.hash, t.original] })]
 );
+
+/** 聊天消息。photo：相册里「给 TA 看」的照片卡片 */
+export const messages = mysqlTable(
+  'messages',
+  {
+    id: id(),
+    kind: mysqlEnum('kind', ['text', 'image', 'sticker', 'voice', 'photo']).notNull().default('text'),
+    content: varchar('content', { length: 1000 }),
+    image: varchar('image', { length: 100 }),
+    /** 表情包：内置的 blob:xxx，或自定义表情的文件名 */
+    sticker: varchar('sticker', { length: 100 }),
+    voice: varchar('voice', { length: 100 }),
+    duration: double('duration'),
+    galleryId: varchar('gallery_id', { length: 36 }).references(() => galleryItems.id, { onDelete: 'set null' }),
+    replyToId: varchar('reply_to_id', { length: 36 }),
+    createdBy: userRef('created_by'),
+    ...timestamps,
+  },
+  (t) => [index('messages_created_idx').on(t.createdAt)]
+);
+
+/** 每个人读到哪里（之后对方发的算未读） */
+export const chatReads = mysqlTable('chat_reads', {
+  userId: varchar('user_id', { length: 36 }).primaryKey(),
+  readAt: datetime('read_at', { fsp: 3 }).notNull(),
+});

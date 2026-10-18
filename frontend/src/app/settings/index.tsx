@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
-import { Bell, CalendarHeart, ChevronRight, Download, Heart, Info, KeyRound, LogOut, Smartphone } from 'lucide-react-native';
+import { Bell, CalendarHeart, ChevronRight, Download, Eye, Heart, Info, KeyRound, LogOut, Smartphone } from 'lucide-react-native';
 import { useCallback, useEffect, useState } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, Switch, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 
 import { toast } from '@/components/motion';
@@ -9,6 +9,7 @@ import { Screen } from '@/components/Screen';
 import { Group, SettingRow } from '@/components/SettingsList';
 import { Sheet } from '@/components/Sheet';
 import { Avatar, Button, enter, PressScale, Txt } from '@/components/ui';
+import { api } from '@/lib/api';
 import { confirm } from '@/lib/confirm';
 import { fmtFullDate } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
@@ -75,6 +76,21 @@ export default function Settings() {
     }
   };
 
+  // 相册里让 TA 看到我在看哪张（默认开）
+  const [shareViewing, setShareViewing] = useState<boolean | null>(null);
+  const sharing = shareViewing ?? me?.shareViewing !== false;
+  const toggleShareViewing = async (next: boolean) => {
+    haptic.tick();
+    setShareViewing(next);
+    try {
+      await api.patch('/api/me', { shareViewing: next });
+      invalidate('me');
+    } catch (e) {
+      setShareViewing(!next);
+      toast((e as Error).message, '⚠️');
+    }
+  };
+
   const logout = async () => {
     if (await confirm('退出登录？', '', '退出')) signOut();
   };
@@ -99,6 +115,11 @@ export default function Settings() {
           <Group title="我们">
             <SettingRow first icon={CalendarHeart} label="在一起的日子" value={space?.startDate ? fmtFullDate(space.startDate) : '未设置'} onPress={() => router.push('/anniversaries')} />
             <SettingRow icon={Heart} label="另一半" value={partner?.name ?? '还没加入'} />
+            <SettingRow
+              icon={Eye}
+              label="让 TA 看到我在看哪张照片"
+              right={<Switch value={sharing} onValueChange={toggleShareViewing} trackColor={{ true: colors.accent, false: colors.faint }} thumbColor={colors.white} />}
+            />
           </Group>
         </Animated.View>
 

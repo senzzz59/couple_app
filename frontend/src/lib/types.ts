@@ -9,6 +9,8 @@ export interface User {
   mood: string | null;
   moodText: string | null;
   moodAt: string | null;
+  /** 在相册里让另一半看到自己正在看哪张 */
+  shareViewing?: boolean;
 }
 
 export interface Space {
@@ -164,4 +166,29 @@ export interface Answer extends Base {
   day: string;
   question: number;
   content: string | null;
+}
+
+export type ChatKind = 'text' | 'image' | 'sticker' | 'voice' | 'photo';
+
+export interface ChatMessage {
+  id: string;
+  kind: ChatKind;
+  content: string | null;
+  image: string | null;
+  sticker: string | null;
+  voice: string | null;
+  duration: number | null;
+  galleryId: string | null;
+  replyToId: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  /** 引用的相册照片；被删了是 null */
+  gallery: GalleryItem | null;
+  /** 回复的那条；撤回了是 null */
+  replyTo: Pick<ChatMessage, 'id' | 'kind' | 'content' | 'image' | 'sticker' | 'createdBy'> | null;
+}
+
+export interface ChatUnread {
+  count: number;
+  partnerReadAt: string | null;
 }

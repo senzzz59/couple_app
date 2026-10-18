@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { Linking, Platform } from 'react-native';
 
 import { api, getBaseUrl } from './api';
+import { peekQuery } from './store';
 import { mediaUrl } from './media';
 import type { GalleryItem, MediaItem } from './types';
 
@@ -30,9 +31,26 @@ export type ViewerSession = {
 let session: ViewerSession | null = null;
 export const viewerSession = () => session;
 
+/** 相册页最近加载的「全部」列表 */
+function cachedGallery(): GalleryItem[] {
+  return peekQuery<GalleryItem[]>((k) => /^\/api\/gallery\?limit=\d+$/.test(k)) ?? [];
+}
+
 export function openViewer(items: ViewerEntry[], index: number, opts: Partial<Omit<ViewerSession, 'items' | 'index'>> = {}) {
   session = { items, index, mode: opts.mode ?? 'plain', takenAt: opts.takenAt, albumId: opts.albumId };
   router.push('/viewer');
+}
+
+/**
+ * 打开相册里的某一张：在给定的列表里（或最近加载过的相册列表里）就带着整个列表打开，可以左右翻；
+ * 找不到就单独拉这一张。
+ */
+export async function openViewerById(id: string, list?: GalleryItem[]) {
+  const pool = list ?? cachedGallery();
+  const i = pool.findIndex((x) => x.id === id);
+  if (i >= 0) return openViewer(pool.map(galleryEntry), i, { mode: 'gallery' });
+  const item = await api.get<GalleryItem>(`/api/gallery/${id}`);
+  openViewer([galleryEntry(item)], 0, { mode: 'gallery' });
 }
 
 export const galleryEntry = (g: GalleryItem): ViewerEntry => ({

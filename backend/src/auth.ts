@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { db, schema } from './db/index.ts';
 import { env } from './env.ts';
 import { removeFiles } from './files.ts';
-import { broadcast, isOnline, sendTo } from './realtime.ts';
+import { broadcast, isOnline, sendTo, setShareViewing } from './realtime.ts';
 import { pushNudge } from './push.ts';
 import { sendWebPush } from './webPush.ts';
 
@@ -83,6 +83,7 @@ export async function authRoutes(app: FastifyInstance) {
         birthdayLunar: z.boolean(),
         mood: z.string().max(16).nullable(),
         moodText: z.string().max(60).nullable(),
+        shareViewing: z.boolean(),
         password: z.string().min(8).max(100),
       })
       .partial()
@@ -96,6 +97,7 @@ export async function authRoutes(app: FastifyInstance) {
       if (old?.avatar && old.avatar !== body.avatar) await removeFiles([old.avatar]);
     }
     if (Object.keys(patch).length) await db.update(schema.users).set(patch).where(eq(schema.users.id, req.user.sub));
+    if (body.shareViewing !== undefined) setShareViewing(req.user.sub, body.shareViewing);
     broadcast({ type: 'change', collection: 'users', id: req.user.sub, by: req.user.sub });
     const [me] = await db.select().from(schema.users).where(eq(schema.users.id, req.user.sub));
     return publicUser(me);

@@ -30,6 +30,7 @@ export function SettingRow({
   badge,
   busy,
   first,
+  right,
 }: {
   icon?: LucideIcon;
   label: string;
@@ -39,6 +40,8 @@ export function SettingRow({
   badge?: string;
   busy?: boolean;
   first?: boolean;
+  /** 右侧自定义内容（比如开关） */
+  right?: ReactNode;
 }) {
   const content = (
     <>
@@ -60,7 +63,8 @@ export function SettingRow({
           {value}
         </Txt>
       ) : null}
-      {onPress && !danger && <ChevronRight size={18} color={colors.faint} />}
+      {right}
+      {onPress && !danger && !right && <ChevronRight size={18} color={colors.faint} />}
     </>
   );
   const style = [styles.row, !first && styles.sep];

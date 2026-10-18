@@ -72,7 +72,8 @@ export function s3ConfigFrom(e: NodeJS.ProcessEnv): S3Config | null {
  * 目录只由文件名决定，所以拿到文件名就能找到对象。
  */
 export const FOLDERS = { photos: 'photos/', videos: 'videos/', thumbs: 'thumbs/', originals: 'originals/', uploading: 'uploading/' } as const;
-const VIDEO_NAME = /\.(mp4|mov|webm|m4v|3gp)$/i;
+// 语音（m4a）也放 videos/
+const VIDEO_NAME = /\.(mp4|mov|webm|m4v|3gp|m4a)$/i;
 
 export function objectKey(prefix: string, area: Area, name: string) {
   const folder = area === 'thumb' ? FOLDERS.thumbs : area === 'orig' ? FOLDERS.originals : VIDEO_NAME.test(name) ? FOLDERS.videos : FOLDERS.photos;
@@ -119,6 +120,7 @@ const TYPES: Record<string, string> = {
   mov: 'video/quicktime',
   webm: 'video/webm',
   '3gp': 'video/3gpp',
+  m4a: 'audio/mp4',
 };
 
 /** 存到对象存储时的 Content-Type；转码过的视频内容是 MP4（扩展名不变） */
