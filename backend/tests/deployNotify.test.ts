@@ -39,6 +39,17 @@ async function repoWithReleases() {
   return { dir, base, m1, m2, m3 };
 }
 
+test('backfilled entries older than the last deployment are not reported again', async () => {
+  const { dir, m2, m3 } = await repoWithReleases();
+  // 模拟：c 是在 m3 才补写进来的，但它的版本标成比 m2 还旧
+  const releases = JSON.parse(git(dir, 'show', `${m3}:frontend/src/data/changelog.json`)).releases;
+  const old = versionAt(dir, m2)!.split('.');
+  releases[0].version = `${old[0]}.${old[1]}.${Number(old[2]) - 1}`;
+  await fs.writeFile(path.join(dir, 'frontend/src/data/changelog.json'), JSON.stringify({ releases }));
+  git(dir, 'commit', '-qam', 'backfill');
+  assert.deepEqual(newReleases(dir, m2, 'HEAD').map((r: { id: string }) => r.id), []);
+});
+
 test('each release gets the version of the master merge that added it', async () => {
   const { dir, m1, m2, m3 } = await repoWithReleases();
   const v = releaseVersions(dir, m3);

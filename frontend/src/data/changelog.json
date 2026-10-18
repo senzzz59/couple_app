@@ -1,6 +1,12 @@
 {
   "releases": [
     {
+      "id": "deploy-email-only-new",
+      "date": "2026-10-18",
+      "title": "部署邮件更准确",
+      "changes": [{ "type": "improve", "text": "部署通知邮件只列出这次新上线的更新，不重复以前的" }]
+    },
+    {
       "id": "deploy-email-changelog",
       "date": "2026-10-18",
       "title": "更新记录和部署通知",
