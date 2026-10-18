@@ -20,9 +20,13 @@ export type UploadInput = {
   mime?: string;
 };
 
+/** 上传到了哪一步：传文件中 / 服务器处理中 / 快速上传（同一个文件以前传过，直接复制） */
+export type UploadStage = 'uploading' | 'processing' | 'instant';
+
 export type UploadOptions = {
   /** 0~1 */
   onProgress?: (p: number) => void;
+  onStage?: (stage: UploadStage) => void;
   /** 保留原图（相册用）：不在浏览器里压缩 */
   original?: boolean;
 };
@@ -104,7 +108,7 @@ export async function compressImage(blob: Blob, level: number | 'heic' = 0): Pro
   return out && out.size < blob.size ? out : blob;
 }
 
-async function webBlob(input: UploadInput, original: boolean, level: number): Promise<{ blob: Blob; name: string }> {
+async function webBlob(input: UploadInput, original: boolean, level: number): Promise<Prepared> {
   let blob: Blob;
   try {
     blob = await (await fetch(input.uri)).blob();
@@ -125,7 +129,7 @@ async function webBlob(input: UploadInput, original: boolean, level: number): Pr
   }
   const ext = out.type === 'image/jpeg' ? 'jpg' : (input.name?.split('.').pop() ?? out.type.split('/')[1] ?? 'bin');
   const base = (input.name ?? 'file').replace(/\.[^.]+$/, '') || 'file';
-  return { blob: out, name: `${base}.${ext}` };
+  return { blob: out, name: `${base}.${ext}`, source: blob };
 }
 
 const MIME_BY_EXT: Record<string, string> = {
@@ -143,13 +147,15 @@ const MIME_BY_EXT: Record<string, string> = {
 
 const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)}MB`;
 
-function send(form: FormData, total: number, onProgress?: (p: number) => void, query = '') {
+function send(form: FormData, total: number, onProgress?: (p: number) => void, query = '', onStage?: (s: UploadStage) => void) {
   return new Promise<unknown>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${getBaseUrl()}/api/files${query}`);
     const token = getToken();
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     xhr.upload.onprogress = (e) => onProgress?.(e.lengthComputable ? e.loaded / e.total : 0);
+    // 文件传完了，服务器在压缩 / 截封面
+    xhr.upload.onload = () => onStage?.('processing');
     xhr.onload = () => {
       let data: { message?: string } | null = null;
       try {
@@ -169,8 +175,28 @@ function send(form: FormData, total: number, onProgress?: (p: number) => void, q
   });
 }
 
-type Prepared = { blob: Blob; name: string };
-type DirectTicket = { id: string; url: string; headers: Record<string, string> };
+/** source：用户选的原文件（压缩前），用来算指纹 */
+type Prepared = { blob: Blob; name: string; source?: Blob };
+type DirectTicket = { id: string; url: string; headers: Record<string, string> } | { instant: unknown; id?: undefined };
+type ServerItem = { kind: string; image: string | null; video: string | null };
+
+/**
+ * 文件指纹（快速上传用）：16MB 以内整个算 sha256；更大的取开头、中间、结尾各 4MB 再加上文件大小，
+ * 几百 MB 的视频也只要一眨眼。和以前传过的文件一样，就不用再传一遍。
+ */
+export async function fingerprint(blob: Blob): Promise<string | undefined> {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle || !blob.size) return undefined;
+  try {
+    const chunk = 4 * 1024 * 1024;
+    const mid = Math.floor(blob.size / 2);
+    const parts = blob.size <= 4 * chunk ? [blob] : [blob.slice(0, chunk), blob.slice(mid - chunk / 2, mid + chunk / 2), blob.slice(blob.size - chunk)];
+    const digest = new Uint8Array(await subtle.digest('SHA-256', await new Blob(parts).arrayBuffer()));
+    return `v1:${blob.size}:${Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join('')}`;
+  } catch {
+    return undefined;
+  }
+}
 
 /** 直传失败过（网络 / 跨域）：本次打开页面都走服务器 */
 let directOff = false;
@@ -190,20 +216,31 @@ function put(url: string, blob: Blob, headers: Record<string, string>, onProgres
 }
 
 /** 直传到对象存储；返回 null 表示这次不能直传，调用方改走服务器 */
-async function sendDirect(files: Prepared[], original: boolean, onProgress?: (p: number) => void): Promise<unknown | null> {
+async function sendDirect(files: Prepared[], original: boolean, onProgress?: (p: number) => void, onStage?: (s: UploadStage) => void): Promise<unknown | null> {
   if (directOff || Platform.OS !== 'web') return null;
   let tickets: DirectTicket[] | undefined;
+  const hashes = await Promise.all(files.map((f) => fingerprint(f.source ?? f.blob)));
   try {
-    const res = await api.post<{ enabled: boolean; uploads?: DirectTicket[] }>('/api/files/direct', { files: files.map((f) => ({ name: f.name, type: f.blob.type, size: f.blob.size })) });
+    const res = await api.post<{ enabled: boolean; uploads?: DirectTicket[] }>('/api/files/direct', { original, files: files.map((f, i) => ({ name: f.name, type: f.blob.type, size: f.blob.size, hash: hashes[i] })) });
     tickets = res.enabled ? res.uploads : undefined;
   } catch {
     return null;
   }
   if (!tickets || tickets.length !== files.length) return null;
-  const total = files.reduce((n, f) => n + f.blob.size, 0) || 1;
+  const items: (ServerItem | null)[] = tickets.map((t) => ('instant' in t ? (t.instant as ServerItem) : null));
+  const pending = tickets.flatMap((t, i) => ('url' in t ? [{ t, i }] : []));
+  // 全是以前传过的：直接用复制好的
+  if (!pending.length) {
+    onStage?.('instant');
+    onProgress?.(1);
+    return { files: items.map((it) => (it!.kind === 'video' ? it!.video : it!.image)), items, instant: true };
+  }
+  const total = pending.reduce((n, { i }) => n + files[i].blob.size, 0) || 1;
   let done = 0;
+  onStage?.('uploading');
   try {
-    for (const [i, t] of tickets.entries()) {
+    for (const { t, i } of pending) {
+      if (!('url' in t)) continue;
       await put(t.url, files[i].blob, t.headers, (loaded) => onProgress?.(((done + loaded) / total) * 0.95));
       done += files[i].blob.size;
     }
@@ -213,9 +250,11 @@ async function sendDirect(files: Prepared[], original: boolean, onProgress?: (p:
     return null;
   }
   try {
-    const out = await api.post('/api/files/complete', { uploads: tickets.map((t, i) => ({ id: t.id, name: files[i].name })), original });
+    onStage?.('processing');
+    const out = await api.post<{ items: ServerItem[] }>('/api/files/complete', { uploads: pending.map(({ t, i }) => ({ id: t.id, name: files[i].name, hash: hashes[i] })), original });
+    pending.forEach(({ i }, n) => (items[i] = out.items[n]));
     onProgress?.(1);
-    return out;
+    return { files: items.map((it) => (it!.kind === 'video' ? it!.video : it!.image)), items };
   } catch (e) {
     // 文件本身有问题（格式不认识、太大）直接告诉用户；服务器临时出错就改走老路再试
     if (e instanceof ApiError && e.status >= 400 && e.status < 500) throw e;
@@ -247,24 +286,25 @@ export async function uploadFiles<T = { files: string[] }>(inputs: UploadInput[]
   if (Platform.OS === 'web' && !directOff) {
     prepared = [];
     for (const input of inputs) prepared.push(await webBlob(input, original, 0));
-    const direct = await sendDirect(prepared, original, opts.onProgress);
+    const direct = await sendDirect(prepared, original, opts.onProgress, opts.onStage);
     if (direct) return direct as T;
   }
+  opts.onStage?.('uploading');
   let { form, total } = await buildForm(inputs, original, 0, prepared);
   try {
-    return (await send(form, total, opts.onProgress, query)) as T;
+    return (await send(form, total, opts.onProgress, query, opts.onStage)) as T;
   } catch (e) {
     if (!(e instanceof ApiError)) throw e;
     // 服务器嫌大：网页上再压缩一档重试
     if (e.status === 413 && !original && Platform.OS === 'web') {
       ({ form, total } = await buildForm(inputs, original, 1));
-      return (await send(form, total, opts.onProgress, query)) as T;
+      return (await send(form, total, opts.onProgress, query, opts.onStage)) as T;
     }
     if (e.status !== 0) throw e;
     // 网络抖动：等一下再试一次
     await new Promise((r) => setTimeout(r, 1200));
     try {
-      return (await send(form, total, opts.onProgress, query)) as T;
+      return (await send(form, total, opts.onProgress, query, opts.onStage)) as T;
     } catch (e2) {
       if (e2 instanceof ApiError && e2.status === 0) {
         throw new ApiError(

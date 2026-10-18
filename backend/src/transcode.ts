@@ -205,6 +205,9 @@ async function drain(log?: { warn: (o: object, m: string) => void }) {
   running = false;
 }
 
+/** 视频的处理状态（快速上传复制视频时，新文件沿用同样的状态） */
+export const videoStatus = (name: string): Status | undefined => index[name];
+
 /** 直接登记处理结果（直传的视频已经确认不用转码时） */
 export async function markVideo(name: string, status: Status) {
   index[name] = status;

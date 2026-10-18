@@ -7,10 +7,13 @@ import { pipeline } from 'node:stream/promises';
 import sharp, { type Metadata } from 'sharp';
 import { z } from 'zod';
 
+import { and, eq } from 'drizzle-orm';
+
+import { db, schema } from './db/index.ts';
 import { env } from './env.ts';
 import { exifTakenAt, findEmbeddedVideo, videoExt } from './media.ts';
 import { s3ConfigFrom, Storage, contentTypeOf, type Area } from './storage.ts';
-import { displaySize, enqueueVideo, ffmpegAvailable, makePoster, markVideo, onVideoSettled, probeVideo, videoIsMp4, videoPlan, videoSettled } from './transcode.ts';
+import { displaySize, enqueueVideo, ffmpegAvailable, makePoster, markVideo, onVideoSettled, probeVideo, videoIsMp4, videoPlan, videoSettled, videoStatus } from './transcode.ts';
 
 const THUMB_DIR = path.join(env.uploadDir, 'thumb');
 const ORIG_DIR = path.join(env.uploadDir, 'orig');
@@ -195,7 +198,51 @@ async function processImage(buf: Buffer, mimetype: string, fileName: string, kee
 }
 
 const DIRECT_ID_RE = /^[0-9a-f-]{36}\.[a-z0-9]{1,5}$/;
-const directFile = z.object({ name: z.string().min(1).max(300), type: z.string().max(100).default(''), size: z.number().int().min(1) });
+/** 浏览器算的文件指纹（大小 + 内容的 sha256） */
+const HASH_RE = /^[a-z0-9:]{16,100}$/;
+const directFile = z.object({ name: z.string().min(1).max(300), type: z.string().max(100).default(''), size: z.number().int().min(1), hash: z.string().regex(HASH_RE).optional() });
+
+/**
+ * 快速上传：同一个文件以前处理过，就在存储里把处理好的文件各复制一份（新文件名），不用重新上传。
+ * 复制而不是共用，删掉其中一份不会影响另一份。原来的文件不在了、视频还没转完，就当没有，正常上传。
+ */
+async function instantCopy(hash: string, original: boolean, fileName: string): Promise<UploadedItem | null> {
+  const where = and(eq(schema.uploadHashes.hash, hash), eq(schema.uploadHashes.original, original));
+  const [row] = await db.select().from(schema.uploadHashes).where(where);
+  if (!row) return null;
+  const prev = row.item as UploadedItem;
+  const sources: [string | null, 'main' | 'orig'][] = [
+    [prev.image, 'main'],
+    [prev.video, 'main'],
+    [prev.original, 'orig'],
+  ];
+  for (const [name, kind] of sources) {
+    if (name && !(await fileSource(name, kind))) {
+      await db.delete(schema.uploadHashes).where(where);
+      return null;
+    }
+  }
+  if (prev.video && (await ffmpegAvailable()) && !videoSettled(prev.video)) return null;
+  const image = prev.image ? await copyFile(prev.image) : null;
+  const video = prev.video ? await copyFile(prev.video) : null;
+  const status = prev.video ? videoStatus(prev.video) : undefined;
+  if (video && status) await markVideo(video, status);
+  let copiedOriginal: string | null = null;
+  if (prev.original) {
+    copiedOriginal = `${crypto.randomUUID()}${path.extname(prev.original)}`;
+    await copyOne('orig', prev.original, copiedOriginal);
+  }
+  return { ...prev, image, video, original: copiedOriginal, fileName };
+}
+
+async function rememberHash(hash: string | undefined, original: boolean, item: UploadedItem) {
+  if (!hash) return;
+  await db
+    .insert(schema.uploadHashes)
+    .values({ hash, original, item: item as never })
+    .onDuplicateKeyUpdate({ set: { item: item as never } })
+    .catch(() => {});
+}
 
 /**
  * 上传：
@@ -239,7 +286,7 @@ export async function fileRoutes(app: FastifyInstance) {
 
   // ---- 直传第一步：给每个文件一个 1 小时有效的上传链接（对象存储没配置 / 连不上时告诉前端走老路）
   app.post('/api/files/direct', { preHandler: app.authenticate }, async (req, reply) => {
-    const body = z.object({ files: z.array(directFile).min(1).max(30) }).parse(req.body);
+    const body = z.object({ files: z.array(directFile).min(1).max(30), original: z.boolean().optional() }).parse(req.body);
     if (!storage.directUpload) return { enabled: false };
     for (const f of body.files) {
       const video = !!videoExt(f.type, f.name);
@@ -247,6 +294,9 @@ export async function fileRoutes(app: FastifyInstance) {
     }
     const uploads = await Promise.all(
       body.files.map(async (f) => {
+        // 同一个文件传过：直接复制一份，不用再传
+        const instant = f.hash ? await instantCopy(f.hash, !!body.original, f.name).catch((e) => (req.log.warn(e, 'instant upload failed'), null)) : null;
+        if (instant) return { instant };
         const ext = (f.name.split('.').pop() ?? '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5) || 'bin';
         const id = `${crypto.randomUUID()}.${ext}`;
         const type = f.type || 'application/octet-stream';
@@ -259,7 +309,7 @@ export async function fileRoutes(app: FastifyInstance) {
   // ---- 直传第二步：文件已经在对象存储里了，服务器取回来处理（和普通上传一样），返回同样的结果
   app.post('/api/files/complete', { preHandler: app.authenticate }, async (req, reply) => {
     const body = z
-      .object({ uploads: z.array(z.object({ id: z.string().regex(DIRECT_ID_RE), name: z.string().min(1).max(300) })).min(1).max(30), original: z.boolean().optional() })
+      .object({ uploads: z.array(z.object({ id: z.string().regex(DIRECT_ID_RE), name: z.string().min(1).max(300), hash: z.string().regex(HASH_RE).optional() })).min(1).max(30), original: z.boolean().optional() })
       .parse(req.body);
     if (!storage.enabled) return reply.code(400).send({ message: '对象存储没有配置' });
     const items: UploadedItem[] = [];
@@ -281,6 +331,7 @@ export async function fileRoutes(app: FastifyInstance) {
           for await (const c of await storage.readIncoming(u.id)) chunks.push(c as Buffer);
           items.push(await processImage(Buffer.concat(chunks), head.type, u.name, !!body.original, written, req.log, remote));
         }
+        await rememberHash(u.hash, !!body.original, items[items.length - 1]);
       }
     } catch (e) {
       await Promise.all(written.map((f) => fs.rm(f, { force: true })));

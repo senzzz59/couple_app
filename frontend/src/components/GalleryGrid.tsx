@@ -1,13 +1,12 @@
 import { Check, Heart } from 'lucide-react-native';
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
-import Animated, { FadeIn, ZoomIn } from 'react-native-reanimated';
+import Animated, { ZoomIn } from 'react-native-reanimated';
 
 import { haptic } from '@/lib/haptics';
 import { galleryToMedia } from '@/lib/media';
 import type { GalleryItem } from '@/lib/types';
-import { useUploadJob } from '@/lib/galleryUpload';
-import { colors, radius, shadow } from '@/theme';
+import { colors } from '@/theme';
 
 import { MediaThumb } from './Media';
 import { Row, Txt } from './ui';
@@ -119,32 +118,12 @@ export function GalleryGrid({
   );
 }
 
-/** 顶部上传进度条（后台上传时在相册页显示） */
-export function UploadBanner() {
-  const job = useUploadJob();
-  if (!job) return null;
-  const pct = Math.round(job.progress * 100);
-  return (
-    <Animated.View entering={FadeIn.duration(200)} style={styles.banner}>
-      <Row style={{ justifyContent: 'space-between' }}>
-        <Txt v="bodyStrong" style={{ fontSize: 14 }}>
-          {job.status === 'done' ? (job.failed ? `${job.failed} 项上传失败` : `已上传 ${job.total} 项`) : `正在上传 ${Math.min(job.done + 1, job.total)}/${job.total}`}
-        </Txt>
-        <Txt v="caption">{pct}%</Txt>
-      </Row>
-      <View style={styles.track}>
-        <View style={[styles.fill, { width: `${pct}%` }]} />
-      </View>
-    </Animated.View>
-  );
-}
+/** 顶部上传条：实现在 UploadCenter（点开能看每一项的进度） */
+export { UploadBanner } from './UploadCenter';
 
 const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: GAP },
   fav: { position: 'absolute', left: 6, bottom: 6 },
   check: { position: 'absolute', right: 6, top: 6, width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: '#fff', backgroundColor: 'rgba(0,0,0,0.15)', alignItems: 'center', justifyContent: 'center' },
   checkOn: { backgroundColor: colors.accentStrong, borderColor: colors.accentStrong },
-  banner: { backgroundColor: colors.surface, borderRadius: radius.md, padding: 14, gap: 8, marginBottom: 14, ...shadow },
-  track: { height: 8, borderRadius: 4, backgroundColor: colors.surfaceAlt, overflow: 'hidden' },
-  fill: { height: 8, borderRadius: 4, backgroundColor: colors.accent },
 });

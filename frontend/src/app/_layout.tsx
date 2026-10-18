@@ -13,6 +13,7 @@ import { ConfettiHost, toast, ToastHost } from '@/components/motion';
 import { useUpdateStartup } from '@/components/UpdateStartup';
 import { haptic } from '@/lib/haptics';
 import { hideLaunch } from '@/lib/launch';
+import { restoreUploads } from '@/lib/galleryUpload';
 import { startLocationWarmup } from '@/lib/location';
 import { notifyNow, rescheduleAll } from '@/lib/notify';
 import { NUDGES } from '@/lib/nudge';
@@ -38,6 +39,15 @@ function ReminderSync() {
     const t = setTimeout(() => rescheduleAll(anns.data!, todos.data!, space?.startDate, capsules.data ?? [], remindAt).catch(() => {}), 1500);
     return () => clearTimeout(t);
   }, [anns.data, todos.data, space?.startDate, capsules.data, remindAt]);
+  return null;
+}
+
+/** 接着传上次没传完的相册照片（网页版：页面被关掉过也能继续） */
+function UploadResume() {
+  useEffect(() => {
+    const t = setTimeout(() => void restoreUploads(), 2000);
+    return () => clearTimeout(t);
+  }, []);
   return null;
 }
 
@@ -130,6 +140,7 @@ function RootStack({ fontsLoaded }: { fontsLoaded: boolean }) {
       {status === 'signedIn' && (
         <>
           <ReminderSync />
+          <UploadResume />
           <NudgeListener />
           <LocationWarmup />
           <NotificationOpenListener />

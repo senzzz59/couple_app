@@ -318,3 +318,19 @@ export const albumItems = mysqlTable(
   },
   (t) => [primaryKey({ columns: [t.albumId, t.itemId] }), index('album_items_item_idx').on(t.itemId)]
 );
+
+/**
+ * 「快速上传」：同一个文件（按浏览器算的指纹）上次处理出来的结果。再传同一个文件时，
+ * 直接在存储里复制一份处理好的文件，不用重新上传。这只是缓存：文件被删了就当没有，
+ * 所以不算「引用」，不会让已经删掉的照片留下来。
+ */
+export const uploadHashes = mysqlTable(
+  'upload_hashes',
+  {
+    hash: varchar('hash', { length: 100 }).notNull(),
+    original: boolean('original').notNull().default(false),
+    item: json('item').$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (t) => [primaryKey({ columns: [t.hash, t.original] })]
+);
