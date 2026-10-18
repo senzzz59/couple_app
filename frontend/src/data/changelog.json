@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "id": "fix-tabbar-after-reload",
+      "date": "2026-10-18",
+      "title": "修复更新后底部标签栏显示不全",
+      "changes": [
+        { "type": "fix", "text": "安卓手机更新或刷新后，页面比屏幕高、底部标签栏被截掉一截的问题" }
+      ]
+    },
+    {
       "id": "smooth-moments-scroll",
       "date": "2026-10-18",
       "title": "动态页滑动更顺畅",
