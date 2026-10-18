@@ -6,12 +6,12 @@ import Svg, { G, Path, Text as SvgText } from 'react-native-svg';
 import { scheduleOnRN } from 'react-native-worklets';
 
 import { FoodFilters } from '@/components/FoodFilters';
-import { celebrate, Segmented, toast } from '@/components/motion';
+import { celebrate, Segmented } from '@/components/motion';
 import { Screen } from '@/components/Screen';
 import { Button, Empty, PressScale, Row, Txt } from '@/components/ui';
 import { categoryEmoji, categoryTone, placeArea } from '@/lib/food';
 import { applyFoodFilter, DEFAULT_FILTER, type FilteredPlace, type FoodFilter } from '@/lib/foodFilter';
-import { openInMaps } from '@/lib/geo';
+import { chooseTravel } from '@/components/TravelPicker';
 import { haptic } from '@/lib/haptics';
 import { fmtKm, useMyLocation } from '@/lib/location';
 import { useQuery } from '@/lib/store';
@@ -169,7 +169,7 @@ export default function Roulette() {
           <Text style={{ fontFamily: fonts.round, fontSize: 34, lineHeight: 44, color: colors.ink, textAlign: 'center' }}>{result.name}</Text>
           <ResultMeta p={result} />
           <Animated.View entering={FadeIn.delay(300)} style={{ flexDirection: 'row', gap: 10, alignSelf: 'stretch' }}>
-            <Button title="导航过去" variant="secondary" style={{ flex: 1 }} onPress={() => openInMaps(result).catch(() => toast('打不开高德地图', '⚠️'))} />
+            <Button title="导航过去" variant="secondary" style={{ flex: 1 }} onPress={() => chooseTravel(result)} />
             <Button title="看看详情" variant="accent" style={{ flex: 1 }} onPress={() => router.replace({ pathname: '/place/[id]', params: { id: result.id } })} />
           </Animated.View>
         </Animated.View>

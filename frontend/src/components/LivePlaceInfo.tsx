@@ -10,6 +10,7 @@ import { AMAP_KEY, openAmapPlace } from '@/lib/geo';
 import { locate } from '@/lib/location';
 import { colors, fonts, radius } from '@/theme';
 import { toast } from './motion';
+import { navigateBy } from './TravelPicker';
 import { Button, PressScale, Row, Txt } from './ui';
 
 const modes = [
@@ -102,15 +103,16 @@ export function LivePlaceInfo({ destination }: { destination: MapDestination }) 
             <View style={styles.travelGrid}>
               {modes.map(({ key, label, Icon }) => {
                 const option = journey.options.find((o) => o.mode === key);
-                return <View key={key} style={styles.travelItem}>
+                // 点一格就用这种方式导航
+                return <PressScale key={key} scaleTo={0.94} accessibilityLabel={`${label}导航`} onPress={() => navigateBy(destination, key)} style={styles.travelItem}>
                   <Icon size={20} color={colors.sageInk} /><Txt v="caption" color={colors.inkSoft}>{label}</Txt>
                   <Txt v="bodyStrong" numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 13, maxWidth: '100%', textAlign: 'center' }}>{travelTime(option?.seconds ?? null)}</Txt>
                   <Txt v="caption" style={{ fontSize: 10, textAlign: 'center' }}>{option?.seconds == null ? '暂未返回路线' : travelDistance(option.meters)}</Txt>
-                </View>;
+                </PressScale>;
               })}
             </View>
             {journey.options.every((o) => o.seconds == null) && <Txt v="caption" color={colors.peachInk}>{journey.options.find((o) => o.message)?.message || '暂时没有可用路线，可以前往高德查看'}</Txt>}
-            <Txt v="caption" style={{ fontSize: 11 }}>高德预计耗时 · 查询于 {new Date(journey.checkedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}，路况和班次可能变化</Txt>
+            <Txt v="caption" style={{ fontSize: 11 }}>点一种方式就用它导航 · 高德预计耗时 · 查询于 {new Date(journey.checkedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}，路况和班次可能变化</Txt>
           </>}
           {!!locationError && <Txt v="caption" color={colors.peachInk}>{locationError}</Txt>}
           <Button title={journey ? '更新我的位置与路线' : locationError ? '重新获取位置' : '看看现在出发要多久'} variant="secondary" onPress={getJourney} loading={locating} />

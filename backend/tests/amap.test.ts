@@ -87,3 +87,26 @@ test('mobile browsers select their native app scheme, including places without c
   assert.ok(native?.startsWith('iosamap://arroundpoi?'));
   assert.equal(new URL(native!).searchParams.get('keywords'), '深圳 私房菜');
 });
+
+test('navigation opens the chosen way to travel', () => {
+  const place = { name: '火锅', lat: 22.54, lng: 113.94 };
+  // 开车：直接进导航
+  assert.ok(mapLinks(place, 'ios').native.startsWith('iosamap://navi?'));
+  assert.equal(new URL(mapLinks(place, 'web', 'driving').web).searchParams.get('mode'), 'car');
+  const cases = [['transit', '1', 'bus'], ['walking', '2', 'walk'], ['cycling', '3', 'ride']] as const;
+  for (const [mode, t, web] of cases) {
+    const ios = new URL(mapLinks(place, 'ios', mode).native);
+    assert.equal(ios.protocol, 'iosamap:');
+    assert.equal(ios.host, 'path');
+    assert.equal(ios.searchParams.get('t'), t);
+    assert.equal(ios.searchParams.get('dlat'), '22.54');
+    assert.equal(ios.searchParams.get('dlon'), '113.94');
+    assert.equal(ios.searchParams.get('dname'), '火锅');
+    const android = mapLinks(place, 'android', mode).native;
+    assert.ok(android.startsWith('amapuri://route/plan/?'), android);
+    assert.equal(new URL(android).searchParams.get('t'), t);
+    assert.equal(new URL(mapLinks(place, 'web', mode).web).searchParams.get('mode'), web);
+  }
+  // 没有坐标只能搜索，和出行方式无关
+  assert.ok(mapLinks({ name: '火锅', lat: null, lng: null }, 'ios', 'walking').native.startsWith('iosamap://arroundpoi?'));
+});

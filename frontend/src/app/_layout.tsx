@@ -10,6 +10,7 @@ import { ConfirmHost } from '@/components/Confirm';
 // 尽早监听浏览器的「安装应用」事件
 import '@/lib/install';
 import { ConfettiHost, toast, ToastHost } from '@/components/motion';
+import { TravelPickerHost } from '@/components/TravelPicker';
 import { useUpdateStartup } from '@/components/UpdateStartup';
 import { haptic } from '@/lib/haptics';
 import { hideLaunch } from '@/lib/launch';
@@ -140,6 +141,7 @@ function RootStack({ fontsLoaded }: { fontsLoaded: boolean }) {
       {status === 'signedIn' && (
         <>
           <ReminderSync />
+          <TravelPickerHost />
           <UploadResume />
           <NudgeListener />
           <LocationWarmup />
