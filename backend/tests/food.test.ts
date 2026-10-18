@@ -21,3 +21,19 @@ test('tones and card randomness are stable for the same input', () => {
   assert.equal(placeArea({ address: '上海市徐汇区天平路 1 号' } as never), '徐汇区');
   assert.equal(placeArea({ address: null } as never), null);
 });
+
+test('food search matches place fields and dishes from our visits; every word must match', async () => {
+  const { matchesQuery } = await import('../../frontend/src/lib/food.ts');
+  const place = { id: 'p1', name: '益阳饭店', address: '北滘镇林头市场', city: '佛山', category: '湘菜', note: null } as never;
+  const other = { id: 'p2', name: '面馆', address: null, city: '广州', category: '面', note: '牛肉面' } as never;
+  const visits = [{ placeId: 'p1', note: '辣得过瘾', dishes: [{ name: '小龙虾' }] }] as never;
+  assert.ok(matchesQuery(place, '益阳', visits));
+  assert.ok(matchesQuery(place, '小龙虾', visits));
+  assert.ok(matchesQuery(place, '辣得', visits));
+  assert.ok(matchesQuery(place, '湘菜 林头', visits));
+  assert.ok(!matchesQuery(place, '湘菜 广州', visits));
+  assert.ok(!matchesQuery(other, '小龙虾', visits), "another place's dishes do not count");
+  assert.ok(matchesQuery(other, '牛肉', visits));
+  assert.ok(matchesQuery(other, '  ', visits));
+  assert.ok(matchesQuery({ id: 'x', name: 'Starbucks' } as never, 'starBUCKS'));
+});

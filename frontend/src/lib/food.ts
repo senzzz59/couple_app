@@ -99,3 +99,15 @@ export function placeArea(p: Place) {
 
 /** 存进数据库的高德照片（太长的地址存不下，换下一张） */
 export const firstAmapPhoto = (place: { photos: { url: string }[] }) => place.photos.find((x) => x.url.length <= 600)?.url ?? '';
+
+/** 搜索：店名、地址、城市、类型、备注，以及吃过时记下的菜和探店备注；空格分开的几个词都要命中 */
+export function matchesQuery(p: Place, query: string, visits: Visit[] = []) {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const mine = visits.filter((v) => v.placeId === p.id);
+  const text = [p.name, p.address, p.city, p.category, p.note, ...mine.flatMap((v) => [v.note, ...(v.dishes ?? []).map((d) => d.name)])]
+    .filter(Boolean)
+    .join('\n')
+    .toLowerCase();
+  return words.every((w) => text.includes(w));
+}
