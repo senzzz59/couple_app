@@ -1,14 +1,16 @@
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { CircleDot, Heart, ImagePlus, Play, Plus } from 'lucide-react-native';
-import { useState } from 'react';
-import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { CalendarDays, CircleDot, Heart, ImagePlus, Play, Plus } from 'lucide-react-native';
+import { useRef, useState } from 'react';
+import { Platform, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated from 'react-native-reanimated';
 
 import { AlbumEditor } from '@/components/AlbumEditor';
 import { AlbumPicker } from '@/components/AlbumPicker';
 import { GalleryGrid, UploadBanner } from '@/components/GalleryGrid';
 import { Segmented, toast } from '@/components/motion';
+import { MonthJump, type MonthCount } from '@/components/MonthJump';
 import { Screen } from '@/components/Screen';
 import { SelectionBar } from '@/components/SelectionBar';
 import { QueryFallback } from '@/components/Skeleton';
@@ -21,10 +23,24 @@ import type { Album, GalleryItem, GallerySummary } from '@/lib/types';
 import { galleryEntry, openViewer } from '@/lib/viewer';
 import { colors, radius, shadow } from '@/theme';
 
-type Filter = 'all' | 'favorite' | 'video' | 'live';
+type Filter = 'all' | 'image' | 'video' | 'live' | 'favorite';
+const FILTERS: { key: Filter; label: string; empty: string; emoji: string }[] = [
+  { key: 'all', label: '全部', empty: '还没有照片', emoji: '🖼️' },
+  { key: 'image', label: '照片', empty: '还没有照片', emoji: '🖼️' },
+  { key: 'video', label: '视频', empty: '还没有视频', emoji: '🎞️' },
+  { key: 'live', label: 'Live 图', empty: '还没有 Live 图', emoji: '🎞️' },
+  { key: 'favorite', label: '收藏', empty: '还没有收藏', emoji: '❤️' },
+];
+const TZ = (() => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
+  } catch {
+    return '';
+  }
+})();
 const PAGE = 300;
 
-const filterQuery = (f: Filter) => (f === 'favorite' ? '&favorite=1' : f === 'video' ? '&kind=video' : f === 'live' ? '&kind=live' : '');
+const filterQuery = (f: Filter) => (f === 'favorite' ? '&favorite=1' : f === 'all' ? '' : `&kind=${f}`);
 
 function AlbumCard({ a, size }: { a: Album; size: number }) {
   return (
@@ -117,6 +133,47 @@ export default function Gallery() {
   const items = list.data ?? [];
   const sel = useGallerySelection(items, { onPickAlbum: () => setPicker(true) });
 
+  // ---- 跳到某年某月：先把那个月之前（更新）的都加载出来，再滚到那个月
+  const insets = useSafeAreaInsets();
+  const months = useQuery<MonthCount[]>(tab === 'photos' ? `/api/gallery/months?tz=${encodeURIComponent(TZ)}${filterQuery(filter)}` : null);
+  const [jumpOpen, setJumpOpen] = useState(false);
+  const [picked, setPicked] = useState<string | null>(null);
+  // 要跳去的月份：等它显示出来、量好位置再滚过去
+  const target = useRef<string | null>(null);
+  const scrollRef = useRef<Animated.ScrollView>(null);
+  const bodyY = useRef(0);
+  const gridY = useRef(0);
+  const monthY = useRef(new Map<string, number>());
+  // 选择月份的弹层要完全收起再滚
+  const sheetGone = useRef(true);
+  const openJump = () => {
+    // 网页上弹层关掉时会把焦点还给打开它的按钮，浏览器会把页面滚回那个按钮：先让按钮失去焦点
+    if (Platform.OS === 'web') (document.activeElement as HTMLElement | null)?.blur?.();
+    setJumpOpen(true);
+  };
+  const tryJump = () => {
+    const month = target.current;
+    const y = month ? monthY.current.get(month) : undefined;
+    if (!sheetGone.current || y == null) return;
+    target.current = null;
+    // 顶部毛玻璃标题栏会挡住一截；距离可能很远，直接跳过去
+    scrollRef.current?.scrollTo({ y: Math.max(0, bodyY.current + gridY.current + y - insets.top - 56), animated: false });
+  };
+  const pickMonth = (month: string) => {
+    setJumpOpen(false);
+    setPicked(month);
+    sheetGone.current = false;
+    target.current = month;
+    const needed = (months.data ?? []).filter((m) => m.month >= month).reduce((n, m) => n + m.count, 0);
+    if (needed > limit) setLimit(Math.ceil(needed / PAGE) * PAGE);
+  };
+  const changeFilter = (f: Filter) => {
+    setFilter(f);
+    setPicked(null);
+    target.current = null;
+    monthY.current.clear();
+  };
+
   const upload = () => uploadToGallery().catch((e) => toast((e as Error).message, '⚠️'));
   const right = sel.selecting ? (
     <Row gap={8}>
@@ -134,6 +191,7 @@ export default function Gallery() {
     <View style={{ flex: 1 }}>
       <Screen
         tab
+        scrollRef={scrollRef}
         title={sel.selecting ? (sel.selected.size ? `已选 ${sel.selected.size} 项` : '选择照片') : '相册'}
         right={right}
         onRefresh={async () => {
@@ -151,35 +209,46 @@ export default function Gallery() {
           />
         )}
 
-        <View style={{ marginTop: sel.selecting ? 0 : 14 }}>
+        <View style={{ marginTop: sel.selecting ? 0 : 14 }} onLayout={(e) => (bodyY.current = e.nativeEvent.layout.y)}>
           {tab === 'albums' && !sel.selecting ? (
             <Albums />
           ) : (
             <>
               {!sel.selecting && (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -16, marginBottom: 14 }} contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}>
-                  <Chip label="全部" active={filter === 'all'} onPress={() => setFilter('all')} />
-                  <Chip label="收藏" active={filter === 'favorite'} onPress={() => setFilter('favorite')} />
-                  <Chip label="视频" active={filter === 'video'} onPress={() => setFilter('video')} />
-                  <Chip label="Live 图" active={filter === 'live'} onPress={() => setFilter('live')} />
-                </ScrollView>
+                <Row gap={8} style={{ marginBottom: 14, marginLeft: -16 }}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ gap: 8, paddingLeft: 16, paddingRight: 4 }}>
+                    {FILTERS.map((f) => (
+                      <Chip key={f.key} label={f.label} active={filter === f.key} onPress={() => changeFilter(f.key)} />
+                    ))}
+                  </ScrollView>
+                  {(months.data?.length ?? 0) > 1 && <IconButton icon={CalendarDays} onPress={openJump} size={40} label="选择月份" />}
+                </Row>
               )}
               <QueryFallback q={list} kind="grid" count={6} />
               {list.data && items.length === 0 ? (
                 filter === 'all' ? (
                   <Empty emoji="🖼️" title="还没有照片" action={<Button title="上传照片和视频" icon={ImagePlus} onPress={upload} />} />
                 ) : (
-                  <Empty emoji={filter === 'favorite' ? '❤️' : '🎞️'} title={filter === 'favorite' ? '还没有收藏' : filter === 'video' ? '还没有视频' : '还没有 Live 图'} />
+                  <Empty emoji={FILTERS.find((f) => f.key === filter)!.emoji} title={FILTERS.find((f) => f.key === filter)!.empty} />
                 )
               ) : (
-                <GalleryGrid
-                  items={items}
-                  selecting={sel.selecting}
-                  selected={sel.selected}
-                  onToggle={sel.toggle}
-                  onStartSelect={sel.start}
-                  onOpen={(i) => openViewer(items.map(galleryEntry), i, { mode: 'gallery' })}
-                />
+                <View onLayout={(e) => (gridY.current = e.nativeEvent.layout.y)}>
+                  <GalleryGrid
+                    // 换筛选时重新排版，每个月的位置重新量
+                    key={filter}
+                    items={items}
+                    selecting={sel.selecting}
+                    selected={sel.selected}
+                    onToggle={sel.toggle}
+                    onStartSelect={sel.start}
+                    onOpen={(i) => openViewer(items.map(galleryEntry), i, { mode: 'gallery' })}
+                    onPressMonth={(months.data?.length ?? 0) > 1 ? openJump : undefined}
+                    onMonthLayout={(month, y) => {
+                      monthY.current.set(month, y);
+                      if (month === target.current) tryJump();
+                    }}
+                  />
+                </View>
               )}
               {items.length >= limit && <Button title="加载更多" variant="ghost" onPress={() => setLimit((l) => l + PAGE)} style={{ marginTop: 12 }} />}
               {sel.selecting && <View style={{ height: 90 }} />}
@@ -188,6 +257,14 @@ export default function Gallery() {
         </View>
       </Screen>
       {sel.selecting && <SelectionBar count={sel.selected.size} actions={sel.actions} aboveTabs />}
+      <MonthJump
+        visible={jumpOpen}
+        onClose={() => setJumpOpen(false)}
+        onClosed={() => {
+          sheetGone.current = true;
+          tryJump();
+        }}
+        months={months.data ?? []} current={picked} onPick={pickMonth} />
       <AlbumPicker
         visible={picker}
         onClose={() => setPicker(false)}

@@ -12,7 +12,7 @@ import { deleteUpload, loadUploads, saveUpload } from './uploadStore';
 /**
  * 相册上传队列：
  * - 每一项单独记录状态和进度，点开上传条能看到排队 / 上传中 / 处理中 / 快速上传 / 失败
- * - 同时传两项；网络断了自动等一会儿重试，回到 App、网络恢复时马上接着传
+ * - 同时传三项；网络断了、服务器临时出错自动等一会儿重试，回到 App、网络恢复时马上接着传
  * - 网页版把队列连同文件存在浏览器里：切到别的应用、页面被关掉，下次打开接着传
  * - 同一个文件以前传过就「快速上传」：服务器直接复制一份，不用再传
  * 每传完一项就登记到相册，中途失败已经传好的不会丢。
@@ -32,7 +32,7 @@ export type UploadItem = {
 };
 export type UploadJob = { total: number; done: number; instant: number; failed: number; active: number; progress: number; status: 'uploading' | 'done' };
 
-const CONCURRENCY = 2;
+const CONCURRENCY = 3;
 const MAX_ATTEMPTS = 6;
 const ACTIVE: UploadStatus[] = ['queued', 'uploading', 'processing'];
 
@@ -129,9 +129,9 @@ async function work(item: UploadItem) {
     void deleteUpload(id);
   } catch (e) {
     const attempts = item.attempts + 1;
-    // 网络问题（断网、切到后台被系统掐断）：过一会儿自动重试
-    if (e instanceof ApiError && e.status === 0 && attempts < MAX_ATTEMPTS) {
-      update(id, { status: 'queued', attempts, progress: 0, retryAt: Date.now() + Math.min(60_000, 2000 * 2 ** attempts), error: '网络中断，稍后自动重试' });
+    // 网络问题（断网、切到后台被系统掐断）或服务器临时出错：过一会儿自动重试
+    if (e instanceof ApiError && (e.status === 0 || e.status >= 500) && attempts < MAX_ATTEMPTS) {
+      update(id, { status: 'queued', attempts, progress: 0, retryAt: Date.now() + Math.min(60_000, 2000 * 2 ** attempts), error: '上传中断，稍后自动重试' });
     } else {
       update(id, { status: 'failed', attempts, error: (e as Error).message });
     }

@@ -22,6 +22,7 @@ export function Sheet({
   dragAnywhere = true,
   dismissable = true,
   style,
+  onClosed,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -31,8 +32,19 @@ export function Sheet({
   /** false 时点背景 / 下拖不会关闭（比如正在保存） */
   dismissable?: boolean;
   style?: StyleProp<ViewStyle>;
+  /** 收起动画播完、弹层完全关掉之后（焦点也已经还回页面） */
+  onClosed?: () => void;
 }) {
   const [mounted, setMounted] = useState(visible);
+  const closed = useRef(onClosed);
+  useEffect(() => {
+    closed.current = onClosed;
+  });
+  const wasMounted = useRef(mounted);
+  useEffect(() => {
+    if (wasMounted.current && !mounted) requestAnimationFrame(() => closed.current?.());
+    wasMounted.current = mounted;
+  }, [mounted]);
   const [prevVisible, setPrevVisible] = useState(visible);
   if (visible !== prevVisible) {
     setPrevVisible(visible);

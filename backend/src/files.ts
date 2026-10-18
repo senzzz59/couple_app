@@ -13,7 +13,7 @@ import { db, schema } from './db/index.ts';
 import { env } from './env.ts';
 import { exifTakenAt, findEmbeddedVideo, videoExt } from './media.ts';
 import { s3ConfigFrom, Storage, contentTypeOf, type Area } from './storage.ts';
-import { displaySize, enqueueVideo, ffmpegAvailable, makePoster, markVideo, onVideoSettled, probeVideo, videoIsMp4, videoPlan, videoSettled, videoStatus } from './transcode.ts';
+import { displaySize, enqueueVideo, ffmpegAvailable, makePoster, markVideo, onVideoSettled, probeVideo, setVideoFetcher, videoIsMp4, videoPlan, videoSettled, videoStatus } from './transcode.ts';
 
 const THUMB_DIR = path.join(env.uploadDir, 'thumb');
 const ORIG_DIR = path.join(env.uploadDir, 'orig');
@@ -29,6 +29,8 @@ storage.videoReady = async (name) => !(await ffmpegAvailable()) || videoSettled(
 storage.contentType = (area, name) => contentTypeOf(name, area === 'main' && videoIsMp4(name));
 storage.names = NAMES;
 onVideoSettled((name) => storage.offload('main', name));
+// 直传的视频要转码时，后台从对象存储取回原片
+setVideoFetcher((name) => storage.readRemote('main', name));
 
 /** 把刚写好的本地文件交给对象存储（转码中的视频由转码队列完成后再交） */
 async function offloadWritten(files: string[]) {
@@ -137,6 +139,49 @@ async function processVideo(target: string, vext: string, fileName: string, keep
   if (remote) await storage.copyObject(remote, 'main', name, { draft: true }).catch(() => {});
   enqueueVideo(name, log);
   return item;
+}
+
+/**
+ * 直传到对象存储的视频：ffprobe / ffmpeg 直接读对象存储（只读文件头和第一帧附近），不把整个视频下载到服务器。
+ * - 所有手机都能播：对象存储内部复制成成品，服务器完全不碰视频本身
+ * - 要转码：先把原片放好供播放，转码排进后台队列（队列里再下载），上传马上就算完成
+ * 读不了（比如 ffmpeg 不支持 https）返回 null，调用方按老办法整个下载下来处理。
+ */
+async function processRemoteVideo(remote: string, vext: string, fileName: string, size: number, keepOriginal: boolean, written: string[], log: Log): Promise<UploadedItem | null> {
+  if (!(await ffmpegAvailable())) return null;
+  const url = await storage.signedReadUrl(remote);
+  const probe = await probeVideo(url);
+  if (!probe) return null;
+  const name = `${crypto.randomUUID()}.${vext}`;
+  const plan = videoPlan(probe);
+  const item: UploadedItem = { kind: 'video', image: null, video: name, original: null, fileName, ...displaySize(probe), duration: probe.duration, size, takenAt: null };
+  try {
+    const poster = `${crypto.randomUUID()}.jpg`;
+    if (await makePoster(url, path.join(env.uploadDir, poster))) {
+      written.push(path.join(env.uploadDir, poster));
+      await sharp(path.join(env.uploadDir, poster)).resize({ width: 600, withoutEnlargement: true }).jpeg({ quality: 78 }).toFile(path.join(THUMB_DIR, poster));
+      written.push(path.join(THUMB_DIR, poster));
+      item.image = poster;
+    }
+    if (keepOriginal && plan !== 'ok') {
+      const original = `${crypto.randomUUID()}.${vext}`;
+      await storage.copyObject(remote, 'orig', original);
+      item.original = original;
+    }
+    if (plan === 'ok') {
+      await storage.copyObject(remote, 'main', name);
+      await markVideo(name, 'ok');
+    } else {
+      await storage.copyObject(remote, 'main', name, { draft: true });
+      await markVideo(name, 'fetch');
+      enqueueVideo(name, log);
+    }
+    return item;
+  } catch (e) {
+    log.warn({ err: (e as Error).message, fileName }, 'direct video: processing in object storage failed, downloading instead');
+    if (item.original) void storage.remove('orig', item.original).catch(() => {});
+    return null;
+  }
 }
 
 /** 图片：按 EXIF 摆正、限制最长边 2400px、生成 600px 缩略图，可选保留原图；安卓动态照片拆出视频 */
@@ -322,6 +367,12 @@ export async function fileRoutes(app: FastifyInstance) {
         if (head.size > (vext ? VIDEO_LIMIT : IMAGE_LIMIT)) throw new UploadError(413, `${vext ? '视频太大了（最大 500MB）' : '图片太大了（最大 60MB）'}：${u.name}`);
         const remote = head.key;
         if (vext) {
+          const direct = await processRemoteVideo(remote, vext, u.name, head.size, !!body.original, written, req.log).catch(() => null);
+          if (direct) {
+            items.push(direct);
+            await rememberHash(u.hash, !!body.original, direct);
+            continue;
+          }
           const target = path.join(env.uploadDir, `${crypto.randomUUID()}.${vext}`);
           written.push(target);
           await pipeline(await storage.readIncoming(u.id), createWriteStream(target));

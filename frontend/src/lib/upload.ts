@@ -198,8 +198,12 @@ export async function fingerprint(blob: Blob): Promise<string | undefined> {
   }
 }
 
-/** 直传失败过（网络 / 跨域）：本次打开页面都走服务器 */
+/**
+ * 直传从来没成功过就失败（多半是对象存储不允许跨域）：本次打开页面都走服务器。
+ * 成功过就说明直传是通的，之后的失败只是网络抖动 / 切到后台被掐断：重试，不改走服务器（那样上传和处理都要占服务器带宽）。
+ */
 let directOff = false;
+let directWorked = false;
 
 function put(url: string, blob: Blob, headers: Record<string, string>, onProgress: (loaded: number) => void) {
   return new Promise<void>((resolve, reject) => {
@@ -238,16 +242,24 @@ async function sendDirect(files: Prepared[], original: boolean, onProgress?: (p:
   const total = pending.reduce((n, { i }) => n + files[i].blob.size, 0) || 1;
   let done = 0;
   onStage?.('uploading');
-  try {
-    for (const { t, i } of pending) {
-      if (!('url' in t)) continue;
-      await put(t.url, files[i].blob, t.headers, (loaded) => onProgress?.(((done + loaded) / total) * 0.95));
-      done += files[i].blob.size;
+  for (const { t, i } of pending) {
+    if (!('url' in t)) continue;
+    const progress = (loaded: number) => onProgress?.(((done + loaded) / total) * 0.95);
+    try {
+      await put(t.url, files[i].blob, t.headers, progress).catch(async (e) => {
+        // 网络抖了一下：等一会儿再传一次
+        if (!(e instanceof ApiError && e.status === 0)) throw e;
+        await new Promise((r) => setTimeout(r, 1500));
+        await put(t.url, files[i].blob, t.headers, progress);
+      });
+    } catch (e) {
+      if (directWorked) throw e instanceof ApiError ? e : new ApiError('network', 0);
+      // 从来没直传成功过：多半是对象存储不允许跨域，这次打开页面都走服务器
+      if (e instanceof ApiError && e.status === 0) directOff = true;
+      return null;
     }
-  } catch (e) {
-    // 连不上对象存储或跨域被拦：这次打开页面都走服务器
-    if (e instanceof ApiError && e.status === 0) directOff = true;
-    return null;
+    directWorked = true;
+    done += files[i].blob.size;
   }
   try {
     onStage?.('processing');
@@ -256,9 +268,8 @@ async function sendDirect(files: Prepared[], original: boolean, onProgress?: (p:
     onProgress?.(1);
     return { files: items.map((it) => (it!.kind === 'video' ? it!.video : it!.image)), items };
   } catch (e) {
-    // 文件本身有问题（格式不认识、太大）直接告诉用户；服务器临时出错就改走老路再试
-    if (e instanceof ApiError && e.status >= 400 && e.status < 500) throw e;
-    return null;
+    // 文件已经在对象存储里了：不再经服务器重传一遍，把错误交给调用方（相册上传队列会自动重试）
+    throw e instanceof ApiError ? e : new ApiError('network', 0);
   }
 }
 

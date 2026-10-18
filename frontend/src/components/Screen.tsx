@@ -1,7 +1,7 @@
 import { BlurView } from 'expo-blur';
 import { router } from 'expo-router';
 import { ChevronLeft, X } from 'lucide-react-native';
-import { ReactNode } from 'react';
+import { ReactNode, Ref } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollViewProps, StyleSheet, View } from 'react-native';
 import Animated, { interpolate, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -31,6 +31,7 @@ export function Screen({
   onRefresh,
   tab = false,
   contentStyle,
+  scrollRef,
   ...scroll
 }: {
   title?: string;
@@ -41,6 +42,8 @@ export function Screen({
   onRefresh?: () => Promise<unknown>;
   tab?: boolean;
   contentStyle?: ScrollViewProps['contentContainerStyle'];
+  /** 需要自己滚动页面时（比如相册跳到某个月） */
+  scrollRef?: Ref<Animated.ScrollView>;
 } & Omit<ScrollViewProps, 'children'>) {
   const insets = useSafeAreaInsets();
   const y = useSharedValue(0);
@@ -57,6 +60,7 @@ export function Screen({
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <Animated.ScrollView
+        ref={scrollRef}
         {...scroll}
         onScroll={onScroll}
         scrollEventThrottle={16}

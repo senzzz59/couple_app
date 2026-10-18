@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { db, schema } from './db/index.ts';
+import { env } from './env.ts';
 import { copyFile, FILE_NAME_RE, fileSource, ORIG_RE, removeFiles, removeOriginals } from './files.ts';
 import { broadcast } from './realtime.ts';
 import { notifyPartner } from './webPush.ts';
@@ -45,7 +46,7 @@ export async function galleryRoutes(app: FastifyInstance) {
   app.get('/api/gallery', auth, async (req) => {
     const q = z
       .object({
-        limit: z.coerce.number().int().min(1).max(3000).default(300),
+        limit: z.coerce.number().int().min(1).max(10000).default(300),
         before: z.string().optional(),
         album: z.string().length(36).optional(),
         kind: z.enum(['image', 'video', 'live']).optional(),
@@ -64,6 +65,38 @@ export async function galleryRoutes(app: FastifyInstance) {
       .where(and(...conds))
       .orderBy(desc(g.takenAt), desc(g.id))
       .limit(q.limit);
+  });
+
+  // ---- 每个月有多少（「跳到某年某月」用）：按看的人所在时区分月，和列表里的分组一致
+  app.get('/api/gallery/months', auth, async (req) => {
+    const q = z
+      .object({
+        kind: z.enum(['image', 'video', 'live']).optional(),
+        favorite: z.enum(['1']).optional(),
+        tz: z.string().max(64).optional(),
+      })
+      .parse(req.query);
+    let tz = env.tz;
+    if (q.tz) {
+      try {
+        new Intl.DateTimeFormat('en-US', { timeZone: q.tz });
+        tz = q.tz;
+      } catch {
+        // 不认识的时区：用服务器的
+      }
+    }
+    const conds: (SQL | undefined)[] = [];
+    if (q.kind) conds.push(eq(g.kind, q.kind));
+    if (q.favorite) conds.push(eq(g.favorite, true));
+    const rows = await db.select({ at: g.takenAt }).from(g).where(and(...conds));
+    const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit' });
+    const counts = new Map<string, number>();
+    for (const r of rows) {
+      const parts = Object.fromEntries(fmt.formatToParts(new Date(r.at)).map((p) => [p.type, p.value]));
+      const month = `${parts.year}-${parts.month}`;
+      counts.set(month, (counts.get(month) ?? 0) + 1);
+    }
+    return [...counts].sort((a, b) => b[0].localeCompare(a[0])).map(([month, count]) => ({ month, count }));
   });
 
   // ---- 数量统计（智能相册）

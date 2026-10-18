@@ -1,6 +1,9 @@
 import { spawn } from 'node:child_process';
+import { createWriteStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import type { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
 /**
  * 视频兼容：iPhone 默认拍 HEVC（H.265，常常还是 10-bit HDR），安卓不一定能播；
@@ -22,7 +25,8 @@ export type VideoProbe = {
   format: string;
 };
 
-type Status = 'ok' | 'converted' | 'failed';
+/** fetch：直传的视频还在对象存储里，转码前要先下载到服务器（后台做，不耽误上传） */
+type Status = 'ok' | 'converted' | 'failed' | 'fetch';
 
 function exec(cmd: string, args: string[], timeoutMs: number) {
   return new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
@@ -127,6 +131,12 @@ let index: Record<string, Status> = {};
 const queue: string[] = [];
 let running = false;
 let settledHook: ((name: string) => void) | null = null;
+let fetcher: ((name: string) => Promise<Readable>) | null = null;
+
+/** 从对象存储取回视频原片（转码用） */
+export function setVideoFetcher(fn: (name: string) => Promise<Readable>) {
+  fetcher = fn;
+}
 
 /** 视频处理完（转好 / 不用转 / 转失败）后通知，用来把它传到对象存储 */
 export function onVideoSettled(fn: (name: string) => void) {
@@ -149,6 +159,8 @@ export async function initVideoPipeline(uploadDir: string, log: { info: (o: obje
   const pending = files.filter((f) => /^[0-9a-f-]{36}\.(mp4|mov|webm|m4v|3gp)$/.test(f) && !index[f]);
   if (pending.length) log.info({ count: pending.length }, 'checking previously uploaded videos for compatibility');
   for (const f of pending) enqueueVideo(f, log);
+  // 上次还没来得及取回转码的直传视频
+  for (const [f, status] of Object.entries(index)) if (status === 'fetch') enqueueVideo(f, log);
 }
 
 async function saveIndex() {
@@ -175,7 +187,19 @@ async function drain(log?: { warn: (o: object, m: string) => void }) {
     const name = queue.shift()!;
     const file = path.join(dir, name);
     try {
-      const exists = await fs.stat(file).catch(() => null);
+      let exists = await fs.stat(file).catch(() => null);
+      if (!exists && index[name] === 'fetch' && fetcher) {
+        // 直传的视频：先从对象存储下载原片
+        const tmp = path.join(dir, `.${name}.download`);
+        try {
+          await pipeline(await fetcher(name), createWriteStream(tmp));
+          await fs.rename(tmp, file);
+        } finally {
+          await fs.rm(tmp, { force: true });
+        }
+        delete index[name];
+        exists = await fs.stat(file).catch(() => null);
+      }
       if (!exists) continue;
       const probe = await probeVideo(file);
       const plan = probe ? videoPlan(probe) : 'ok';
