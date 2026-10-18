@@ -1,5 +1,7 @@
 import {
   CopyObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
   DeleteObjectCommand,
   GetBucketCorsCommand,
   GetObjectCommand,
@@ -150,6 +152,10 @@ export class Storage {
   private activeBacklog = 0;
   private readonly concurrency = 3;
   private migrated = 0;
+  /** 启动检查通过 */
+  private ready = false;
+  /** 桶允许浏览器 PUT（直传要用）；null 表示不确定 */
+  private corsPut: boolean | null = null;
   /** 上传途中被删掉的文件：传完后把对象也删掉，不留孤儿 */
   private readonly removed = new Set<string>();
   private idleWaiters: (() => void)[] = [];
@@ -214,25 +220,37 @@ export class Storage {
     try {
       await this.ops!.send(new HeadBucketCommand({ Bucket: cfg.bucket }));
       log.info({ endpoint: cfg.endpoint, bucket: cfg.bucket }, 'object storage connected');
+      this.ready = true;
     } catch (e) {
       log.warn({ endpoint: cfg.endpoint, bucket: cfg.bucket, err: (e as Error).message }, 'object storage check failed: files stay on local disk until it works');
       return;
     }
+    // 浏览器要能读（手机保存到相册）、能 PUT（网页直传）
+    let rules: { AllowedMethods?: string[] }[] | null = null;
     try {
-      await this.ops!.send(new GetBucketCorsCommand({ Bucket: cfg.bucket }));
+      rules = (await this.ops!.send(new GetBucketCorsCommand({ Bucket: cfg.bucket }))).CORSRules ?? [];
     } catch (e) {
       const code = (e as { name?: string }).name;
-      if (code === 'NoSuchCORSConfiguration' || code === 'NoSuchCorsConfiguration') {
-        await this.ops!
-          .send(
-            new PutBucketCorsCommand({
-              Bucket: cfg.bucket,
-              CORSConfiguration: { CORSRules: [{ AllowedMethods: ['GET', 'HEAD'], AllowedOrigins: ['*'], AllowedHeaders: ['*'], ExposeHeaders: ['Content-Length', 'Content-Type', 'Content-Range', 'Accept-Ranges'], MaxAgeSeconds: 86400 }] },
-            })
-          )
-          .then(() => log.info({}, 'object storage: enabled CORS for GET so browsers can save photos'))
-          .catch((err: Error) => log.warn({ err: err.message }, 'object storage: could not set CORS (saving to phone falls back to download)'));
-      }
+      if (code === 'NoSuchCORSConfiguration' || code === 'NoSuchCorsConfiguration') rules = [];
+    }
+    if (rules && rules.some((r) => r.AllowedMethods?.includes('PUT') && r.AllowedMethods.includes('GET'))) {
+      this.corsPut = true;
+    } else if (rules) {
+      await this.ops!
+        .send(
+          new PutBucketCorsCommand({
+            Bucket: cfg.bucket,
+            CORSConfiguration: { CORSRules: [{ AllowedMethods: ['GET', 'HEAD', 'PUT'], AllowedOrigins: ['*'], AllowedHeaders: ['*'], ExposeHeaders: ['Content-Length', 'Content-Type', 'Content-Range', 'Accept-Ranges', 'ETag'], MaxAgeSeconds: 86400 }] },
+          })
+        )
+        .then(() => {
+          this.corsPut = true;
+          log.info({}, 'object storage: enabled CORS for GET/PUT (saving photos, direct uploads)');
+        })
+        .catch((err: Error) => {
+          this.corsPut = false;
+          log.warn({ err: err.message }, 'object storage: could not set CORS (uploads go through the server; saving to phone falls back to download)');
+        });
     }
   }
 
@@ -336,6 +354,69 @@ export class Storage {
     const after = await fs.stat(file).catch(() => null);
     if (!after || after.size !== stat.size || after.mtimeMs !== stat.mtimeMs) return;
     await fs.rm(file, { force: true });
+  }
+
+  /** 网页可以直接把文件传到对象存储 */
+  get directUpload() {
+    return this.ready && this.corsPut !== false;
+  }
+
+  incomingKey(id: string) {
+    return `${this.cfg?.prefix ?? ''}incoming/${id}`;
+  }
+
+  /** 直传链接：只能 PUT 这一个文件，类型和大小都写进签名，1 小时有效 */
+  async signedUploadUrl(id: string, contentType: string, size: number) {
+    const cmd = new PutObjectCommand({ Bucket: this.cfg!.bucket, Key: this.incomingKey(id), ContentType: contentType, ContentLength: size });
+    return getSignedUrl(this.signer!, cmd, { expiresIn: 3600 });
+  }
+
+  async headIncoming(id: string) {
+    try {
+      const h = await this.ops!.send(new HeadObjectCommand({ Bucket: this.cfg!.bucket, Key: this.incomingKey(id) }));
+      return { size: Number(h.ContentLength ?? 0), type: h.ContentType ?? '' };
+    } catch {
+      return null;
+    }
+  }
+
+  async readIncoming(id: string): Promise<Readable> {
+    const res = await this.ops!.send(new GetObjectCommand({ Bucket: this.cfg!.bucket, Key: this.incomingKey(id) }));
+    return res.Body as Readable;
+  }
+
+  async removeIncoming(id: string) {
+    await this.ops!.send(new DeleteObjectCommand({ Bucket: this.cfg!.bucket, Key: this.incomingKey(id) })).catch(() => {});
+  }
+
+  /** 对象存储内部复制（不经过服务器带宽），设置好成品的类型和缓存头 */
+  async copyObject(sourceKey: string, area: Area, name: string) {
+    const cfg = this.cfg!;
+    await this.ops!.send(
+      new CopyObjectCommand({
+        Bucket: cfg.bucket,
+        Key: this.key(area, name),
+        CopySource: `${cfg.bucket}/${sourceKey.split('/').map(encodeURIComponent).join('/')}`,
+        MetadataDirective: 'REPLACE',
+        ContentType: this.contentType(area, name),
+        CacheControl: 'private, max-age=31536000, immutable',
+      })
+    );
+  }
+
+  /** 传了一半就放弃的直传文件：一天后清掉 */
+  async cleanupIncoming() {
+    if (!this.cfg || !this.ready) return;
+    let token: string | undefined;
+    do {
+      const page = await this.ops!.send(new ListObjectsV2Command({ Bucket: this.cfg.bucket, Prefix: this.incomingKey(''), ContinuationToken: token }));
+      for (const o of page.Contents ?? []) {
+        if (o.Key && o.LastModified && Date.now() - o.LastModified.getTime() > 24 * 3600_000) {
+          await this.ops!.send(new DeleteObjectCommand({ Bucket: this.cfg.bucket, Key: o.Key })).catch(() => {});
+        }
+      }
+      token = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (token);
   }
 
   /** 等上传队列清空（测试 / 停机前用） */

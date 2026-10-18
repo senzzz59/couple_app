@@ -205,6 +205,12 @@ async function drain(log?: { warn: (o: object, m: string) => void }) {
   running = false;
 }
 
+/** 直接登记处理结果（直传的视频已经确认不用转码时） */
+export async function markVideo(name: string, status: Status) {
+  index[name] = status;
+  await saveIndex().catch(() => {});
+}
+
 /** 测试用：等队列空 */
 export async function waitForVideoQueue(timeoutMs = 120_000) {
   const t0 = Date.now();
