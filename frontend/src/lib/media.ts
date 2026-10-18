@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 
 import { getBaseUrl } from './api';
 import type { GalleryItem, MediaItem } from './types';
-import { uploadFiles, type UploadInput } from './upload';
+import { uploadFiles, type UploadInput, type UploadStage } from './upload';
 
 /**
  * 本地选好的一项媒体（还没上传）。
@@ -28,6 +28,10 @@ export type LocalMedia = {
   /** 文件的修改时间（网页拿不到 EXIF 时的后备拍摄时间） */
   lastModified?: number;
   size?: number;
+  /** 网页：原文件本身（上传队列存到浏览器里用，不用再从 blob: 链接读一遍） */
+  file?: Blob;
+  videoFile?: Blob;
+  posterFile?: Blob;
 };
 
 let seq = 0;
@@ -128,16 +132,16 @@ export async function prepareFiles(files: File[], allowVideo = true): Promise<Lo
         used.add(pair);
         const videoUri = URL.createObjectURL(pair);
         const meta = await probeVideo(videoUri);
-        out.push({ key: key(), kind: 'live', uri, name: f.name, mime: f.type, videoUri, videoName: pair.name, videoMime: pair.type, ...size, duration: meta.duration, lastModified: f.lastModified, size: f.size + pair.size });
+        out.push({ key: key(), kind: 'live', uri, name: f.name, mime: f.type, videoUri, videoName: pair.name, videoMime: pair.type, ...size, duration: meta.duration, lastModified: f.lastModified, size: f.size + pair.size, file: f, videoFile: pair });
       } else {
-        out.push({ key: key(), kind: 'image', uri, name: f.name, mime: f.type, ...size, lastModified: f.lastModified, size: f.size });
+        out.push({ key: key(), kind: 'image', uri, name: f.name, mime: f.type, ...size, lastModified: f.lastModified, size: f.size, file: f });
       }
     } else if (isVideoFile(f) && allowVideo) {
       used.add(f);
       const videoUri = URL.createObjectURL(f);
       const meta = await probeVideo(videoUri);
       const posterUri = meta.poster ? URL.createObjectURL(meta.poster) : null;
-      out.push({ key: key(), kind: 'video', uri: posterUri, posterUri, name: f.name, videoUri, videoName: f.name, videoMime: f.type, w: meta.w, h: meta.h, duration: meta.duration, lastModified: f.lastModified, size: f.size });
+      out.push({ key: key(), kind: 'video', uri: posterUri, posterUri, name: f.name, videoUri, videoName: f.name, videoMime: f.type, w: meta.w, h: meta.h, duration: meta.duration, lastModified: f.lastModified, size: f.size, videoFile: f, posterFile: meta.poster ?? undefined });
     }
   }
   return out;
@@ -171,15 +175,17 @@ export function releaseLocal(list: LocalMedia[]) {
 }
 
 type ServerItem = { kind: 'image' | 'video' | 'live'; image: string | null; video: string | null; original: string | null; fileName: string; width: number | null; height: number | null; duration?: number | null; size: number; takenAt: string | null };
-type UploadResponse = { files: string[]; items?: ServerItem[] };
+type UploadResponse = { files: string[]; items?: ServerItem[]; instant?: boolean };
 
-export type UploadedMedia = MediaItem & { original?: string | null; fileName?: string; size?: number; takenAt?: string | null };
+/** instant：快速上传（同一个文件以前传过，服务器直接复制了一份） */
+export type UploadedMedia = MediaItem & { original?: string | null; fileName?: string; size?: number; takenAt?: string | null; instant?: boolean };
 
 /**
  * 逐项上传（一项失败不影响已经传完的），返回服务器上的媒体。
  * original：相册用，保留原图供下载。
  */
-export async function uploadMedia(list: LocalMedia[], opts: { original?: boolean; onProgress?: (p: number) => void } = {}): Promise<UploadedMedia[]> {
+export async function uploadMedia(list: LocalMedia[], opts: { original?: boolean; onProgress?: (p: number) => void; onStage?: (s: UploadStage) => void } = {}): Promise<UploadedMedia[]> {
+  const onStage = opts.onStage;
   const total = list.reduce((s, m) => s + (m.size ?? 1), 0) || 1;
   let done = 0;
   const out: UploadedMedia[] = [];
@@ -187,21 +193,21 @@ export async function uploadMedia(list: LocalMedia[], opts: { original?: boolean
   for (const m of list) {
     const lastModified = m.lastModified ? new Date(m.lastModified).toISOString() : null;
     if (m.kind === 'image') {
-      const res = await uploadFiles<UploadResponse>([{ uri: m.uri!, name: m.name, mime: m.mime }], { original: opts.original, onProgress: step(m, 1) });
+      const res = await uploadFiles<UploadResponse>([{ uri: m.uri!, name: m.name, mime: m.mime }], { original: opts.original, onProgress: step(m, 1), onStage });
       const it = res.items?.[0];
-      out.push({ kind: it?.kind ?? 'image', image: it?.image ?? res.files[0], video: it?.video ?? null, w: it?.width ?? m.w, h: it?.height ?? m.h, original: it?.original, fileName: m.name, size: it?.size ?? m.size, takenAt: it?.takenAt ?? lastModified });
+      out.push({ kind: it?.kind ?? 'image', image: it?.image ?? res.files[0], video: it?.video ?? null, w: it?.width ?? m.w, h: it?.height ?? m.h, original: it?.original, fileName: m.name, size: it?.size ?? m.size, takenAt: it?.takenAt ?? lastModified, instant: !!res.instant });
     } else if (m.kind === 'video') {
-      const v = await uploadFiles<UploadResponse>([{ uri: m.videoUri!, name: m.videoName, mime: m.videoMime }], { original: opts.original, onProgress: step(m, 0.95) });
+      const v = await uploadFiles<UploadResponse>([{ uri: m.videoUri!, name: m.videoName, mime: m.videoMime }], { original: opts.original, onProgress: step(m, 0.95), onStage });
       const it = v.items?.[0];
       // 服务器截的封面优先（iPhone 的 HEVC 视频在很多安卓浏览器里截不到）
       let image: string | null = it?.image ?? null;
       if (!image && m.posterUri) image = (await uploadFiles<UploadResponse>([{ uri: m.posterUri, name: 'poster.jpg', mime: 'image/jpeg' } as UploadInput])).files[0];
-      out.push({ kind: 'video', image, video: it?.video ?? v.files[0], w: it?.width ?? m.w, h: it?.height ?? m.h, duration: it?.duration ?? m.duration, original: it?.original ?? null, fileName: m.videoName, size: it?.size ?? m.size, takenAt: lastModified });
+      out.push({ kind: 'video', image, video: it?.video ?? v.files[0], w: it?.width ?? m.w, h: it?.height ?? m.h, duration: it?.duration ?? m.duration, original: it?.original ?? null, fileName: m.videoName, size: it?.size ?? m.size, takenAt: lastModified, instant: !!v.instant });
     } else {
-      const still = await uploadFiles<UploadResponse>([{ uri: m.uri!, name: m.name, mime: m.mime }], { original: opts.original, onProgress: step(m, 0.4) });
-      const vid = await uploadFiles<UploadResponse>([{ uri: m.videoUri!, name: m.videoName, mime: m.videoMime }], { onProgress: step(m, 0.6) });
+      const still = await uploadFiles<UploadResponse>([{ uri: m.uri!, name: m.name, mime: m.mime }], { original: opts.original, onProgress: step(m, 0.4), onStage });
+      const vid = await uploadFiles<UploadResponse>([{ uri: m.videoUri!, name: m.videoName, mime: m.videoMime }], { onProgress: step(m, 0.6), onStage });
       const it = still.items?.[0];
-      out.push({ kind: 'live', image: it?.image ?? still.files[0], video: vid.items?.[0]?.video ?? vid.files[0], w: it?.width ?? m.w, h: it?.height ?? m.h, duration: m.duration, original: it?.original, fileName: m.name, size: m.size, takenAt: it?.takenAt ?? lastModified });
+      out.push({ kind: 'live', image: it?.image ?? still.files[0], video: vid.items?.[0]?.video ?? vid.files[0], w: it?.width ?? m.w, h: it?.height ?? m.h, duration: m.duration, original: it?.original, fileName: m.name, size: m.size, takenAt: it?.takenAt ?? lastModified, instant: !!still.instant && !!vid.instant });
     }
     done += m.size ?? 1;
     opts.onProgress?.(Math.min(1, done / total));

@@ -11,7 +11,11 @@ import { mediaFiles } from './media.ts';
 
 type Log = { info: (o: object, m: string) => void; warn: (o: object, m: string) => void };
 
-/** 数据库里所有引用到的文件名（新增存文件名的字段时记得加到这里） */
+/**
+ * 数据库里所有引用到的文件名（新增存文件名的字段时记得加到这里）。
+ * upload_hashes（快速上传的缓存）故意不算：它只是记着「上次处理出来的文件」，文件被删了就失效，
+ * 不应该因为它把删掉的照片留下来。
+ */
 export async function collectReferences(): Promise<References> {
   const s = schema;
   const files = new Set<string>();
