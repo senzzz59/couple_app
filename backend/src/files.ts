@@ -2,17 +2,53 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import { createWriteStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import sharp, { type Metadata } from 'sharp';
 
 import { env } from './env.ts';
 import { exifTakenAt, findEmbeddedVideo, videoExt } from './media.ts';
-import { displaySize, enqueueVideo, ffmpegAvailable, makePoster, probeVideo, videoIsMp4, videoPlan, videoSettled } from './transcode.ts';
+import { s3ConfigFrom, Storage, contentTypeOf, type Area } from './storage.ts';
+import { displaySize, enqueueVideo, ffmpegAvailable, makePoster, onVideoSettled, probeVideo, videoIsMp4, videoPlan, videoSettled } from './transcode.ts';
 
 const THUMB_DIR = path.join(env.uploadDir, 'thumb');
 const ORIG_DIR = path.join(env.uploadDir, 'orig');
 export const FILE_NAME_RE = /^[0-9a-f-]{36}\.(jpg|png|gif|webp|mp4|mov|webm|m4v|3gp)$/;
 const ORIG_RE = /^[0-9a-f-]{36}\.(jpg|jpeg|png|gif|webp|heic|heif|avif|tif|tiff|dng|mp4|mov|webm|m4v|3gp)$/;
+const VIDEO_RE = /\.(mp4|mov|webm|m4v|3gp)$/;
+const NAMES: Record<Area, RegExp> = { main: FILE_NAME_RE, thumb: FILE_NAME_RE, orig: ORIG_RE };
+
+/** 对象存储：没配置时 storage.enabled 为 false，文件只放本地 */
+export const storage = new Storage(env.uploadDir, s3ConfigFrom(process.env));
+// 主目录里的视频要等转码（或确认不用转）之后再搬走
+storage.videoReady = async (name) => !(await ffmpegAvailable()) || videoSettled(name);
+storage.contentType = (area, name) => contentTypeOf(name, area === 'main' && videoIsMp4(name));
+onVideoSettled((name) => storage.offload('main', name));
+
+/** 把刚写好的本地文件交给对象存储（转码中的视频由转码队列完成后再交） */
+async function offloadWritten(files: string[]) {
+  if (!storage.enabled) return;
+  const ffmpeg = await ffmpegAvailable();
+  for (const f of files) {
+    const area: Area = path.dirname(f) === THUMB_DIR ? 'thumb' : path.dirname(f) === ORIG_DIR ? 'orig' : 'main';
+    const name = path.basename(f);
+    if (area === 'main' && VIDEO_RE.test(name) && ffmpeg && !videoSettled(name)) continue;
+    storage.offload(area, name);
+  }
+}
+
+/** 启动后：连接对象存储，把以前存在本地的文件搬过去；之后每小时补一次漏（比如上次上传失败的） */
+export async function initStorage(log: { info: (o: object, m: string) => void; warn: (o: object, m: string) => void }) {
+  if (!storage.enabled) return;
+  await storage.init(log);
+  const sweep = async () => {
+    const count = await storage.migrateLocal(NAMES);
+    if (count) log.info({ count }, 'object storage: uploading local files');
+  };
+  await sweep();
+  setInterval(() => void sweep().catch(() => {}), 60 * 60_000).unref();
+}
+
 const IMAGE_LIMIT = 60 * 1024 * 1024;
 const VIDEO_LIMIT = 500 * 1024 * 1024;
 
@@ -147,22 +183,29 @@ export async function fileRoutes(app: FastifyInstance) {
       if ((e as { code?: string }).code === 'FST_REQ_FILE_TOO_LARGE') return reply.code(413).send({ message: '文件太大了（视频最大 500MB）' });
       throw e;
     }
+    void offloadWritten(written);
     return { files: names, items };
   });
 
-  const serve = (dir: string, re: RegExp) => async (req: { params: unknown; query: unknown }, reply: FastifyReply) => {
+  const serve = (area: Area, re: RegExp) => async (req: { params: unknown; query: unknown }, reply: FastifyReply) => {
     const { name } = req.params as { name: string };
     if (!re.test(name)) return reply.code(404).send();
+    const dir = storage.dir(area);
     const dl = (req.query as { dl?: string }).dl;
-    if (dl) {
-      const safe = dl.replace(/[\r\n"\\/]/g, '_').slice(0, 150) || name;
-      reply.header('Content-Disposition', `attachment; filename="${encodeURIComponent(safe)}"; filename*=UTF-8''${encodeURIComponent(safe)}`);
+    const safe = dl ? dl.replace(/[\r\n"\\/]/g, '_').slice(0, 150) || name : undefined;
+    const local = await fs.stat(path.join(dir, name)).catch(() => null);
+    if (!local && storage.enabled) {
+      // 已经搬到对象存储：跳转到临时签名链接，由对象存储直接把文件发给浏览器
+      const { url, cacheSeconds } = await storage.signedUrl(area, name, { download: safe });
+      reply.header('Cache-Control', `private, max-age=${cacheSeconds}`);
+      return reply.redirect(url, 302);
     }
-    const isVideo = /\.(mp4|mov|webm|m4v|3gp)$/.test(name);
-    if (isVideo && dir === env.uploadDir) {
+    if (safe) reply.header('Content-Disposition', `attachment; filename="${encodeURIComponent(safe)}"; filename*=UTF-8''${encodeURIComponent(safe)}`);
+    const isVideo = VIDEO_RE.test(name);
+    if (isVideo && area === 'main') {
       // 转码后内容是 MP4（扩展名不变）；转码完成前不长期缓存，免得浏览器一直留着播不了的旧版本
       // 文件不在了要先返回 404：提前设好的 video/mp4 头会让默认的 404 响应出错
-      if (!(await fs.stat(path.join(dir, name)).catch(() => null))) return reply.code(404).send();
+      if (!local) return reply.code(404).send();
       const contentType = !videoIsMp4(name);
       if (!contentType) reply.header('Content-Type', 'video/mp4');
       if (!videoSettled(name)) return reply.sendFile(name, dir, { maxAge: 0, contentType });
@@ -171,34 +214,49 @@ export async function fileRoutes(app: FastifyInstance) {
     // 文件名是随机的、内容永不改变：让浏览器长期缓存
     return reply.sendFile(name, dir, { maxAge: '365d', immutable: true });
   };
-  app.get('/files/thumb/:name', serve(THUMB_DIR, FILE_NAME_RE));
-  app.get('/files/orig/:name', serve(ORIG_DIR, ORIG_RE));
-  app.get('/files/:name', serve(env.uploadDir, FILE_NAME_RE));
+  app.get('/files/thumb/:name', serve('thumb', FILE_NAME_RE));
+  app.get('/files/orig/:name', serve('orig', ORIG_RE));
+  app.get('/files/:name', serve('main', FILE_NAME_RE));
 }
 
-export function filePath(name: string, kind: 'main' | 'orig' = 'main') {
-  if (kind === 'orig') return ORIG_RE.test(name) ? path.join(ORIG_DIR, name) : null;
-  return FILE_NAME_RE.test(name) ? path.join(env.uploadDir, name) : null;
+/** 打包下载用：文件在本地给路径，在对象存储给读取函数；都没有返回 null */
+export async function fileSource(name: string, kind: 'main' | 'orig' = 'main'): Promise<{ path: string } | { open: () => Promise<Readable> } | null> {
+  if (!NAMES[kind].test(name)) return null;
+  const local = storage.localPath(kind, name);
+  if (await fs.stat(local).catch(() => null)) return { path: local };
+  if (storage.enabled && (await storage.existsRemote(kind, name))) return { open: () => storage.readRemote(kind, name) };
+  return null;
+}
+
+async function copyOne(area: Area, from: string, to: string) {
+  try {
+    await fs.copyFile(storage.localPath(area, from), storage.localPath(area, to));
+    storage.offload(area, to);
+  } catch (e) {
+    // 本地已经没有了：在对象存储里复制
+    if (!storage.enabled || (e as { code?: string }).code !== 'ENOENT') throw e;
+    await storage.copyRemote(area, from, to);
+  }
 }
 
 /** 复制一个已上传的文件（连同缩略图），返回新文件名；用于把动态里的照片存进相册 */
 export async function copyFile(name: string | null | undefined): Promise<string | null> {
   if (!name || !FILE_NAME_RE.test(name)) return null;
   const next = `${crypto.randomUUID()}${path.extname(name)}`;
-  await fs.copyFile(path.join(env.uploadDir, name), path.join(env.uploadDir, next));
-  await fs.copyFile(path.join(THUMB_DIR, name), path.join(THUMB_DIR, next)).catch(() => {});
+  await copyOne('main', name, next);
+  await copyOne('thumb', name, next).catch(() => {});
   return next;
 }
 
 export async function removeFiles(names: (string | null | undefined)[]) {
   for (const n of names) {
     if (!n || !FILE_NAME_RE.test(n)) continue;
-    await fs.rm(path.join(env.uploadDir, n), { force: true });
-    await fs.rm(path.join(THUMB_DIR, n), { force: true });
+    await storage.remove('main', n);
+    await storage.remove('thumb', n);
   }
 }
 
 /** 删除相册原图（和展示图同名、放在 orig/ 目录） */
 export async function removeOriginals(names: (string | null | undefined)[]) {
-  for (const n of names) if (n && ORIG_RE.test(n)) await fs.rm(path.join(ORIG_DIR, n), { force: true });
+  for (const n of names) if (n && ORIG_RE.test(n)) await storage.remove('orig', n);
 }

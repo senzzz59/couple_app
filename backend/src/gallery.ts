@@ -1,10 +1,9 @@
 import { and, desc, eq, inArray, lt, or, sql, type SQL } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
-import fs from 'node:fs/promises';
 import { z } from 'zod';
 
 import { db, schema } from './db/index.ts';
-import { copyFile, FILE_NAME_RE, filePath, removeFiles, removeOriginals } from './files.ts';
+import { copyFile, FILE_NAME_RE, fileSource, removeFiles, removeOriginals } from './files.ts';
 import { broadcast } from './realtime.ts';
 import { notifyPartner } from './webPush.ts';
 import { mediaItem } from './resources.ts';
@@ -180,13 +179,12 @@ export async function galleryRoutes(app: FastifyInstance) {
     }
     const list = z.array(z.string().length(36)).max(1000).parse(payload.zip ?? []);
     const rows = await db.select().from(g).where(inArray(g.id, list.length ? list : ['-']));
-    const files = [];
-    for (const r of rows) {
-      const p = r.original ? filePath(r.original, 'orig') : r.kind === 'video' ? r.video && filePath(r.video) : r.image && filePath(r.image);
-      if (!p) continue;
-      const exists = await fs.stat(p).catch(() => null);
-      if (exists) files.push({ path: p, name: downloadName(r), date: new Date(r.takenAt) });
-    }
+    // 文件可能在本地，也可能已经在对象存储里（并发查，几百张也不用等太久）
+    const sources = await mapLimit(rows, 8, (r) => {
+      const name = r.original ?? (r.kind === 'video' ? r.video : r.image);
+      return name ? fileSource(name, r.original ? 'orig' : 'main') : Promise.resolve(null);
+    });
+    const files = rows.flatMap((r, i) => (sources[i] ? [{ ...sources[i], name: downloadName(r), date: new Date(r.takenAt) }] : []));
     const names = uniqueNames(files.map((f) => f.name));
     const d = new Date();
     const zipName = `us-相册-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}.zip`;
@@ -282,4 +280,18 @@ export async function galleryRoutes(app: FastifyInstance) {
     changed(req.user.sub);
     return { ok: true };
   });
+}
+
+async function mapLimit<T, R>(list: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(list.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, list.length) }, async () => {
+      while (next < list.length) {
+        const i = next++;
+        out[i] = await fn(list[i]);
+      }
+    })
+  );
+  return out;
 }

@@ -41,7 +41,8 @@ export function MediaThumb({ item, size, style, radius: r = 10 }: { item: MediaI
   return (
     <View style={[{ width: size, aspectRatio: 1, borderRadius: r, overflow: 'hidden', backgroundColor: colors.surfaceAlt }, style]}>
       {thumb ? (
-        <Image source={thumb} style={StyleSheet.absoluteFill} contentFit="cover" transition={180} recyclingKey={item.image ?? undefined} />
+        // 网页上滚到附近才加载：相册一次列出几百张时不会同时去下载所有缩略图
+        <Image source={thumb} style={StyleSheet.absoluteFill} contentFit="cover" transition={180} recyclingKey={item.image ?? undefined} loading="lazy" />
       ) : (
         <View style={[StyleSheet.absoluteFill, styles.noPoster]}>
           <Play size={22} color={colors.muted} />
