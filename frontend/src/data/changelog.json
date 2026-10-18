@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "id": "smooth-moments-scroll",
+      "date": "2026-10-18",
+      "title": "动态页滑动更顺畅",
+      "changes": [
+        { "type": "fix", "text": "从动态的文字或照片上开始滑动时页面划不动的问题" },
+        { "type": "improve", "text": "滑动时不再误触动态、照片和红心" }
+      ]
+    },
+    {
       "id": "update-dialog",
       "date": "2026-10-18",
       "title": "更新体验升级",
