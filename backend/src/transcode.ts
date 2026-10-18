@@ -28,7 +28,7 @@ export type VideoProbe = {
 /** fetch：直传的视频还在对象存储里，转码前要先下载到服务器（后台做，不耽误上传） */
 type Status = 'ok' | 'converted' | 'failed' | 'fetch';
 
-function exec(cmd: string, args: string[], timeoutMs: number) {
+export function exec(cmd: string, args: string[], timeoutMs: number) {
   return new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
     let stdout = '';
     let stderr = '';

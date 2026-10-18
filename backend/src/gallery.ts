@@ -168,6 +168,14 @@ export async function galleryRoutes(app: FastifyInstance) {
     return { count: items.length };
   });
 
+  // ---- 单张（聊天里的照片卡片、通知点进来、一起看时补拉）
+  app.get('/api/gallery/:id', auth, async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const [row] = await db.select().from(g).where(eq(g.id, id));
+    if (!row) return reply.code(404).send({ message: '这张照片已经删除了' });
+    return row;
+  });
+
   app.patch('/api/gallery/:id', auth, async (req, reply) => {
     const id = (req.params as { id: string }).id;
     const data = z.object({ favorite: z.boolean().optional(), takenAt: z.coerce.date().optional() }).parse(req.body);

@@ -13,11 +13,13 @@ import { db, schema } from './db/index.ts';
 import { env } from './env.ts';
 import { exifTakenAt, findEmbeddedVideo, videoExt } from './media.ts';
 import { s3ConfigFrom, Storage, contentTypeOf, type Area } from './storage.ts';
-import { displaySize, enqueueVideo, ffmpegAvailable, makePoster, markVideo, onVideoSettled, probeVideo, setVideoFetcher, videoIsMp4, videoPlan, videoSettled, videoStatus } from './transcode.ts';
+import { displaySize, enqueueVideo, exec, ffmpegAvailable, makePoster, markVideo, onVideoSettled, probeVideo, setVideoFetcher, videoIsMp4, videoPlan, videoSettled, videoStatus } from './transcode.ts';
 
 const THUMB_DIR = path.join(env.uploadDir, 'thumb');
 const ORIG_DIR = path.join(env.uploadDir, 'orig');
-export const FILE_NAME_RE = /^[0-9a-f-]{36}\.(jpg|png|gif|webp|mp4|mov|webm|m4v|3gp)$/;
+export const FILE_NAME_RE = /^[0-9a-f-]{36}\.(jpg|png|gif|webp|mp4|mov|webm|m4v|3gp|m4a)$/;
+/** 聊天语音 */
+export const VOICE_RE = /^[0-9a-f-]{36}\.m4a$/;
 export const ORIG_RE = /^[0-9a-f-]{36}\.(jpg|jpeg|png|gif|webp|heic|heif|avif|tif|tiff|dng|mp4|mov|webm|m4v|3gp)$/;
 const VIDEO_RE = /\.(mp4|mov|webm|m4v|3gp)$/;
 const NAMES: Record<Area, RegExp> = { main: FILE_NAME_RE, thumb: FILE_NAME_RE, orig: ORIG_RE };
@@ -461,6 +463,59 @@ export async function copyFile(name: string | null | undefined): Promise<string 
   await copyOne('main', name, next);
   await copyOne('thumb', name, next).catch(() => {});
   return next;
+}
+
+const VOICE_LIMIT = 3 * 1024 * 1024;
+const VOICE_TYPES = /^audio\/(webm|ogg|mp4|x-m4a|m4a|aac|mpeg)|^video\/(webm|mp4)/;
+
+/**
+ * 聊天语音：iPhone 录出来是 mp4，安卓 Chrome 是 webm，统一转成 AAC 的 m4a，两边都能播。
+ * 服务器没有 ffmpeg 时只接受本来就是 mp4 / m4a 的录音（原样保存）。
+ */
+export async function saveVoice(buf: Buffer, mimetype: string): Promise<{ voice: string; duration: number | null }> {
+  if (!VOICE_TYPES.test(mimetype)) throw new UploadError(415, '不支持这种录音格式');
+  const name = `${crypto.randomUUID()}.m4a`;
+  const out = path.join(env.uploadDir, name);
+  if (await ffmpegAvailable()) {
+    const src = path.join(env.uploadDir, `${crypto.randomUUID()}.voice-src`);
+    await fs.writeFile(src, buf);
+    try {
+      const r = await exec('ffmpeg', ['-y', '-v', 'error', '-i', src, '-vn', '-ac', '1', '-ar', '44100', '-c:a', 'aac', '-b:a', '64k', '-movflags', '+faststart', '-f', 'mp4', out], 60_000);
+      if (r.code !== 0) {
+        await fs.rm(out, { force: true });
+        throw new UploadError(400, '录音文件坏了，再录一次试试');
+      }
+    } finally {
+      await fs.rm(src, { force: true });
+    }
+  } else if (/mp4|m4a|aac/.test(mimetype)) {
+    await fs.writeFile(out, buf);
+  } else {
+    throw new UploadError(415, '服务器暂不支持这种录音格式');
+  }
+  let duration: number | null = null;
+  if (await ffmpegAvailable()) {
+    const p = await exec('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', out], 10_000);
+    const d = Number.parseFloat(p.stdout.trim());
+    if (Number.isFinite(d)) duration = Math.round(d * 10) / 10;
+  }
+  void offloadWritten([out]);
+  return { voice: name, duration };
+}
+
+export async function voiceRoutes(app: FastifyInstance) {
+  app.post('/api/chat/voice', { preHandler: app.authenticate }, async (req, reply) => {
+    try {
+      const part = await req.file({ limits: { fileSize: VOICE_LIMIT, files: 1 } });
+      if (!part) return reply.code(400).send({ message: '没有收到录音' });
+      const buf = await part.toBuffer();
+      return await saveVoice(buf, part.mimetype);
+    } catch (e) {
+      if (e instanceof UploadError) return reply.code(e.status).send({ message: e.message });
+      if ((e as { code?: string }).code === 'FST_REQ_FILE_TOO_LARGE') return reply.code(413).send({ message: '录音太长了' });
+      throw e;
+    }
+  });
 }
 
 export async function removeFiles(names: (string | null | undefined)[]) {

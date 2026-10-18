@@ -1,7 +1,8 @@
-import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AppState } from 'react-native';
 
 import { api, clearToken, loadCredentials, saveCredentials, setUnauthorizedHandler, wsUrl } from './api';
+import { emitRealtime, onRealtime, setRealtimeSender } from './realtime';
 import { clearCache, invalidate, useQuery } from './store';
 import { cancelReminders } from './notify';
 import { registerPush, unregisterPush } from './push';
@@ -23,7 +24,6 @@ const Ctx = createContext<SessionValue | null>(null);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>('loading');
-  const nudgeListeners = useRef(new Set<(e: NudgeEvent) => void>());
 
   useEffect(() => {
     loadCredentials().then(({ token }) => setStatus(token ? 'signedIn' : 'signedOut'));
@@ -64,23 +64,35 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     let closed = false;
 
     const connect = () => {
-      ws = new WebSocket(wsUrl());
-      ws.onopen = () => {
+      const socket = new WebSocket(wsUrl());
+      ws = socket;
+      socket.onopen = () => {
         retry = 0;
-        ws?.send(JSON.stringify({ type: 'presence', active: AppState.currentState === 'active' }));
+        socket.send(JSON.stringify({ type: 'presence', active: AppState.currentState === 'active' }));
+        emitRealtime({ type: 'open' });
       };
-      ws.onmessage = (m) => {
+      socket.onmessage = (m) => {
+        let e;
         try {
-          const e = JSON.parse(String(m.data));
-          if (e.type === 'change') invalidate(e.collection === 'users' ? 'me' : e.collection);
-          if (e.type === 'nudge') nudgeListeners.current.forEach((fn) => fn(e));
-        } catch {}
+          e = JSON.parse(String(m.data));
+        } catch {
+          return;
+        }
+        if (!e || typeof e.type !== 'string') return;
+        if (e.type === 'change') invalidate(e.collection === 'users' ? 'me' : e.collection);
+        emitRealtime(e);
       };
-      ws.onclose = () => {
+      socket.onclose = () => {
+        if (ws === socket) emitRealtime({ type: 'close' });
         if (closed) return;
         timer = setTimeout(connect, Math.min(30_000, 1000 * 2 ** retry++));
       };
     };
+    setRealtimeSender((msg) => {
+      if (ws?.readyState !== 1) return false;
+      ws.send(JSON.stringify(msg));
+      return true;
+    });
     connect();
     registerPush().catch(() => {});
 
@@ -88,7 +100,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (ws?.readyState === 1) ws.send(JSON.stringify({ type: 'presence', active: s === 'active' }));
       if (s !== 'active') return;
       registerPush().catch(() => {});
-      for (const c of ['me', 'space', 'places', 'visits', 'anniversaries', 'moments', 'todos', 'answers', 'capsules', 'gallery', 'albums', 'stickers']) invalidate(c);
+      for (const c of ['me', 'space', 'places', 'visits', 'anniversaries', 'moments', 'todos', 'answers', 'capsules', 'gallery', 'albums', 'stickers', 'chat']) invalidate(c);
       if (ws && ws.readyState > 1) {
         clearTimeout(timer);
         connect();
@@ -97,15 +109,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => {
       closed = true;
       clearTimeout(timer);
+      setRealtimeSender(null);
       ws?.close();
+      emitRealtime({ type: 'close' });
       sub.remove();
     };
   }, [status]);
 
-  const onNudge = useCallback((fn: (e: NudgeEvent) => void) => {
-    nudgeListeners.current.add(fn);
-    return () => void nudgeListeners.current.delete(fn);
-  }, []);
+  const onNudge = useCallback((fn: (e: NudgeEvent) => void) => onRealtime<NudgeEvent>('nudge', fn), []);
 
   const value = useMemo(() => ({ status, signIn, signInWithToken, signOut, onNudge }), [status, signIn, signInWithToken, signOut, onNudge]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

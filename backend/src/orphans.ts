@@ -33,6 +33,11 @@ export async function collectReferences(): Promise<References> {
     add(c.sticker);
   }
   for (const st of await db.select({ file: s.stickers.file }).from(s.stickers)) add(st.file);
+  for (const m of await db.select({ image: s.messages.image, sticker: s.messages.sticker, voice: s.messages.voice }).from(s.messages)) {
+    add(m.image);
+    add(m.sticker);
+    add(m.voice);
+  }
   for (const c of await db.select({ photos: s.capsules.photos }).from(s.capsules)) (c.photos ?? []).forEach(add);
   for (const g of await db.select({ image: s.galleryItems.image, video: s.galleryItems.video, original: s.galleryItems.original }).from(s.galleryItems)) {
     add(g.image);

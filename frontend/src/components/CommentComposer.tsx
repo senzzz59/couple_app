@@ -1,19 +1,16 @@
-import { ImagePlus, Plus, Send, Smile, Sticker as StickerIcon, X } from 'lucide-react-native';
+import { ImagePlus, Send, Smile, Sticker as StickerIcon, X } from 'lucide-react-native';
 import { useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, TextInput } from 'react-native';
 import Animated, { FadeIn, FadeInDown, FadeOut } from 'react-native-reanimated';
 
 import { api } from '@/lib/api';
-import { confirm } from '@/lib/confirm';
 import { haptic } from '@/lib/haptics';
 import { pickMedia, releaseLocal, uploadMedia } from '@/lib/media';
-import { BUILTIN_STICKERS, EMOJIS } from '@/lib/stickers';
-import { invalidate, useQuery } from '@/lib/store';
-import type { Sticker as StickerRow } from '@/lib/types';
+import { invalidate } from '@/lib/store';
 import { colors, radius } from '@/theme';
 
+import { EmojiPanel, IconToggle, StickerPanel } from './ExpressionPanels';
 import { toast } from './motion';
-import { Sticker } from './Sticker';
 import { PressScale, Row, Txt } from './ui';
 
 type Panel = 'emoji' | 'sticker' | null;
@@ -36,7 +33,6 @@ export function CommentComposer({
   const [text, setText] = useState('');
   const [panel, setPanel] = useState<Panel>(null);
   const [sending, setSending] = useState<'text' | 'image' | 'sticker' | null>(null);
-  const stickers = useQuery<StickerRow[]>(panel === 'sticker' ? '/api/stickers' : null);
   const input = useRef<TextInput>(null);
 
   const send = async (body: { content?: string; image?: string; sticker?: string }, kind: 'text' | 'image' | 'sticker') => {
@@ -74,28 +70,6 @@ export function CommentComposer({
     } finally {
       releaseLocal(picked);
     }
-  };
-
-  const addSticker = async () => {
-    const picked = await pickMedia({ max: 1, video: false });
-    if (!picked.length) return;
-    try {
-      const [m] = await uploadMedia(picked);
-      await api.post('/api/stickers', { file: m.image });
-      haptic.success();
-      invalidate('stickers');
-      toast('已添加到表情');
-    } catch (e) {
-      toast((e as Error).message, '⚠️');
-    } finally {
-      releaseLocal(picked);
-    }
-  };
-
-  const removeSticker = async (s: StickerRow) => {
-    if (!(await confirm('删除这个表情？', '已经发出去的评论不受影响'))) return;
-    await api.del(`/api/stickers/${s.id}`).catch((e) => toast(e.message, '⚠️'));
-    invalidate('stickers');
   };
 
   const toggle = (p: Panel) => {
@@ -145,52 +119,9 @@ export function CommentComposer({
         )}
       </Row>
 
-      {panel === 'emoji' && (
-        <Animated.View entering={FadeInDown.springify().damping(18)} style={styles.panel}>
-          <View style={styles.emojiGrid}>
-            {EMOJIS.map((e) => (
-              <Pressable
-                key={e}
-                onPress={() => {
-                  haptic.tick();
-                  setText((t) => t + e);
-                }}
-                style={({ pressed }) => [styles.emoji, pressed && { transform: [{ scale: 1.25 }] }]}>
-                <Text style={{ fontSize: 24 }}>{e}</Text>
-              </Pressable>
-            ))}
-          </View>
-        </Animated.View>
-      )}
-
-      {panel === 'sticker' && (
-        <Animated.View entering={FadeInDown.springify().damping(18)} style={styles.panel}>
-          <ScrollView style={{ maxHeight: 250 }} contentContainerStyle={styles.stickerGrid}>
-            {BUILTIN_STICKERS.map((s) => (
-              <PressScale key={s.id} scaleTo={0.88} disabled={!!sending} onPress={() => send({ sticker: s.id }, 'sticker')} style={styles.stickerCell}>
-                <Sticker id={s.id} size={64} />
-              </PressScale>
-            ))}
-            {stickers.data?.map((s) => (
-              <PressScale key={s.id} scaleTo={0.88} disabled={!!sending} onPress={() => send({ sticker: s.file }, 'sticker')} onLongPress={() => removeSticker(s)} style={styles.stickerCell}>
-                <Sticker id={s.file} size={64} />
-              </PressScale>
-            ))}
-            <PressScale scaleTo={0.9} onPress={addSticker} style={[styles.stickerCell, styles.addSticker]} accessibilityLabel="添加表情">
-              <Plus size={22} color={colors.accentStrong} />
-            </PressScale>
-          </ScrollView>
-        </Animated.View>
-      )}
+      {panel === 'emoji' && <EmojiPanel onPick={(e) => setText((t) => t + e)} />}
+      {panel === 'sticker' && <StickerPanel disabled={!!sending} onSend={(sticker) => send({ sticker }, 'sticker')} />}
     </Animated.View>
-  );
-}
-
-function IconToggle({ icon: Icon, active, onPress, label }: { icon: typeof Smile; active: boolean; onPress: () => void; label: string }) {
-  return (
-    <Pressable hitSlop={4} onPress={onPress} accessibilityLabel={label} style={[styles.toggle, active && { backgroundColor: colors.accentSoft }]}>
-      <Icon size={19} color={active ? colors.accentStrong : colors.inkSoft} />
-    </Pressable>
   );
 }
 
@@ -198,12 +129,5 @@ const styles = StyleSheet.create({
   replying: { backgroundColor: colors.accentSoft, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 5, alignSelf: 'flex-start', maxWidth: '100%' },
   box: { backgroundColor: colors.surfaceAlt, borderRadius: radius.pill, paddingLeft: 14, paddingRight: 4, height: 44 },
   input: { flex: 1, minWidth: 0, fontSize: 15, color: colors.ink, height: 44 },
-  toggle: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   send: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
-  panel: { backgroundColor: colors.bg, borderRadius: radius.md, padding: 8 },
-  emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  emoji: { width: '12.5%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
-  stickerGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  stickerCell: { width: 74, height: 78, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: colors.surface },
-  addSticker: { borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.accent, backgroundColor: colors.accentSoft, gap: 2 },
 });

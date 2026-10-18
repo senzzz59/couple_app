@@ -1,15 +1,15 @@
 import { Check, ChevronDown, Heart } from 'lucide-react-native';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
-import Animated, { ZoomIn } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withTiming, ZoomIn } from 'react-native-reanimated';
 
 import { haptic } from '@/lib/haptics';
 import { galleryToMedia } from '@/lib/media';
-import type { GalleryItem } from '@/lib/types';
+import type { GalleryItem, User } from '@/lib/types';
 import { colors } from '@/theme';
 
 import { MediaThumb } from './Media';
-import { PressScale, Row, Txt } from './ui';
+import { Avatar, PressScale, Row, Txt } from './ui';
 
 const GAP = 3;
 
@@ -53,6 +53,7 @@ export function GalleryGrid({
   grouped = true,
   onPressMonth,
   onMonthLayout,
+  peer,
 }: {
   items: GalleryItem[];
   selecting: boolean;
@@ -63,6 +64,8 @@ export function GalleryGrid({
   grouped?: boolean;
   onPressMonth?: () => void;
   onMonthLayout?: (month: string, y: number) => void;
+  /** 另一半正在看的那张：描边 + 头像 */
+  peer?: { itemId: string | null; user: User | null } | null;
 }) {
   const { cell } = useGridColumns();
   const groups = useMemo(() => (grouped ? groupByMonth(items) : [{ key: 'all', label: '', items }]), [items, grouped]);
@@ -108,6 +111,7 @@ export function GalleryGrid({
                   delayLongPress={320}
                   style={({ pressed }) => [{ width: cell, height: cell }, pressed && !selecting && { opacity: 0.85 }]}>
                   <MediaThumb item={galleryToMedia(it)} size={cell} radius={6} style={on && { transform: [{ scale: 0.9 }], borderRadius: 10 }} />
+                  {peer?.itemId === it.id && !selecting && <PeerMark user={peer.user} />}
                   {it.favorite && !selecting && (
                     <View style={styles.fav} pointerEvents="none">
                       <Heart size={13} color="#fff" fill="#fff" />
@@ -132,6 +136,23 @@ export function GalleryGrid({
   );
 }
 
+/** TA 正在看这张：一圈慢慢呼吸的粉色描边，左上角 TA 的头像 */
+function PeerMark({ user }: { user: User | null }) {
+  const pulse = useSharedValue(1);
+  useEffect(() => {
+    pulse.set(withRepeat(withTiming(0.35, { duration: 900 }), -1, true));
+  }, [pulse]);
+  const ring = useAnimatedStyle(() => ({ opacity: pulse.value }));
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <Animated.View style={[styles.peerRing, ring]} />
+      <View style={styles.peerAvatar}>
+        <Avatar user={user} size={22} ring={colors.white} />
+      </View>
+    </View>
+  );
+}
+
 /** 顶部上传条：实现在 UploadCenter（点开能看每一项的进度） */
 export { UploadBanner } from './UploadCenter';
 
@@ -139,6 +160,8 @@ const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: GAP },
   monthBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   fav: { position: 'absolute', left: 6, bottom: 6 },
+  peerRing: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 6, borderWidth: 3, borderColor: colors.accent },
+  peerAvatar: { position: 'absolute', left: 4, top: 4 },
   check: { position: 'absolute', right: 6, top: 6, width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: '#fff', backgroundColor: 'rgba(0,0,0,0.15)', alignItems: 'center', justifyContent: 'center' },
   checkOn: { backgroundColor: colors.accentStrong, borderColor: colors.accentStrong },
 });

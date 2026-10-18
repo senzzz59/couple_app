@@ -10,6 +10,7 @@ import { ConfirmHost } from '@/components/Confirm';
 // 尽早监听浏览器的「安装应用」事件
 import '@/lib/install';
 import { ConfettiHost, toast, ToastHost } from '@/components/motion';
+import { RealtimeToasts } from '@/components/RealtimeToasts';
 import { TravelPickerHost } from '@/components/TravelPicker';
 import { UpdateHost } from '@/components/UpdateCenter';
 import { useUpdateStartup } from '@/components/UpdateStartup';
@@ -24,6 +25,7 @@ import { SessionProvider, useCouple, useSession } from '@/lib/session';
 import type { NudgeEvent } from '@/lib/session';
 import { useQuery } from '@/lib/store';
 import type { Anniversary, Capsule, Todo } from '@/lib/types';
+import { openViewerById } from '@/lib/viewer';
 import { colors } from '@/theme';
 
 SplashScreen.preventAutoHideAsync();
@@ -65,7 +67,11 @@ function NotificationOpenListener() {
     if (Platform.OS !== 'web' || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
     const onMessage = (e: MessageEvent) => {
       const url = e.data?.type === 'open' ? e.data.url : null;
-      if (typeof url === 'string' && url.startsWith('/')) router.push(url as Href);
+      if (typeof url !== 'string' || !url.startsWith('/')) return;
+      // 「给你看这张」：带着相册列表打开，可以左右翻
+      const item = /^\/viewer\?item=([0-9a-f-]{36})$/.exec(url)?.[1];
+      if (item) openViewerById(item).catch(() => router.push(url as Href));
+      else router.push(url as Href);
     };
     navigator.serviceWorker.addEventListener('message', onMessage);
     return () => navigator.serviceWorker.removeEventListener('message', onMessage);
@@ -127,6 +133,7 @@ function RootStack({ fontsLoaded }: { fontsLoaded: boolean }) {
           <Stack.Screen name="capsule/new" options={modal} />
           <Stack.Screen name="footprints" />
           <Stack.Screen name="album/[id]" />
+          <Stack.Screen name="chat" />
           <Stack.Screen name="album/add" options={modal} />
           <Stack.Screen name="question" options={modal} />
           <Stack.Screen name="place/edit" options={modal} />
@@ -147,6 +154,7 @@ function RootStack({ fontsLoaded }: { fontsLoaded: boolean }) {
           <TravelPickerHost />
           <UploadResume />
           <NudgeListener />
+          <RealtimeToasts />
           <LocationWarmup />
           <NotificationOpenListener />
         </>

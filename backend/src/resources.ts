@@ -27,7 +27,7 @@ export const mediaItem = z.object({
   duration: opt(z.number().min(0).max(24 * 3600)),
 });
 // 内置表情（blob:xxx）或自定义表情图片
-const stickerRef = z.string().max(100).regex(/^(blob:[a-z0-9-]{1,40}|[0-9a-f-]{36}\.(jpg|png|gif|webp))$/, '表情不对');
+export const stickerRef = z.string().max(100).regex(/^(blob:[a-z0-9-]{1,40}|[0-9a-f-]{36}\.(jpg|png|gif|webp))$/, '表情不对');
 
 function badRequest(message: string): never {
   throw Object.assign(new Error(message), { statusCode: 400 });

@@ -89,6 +89,12 @@ export function setQueryData<T>(key: string, updater: (prev: T | undefined) => T
   emit(key);
 }
 
+/** 读缓存里第一个匹配的数据（不触发请求） */
+export function peekQuery<T>(match: (key: string) => boolean): T | undefined {
+  for (const [key, e] of cache) if (match(key) && e.data !== undefined) return e.data as T;
+  return undefined;
+}
+
 export function clearCache() {
   generation++;
   cache.clear();
