@@ -86,19 +86,19 @@ export function LivePlaceInfo({ destination }: { destination: MapDestination }) 
           {photos.length > 0 && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
             {photos.map((p, i) => <PressScale key={`${p.url}-${i}`} accessibilityLabel={`查看店铺照片${i + 1}`} onPress={() => setPhoto(i)}><Image source={p.url} style={styles.thumb} contentFit="cover" transition={200} /></PressScale>)}
           </ScrollView>}
-          {data?.checkedAt && <Txt v="caption" style={{ fontSize: 11 }}>查询于 {new Date(data.checkedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} · 以高德实际信息为准</Txt>}
+          {data?.checkedAt && <Txt v="caption">数据来源：高德地图 · 更新于 {new Date(data.checkedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</Txt>}
         </> : <Txt v="caption">{data?.message || '这家店暂未提供更多资料'}</Txt>}
         <PressScale onPress={openReviews} style={styles.reviewLink}>
-          <View style={{ flex: 1, gap: 3 }}><Txt v="bodyStrong" style={{ fontSize: 14 }}>去高德看评价与晒图</Txt><Txt v="caption" style={{ fontSize: 11 }}>更多真实体验，在高德店铺页查看</Txt></View>
+          <Txt v="bodyStrong" style={{ flex: 1, fontSize: 14 }}>去高德看评价与晒图</Txt>
           <ChevronRight size={17} color={colors.muted} />
         </PressScale>
       </View>}
       <View style={styles.card}>
         <Row style={{ justifyContent: 'space-between' }}>
-          <View style={{ gap: 3 }}><Txt v="bodyStrong">怎么去呢？</Txt><Txt v="caption">从你现在的位置出发</Txt></View>
+          <Txt v="bodyStrong">怎么去呢？</Txt>
           <MapPin size={22} color={colors.accentStrong} />
         </Row>
-        {lat == null || lng == null ? <Txt v="caption">选定高德门店后，就能看看路上要多久啦</Txt> : <>
+        {lat == null || lng == null ? <Txt v="caption">关联高德门店后可查看路程时间</Txt> : <>
           {journey && <>
             <View style={styles.travelGrid}>
               {modes.map(({ key, label, Icon }) => {
@@ -112,11 +112,11 @@ export function LivePlaceInfo({ destination }: { destination: MapDestination }) 
               })}
             </View>
             {journey.options.every((o) => o.seconds == null) && <Txt v="caption" color={colors.peachInk}>{journey.options.find((o) => o.message)?.message || '暂时没有可用路线，可以前往高德查看'}</Txt>}
-            <Txt v="caption" style={{ fontSize: 11 }}>点一种方式就用它导航 · 高德预计耗时 · 查询于 {new Date(journey.checkedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}，路况和班次可能变化</Txt>
+            <Txt v="caption">数据来源：高德地图 · 更新于 {new Date(journey.checkedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</Txt>
           </>}
           {!!locationError && <Txt v="caption" color={colors.peachInk}>{locationError}</Txt>}
           <Button title={journey ? '更新我的位置与路线' : locationError ? '重新获取位置' : '看看现在出发要多久'} variant="secondary" onPress={getJourney} loading={locating} />
-          {!journey && !locationError && <Txt v="caption" style={{ fontSize: 11 }}>点击后获取位置，仅用于本次路线计算</Txt>}
+          {!journey && !locationError && <Txt v="caption">位置信息仅用于本次路线计算</Txt>}
         </>}
       </View>
       <Modal visible={photo != null} transparent animationType="fade" onRequestClose={() => setPhoto(null)}>

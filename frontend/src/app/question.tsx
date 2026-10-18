@@ -13,6 +13,7 @@ import { QUESTIONS, questionOfDay } from '@/lib/questions';
 import { useCouple } from '@/lib/session';
 import { invalidate, setQueryData, useQuery } from '@/lib/store';
 import type { Answer } from '@/lib/types';
+import { useKept } from '@/lib/useKept';
 import { colors, fonts, radius, shadow } from '@/theme';
 
 /** 对方的答案：自己答完之前是毛玻璃，答完后翻牌揭晓 */
@@ -61,8 +62,8 @@ export default function Question() {
   const history = useQuery<Answer[]>('/api/answers/history');
   const mine = answers.data?.find((a) => a.createdBy === me?.id);
   const theirs = answers.data?.find((a) => a.createdBy !== me?.id);
-  const [text, setText] = useState('');
-  const [editing, setEditing] = useState(false);
+  const [text, setText] = useKept(`question:${day}:text`, '');
+  const [editing, setEditing] = useKept(`question:${day}:editing`, false);
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {

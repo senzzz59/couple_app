@@ -69,7 +69,10 @@ fs.writeFileSync(path.join(output, 'manifest.webmanifest'), JSON.stringify({
     { name: '今天吃什么', short_name: '吃什么', url: '/roulette', icons: [{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }] },
   ],
 }, null, 2));
-fs.writeFileSync(path.join(output, 'version.json'), JSON.stringify(metadata));
+// 新版本的更新内容：旧版本检查更新时读这里，在「发现新版本」弹窗里展示（只放进 version.json，不打进页面）
+const changelog = JSON.parse(fs.readFileSync(path.join(root, 'src/data/changelog.json'), 'utf8'));
+const notes = changelog.releases.slice(0, 20).map((r) => ({ ...r, version: r.version ?? releases[r.id] ?? null }));
+fs.writeFileSync(path.join(output, 'version.json'), JSON.stringify({ ...metadata, notes }));
 fs.writeFileSync(path.join(output, 'web-build.js'), `window.__US_BUILD__=${JSON.stringify(metadata)};\n`);
 fs.writeFileSync(path.join(output, 'offline.html'), `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#FAF7F5"><title>us. · 等网络回来</title><style>body{margin:0;background:#FAF7F5;color:#4B2E35;font-family:system-ui;min-height:100vh;display:grid;place-items:center}main{max-width:320px;padding:28px;text-align:center}button{background:#E5627F;color:white;border:0;border-radius:20px;padding:14px 28px;font-size:16px}</style></head><body><main><h1>等网络回来</h1><p>暂时连不上网络。你们的记录保存在服务器，联网后就能继续查看。</p><button onclick="location.reload()">重新连接</button></main><script>window.addEventListener('online',()=>setTimeout(()=>location.reload(),500))</script></body></html>`);
 const precache = ['/offline.html', '/icons/icon.png', '/icons/icon-192.png', '/icons/icon-512.png', ...assets];

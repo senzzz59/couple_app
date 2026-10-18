@@ -10,13 +10,13 @@ import { colors, radius } from '@/theme';
 
 import { toast } from './motion';
 import { Sheet } from './Sheet';
-import { PressScale, Row, Txt } from './ui';
+import { PressScale, Txt } from './ui';
 
-const OPTIONS: { mode: NavMode; label: string; hint: string; Icon: typeof Car }[] = [
-  { mode: 'walking', label: '步行', hint: '走过去', Icon: Footprints },
-  { mode: 'cycling', label: '骑行', hint: '自行车 / 电动车', Icon: Bike },
-  { mode: 'transit', label: '公交地铁', hint: '看换乘方案', Icon: TrainFront },
-  { mode: 'driving', label: '开车', hint: '直接开始导航', Icon: Car },
+const OPTIONS: { mode: NavMode; label: string; Icon: typeof Car }[] = [
+  { mode: 'walking', label: '步行', Icon: Footprints },
+  { mode: 'cycling', label: '骑行', Icon: Bike },
+  { mode: 'transit', label: '公交地铁', Icon: TrainFront },
+  { mode: 'driving', label: '开车', Icon: Car },
 ];
 const LAST_KEY = 'nav.lastMode';
 
@@ -62,16 +62,9 @@ export function TravelPickerHost() {
   }, []);
   return (
     <Sheet visible={!!p} onClose={() => set(null)} style={{ gap: 14 }}>
-      <View style={{ gap: 2 }}>
-        <Txt v="heading">怎么去？</Txt>
-        {!!p && (
-          <Txt v="caption" numberOfLines={1}>
-            去 {p.name} · 用高德打开
-          </Txt>
-        )}
-      </View>
+      <Txt v="heading">怎么去？</Txt>
       <View style={styles.grid}>
-        {OPTIONS.map(({ mode, label, hint, Icon }) => {
+        {OPTIONS.map(({ mode, label, Icon }) => {
           const last = lastMode === mode;
           return (
             <PressScale
@@ -88,17 +81,9 @@ export function TravelPickerHost() {
               <View style={[styles.icon, last && { backgroundColor: colors.accentStrong }]}>
                 <Icon size={22} color={last ? colors.white : colors.ink} />
               </View>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Row gap={6}>
-                  <Txt v="bodyStrong">{label}</Txt>
-                  {last && (
-                    <Txt v="caption" color={colors.accentStrong} style={{ fontSize: 11 }}>
-                      上次
-                    </Txt>
-                  )}
-                </Row>
-                <Txt v="caption">{hint}</Txt>
-              </View>
+              <Txt v="bodyStrong" style={{ flex: 1 }}>
+                {label}
+              </Txt>
             </PressScale>
           );
         })}

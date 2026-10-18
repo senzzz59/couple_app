@@ -15,6 +15,7 @@ import { toDay } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { invalidate, useQuery } from '@/lib/store';
 import type { Dish, Place, Visit } from '@/lib/types';
+import { useKept } from '@/lib/useKept';
 import { colors, radius } from '@/theme';
 
 /** 记录一次探店：日期、照片、吃了什么（可以标记好吃）、评分、感想 */
@@ -27,12 +28,12 @@ export default function NewVisit() {
 
 function VisitForm({ placeId, id, initial: v }: { placeId: string; id?: string; initial?: Visit }) {
   const place = useQuery<Place>(`/api/places/${placeId}`);
-  const [date, setDate] = useState(v?.date ?? toDay(new Date()));
-  const [photos, setPhotos] = useState<PhotoItem[]>(v?.photos.map((remote) => ({ remote })) ?? []);
-  const [dishes, setDishes] = useState<Dish[]>(v?.dishes ?? []);
-  const [dish, setDish] = useState('');
-  const [rating, setRating] = useState(v?.rating ?? 0);
-  const [note, setNote] = useState(v?.note ?? '');
+  const [date, setDate] = useKept(`visit:${id ?? placeId}:date`, v?.date ?? toDay(new Date()));
+  const [photos, setPhotos] = useKept<PhotoItem[]>(`visit:${id ?? placeId}:photos`, v?.photos.map((remote) => ({ remote })) ?? []);
+  const [dishes, setDishes] = useKept<Dish[]>(`visit:${id ?? placeId}:dishes`, v?.dishes ?? []);
+  const [dish, setDish] = useKept(`visit:${id ?? placeId}:dish`, '');
+  const [rating, setRating] = useKept(`visit:${id ?? placeId}:rating`, v?.rating ?? 0);
+  const [note, setNote] = useKept(`visit:${id ?? placeId}:note`, v?.note ?? '');
   const [saving, setSaving] = useState(false);
 
   const addDish = () => {

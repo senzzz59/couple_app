@@ -19,6 +19,7 @@ import { EmojiTile } from '@/components/EmojiTile';
 import { useCouple } from '@/lib/session';
 import { invalidate, useQuery } from '@/lib/store';
 import type { Place } from '@/lib/types';
+import { useKept } from '@/lib/useKept';
 import { colors, radius, shadow } from '@/theme';
 
 const DRAFT_KEY = 'draft.moment';
@@ -50,11 +51,11 @@ export default function NewMoment() {
   const { me } = useCouple();
   const places = useQuery<Place[]>('/api/places');
   const { width } = useWindowDimensions();
-  const [content, setContent] = useState('');
-  const [media, setMedia] = useState<LocalMedia[]>([]);
-  const [mood, setMood] = useState<string | null>(null);
-  const [placeId, setPlaceId] = useState<string | null>(null);
-  const [toGallery, setToGallery] = useState(false);
+  const [content, setContent] = useKept('moment:content', '');
+  const [media, setMedia] = useKept<LocalMedia[]>('moment:media', []);
+  const [mood, setMood] = useKept<string | null>('moment:mood', null);
+  const [placeId, setPlaceId] = useKept<string | null>('moment:placeId', null);
+  const [toGallery, setToGallery] = useKept('moment:toGallery', false);
   const [panel, setPanel] = useState<'mood' | 'place' | null>(null);
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
@@ -71,7 +72,7 @@ export default function NewMoment() {
       .then((d) => d && setContent((c) => c || d))
       .catch(() => {});
     return () => releaseLocal(mediaRef.current);
-  }, []);
+  }, [setContent]);
   useEffect(() => {
     const t = setTimeout(() => (content ? AsyncStorage.setItem(DRAFT_KEY, content) : AsyncStorage.removeItem(DRAFT_KEY)).catch(() => {}), 400);
     return () => clearTimeout(t);

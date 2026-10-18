@@ -18,6 +18,7 @@ import { haptic } from '@/lib/haptics';
 import { useCouple } from '@/lib/session';
 import { invalidate, useQuery } from '@/lib/store';
 import type { Anniversary } from '@/lib/types';
+import { useKept } from '@/lib/useKept';
 import { colors, fonts, radius, springs } from '@/theme';
 
 const addMonths = (n: number) => {
@@ -66,11 +67,11 @@ function SealOverlay({ unlockAt }: { unlockAt: string }) {
 export default function NewCapsule() {
   const { space } = useCouple();
   const anns = useQuery<Anniversary[]>('/api/anniversaries');
-  const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
-  const [photos, setPhotos] = useState<PhotoItem[]>([]);
-  const [unlockAt, setUnlockAt] = useState<string | null>(null);
-  const [custom, setCustom] = useState(false);
+  const [title, setTitle] = useKept('capsule:title', '');
+  const [content, setContent] = useKept('capsule:content', '');
+  const [photos, setPhotos] = useKept<PhotoItem[]>('capsule:photos', []);
+  const [unlockAt, setUnlockAt] = useKept<string | null>('capsule:unlockAt', null);
+  const [custom, setCustom] = useKept('capsule:custom', false);
   const [saving, setSaving] = useState(false);
   const [sealed, setSealed] = useState(false);
 

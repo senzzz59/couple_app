@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { ChevronRight, Play, RotateCw, X, Zap } from 'lucide-react-native';
 import { useState } from 'react';
-import { Platform, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
 import { clearFinished, removeUpload, retryFailed, retryUpload, useUploadItems, useUploadJob, type UploadItem } from '@/lib/galleryUpload';
@@ -64,9 +64,8 @@ function UploadSheet({ visible, onClose }: { visible: boolean; onClose: () => vo
     <Sheet visible={visible} onClose={onClose} dragAnywhere={false} style={{ gap: 12 }}>
       <Row style={{ justifyContent: 'space-between' }}>
         <Txt v="heading">上传</Txt>
-        <Txt v="caption">{job ? `${job.done}/${job.total} 已处理${job.instant ? ` · 快速上传 ${job.instant}` : ''}` : '没有正在上传的'}</Txt>
+        <Txt v="secondary">{job ? `已完成 ${job.done}/${job.total}` : '暂无上传任务'}</Txt>
       </Row>
-      {Platform.OS === 'web' && !!job?.active && <Txt v="caption">可以切到别的应用，回来会接着传；页面被关掉的话，下次打开也会继续。</Txt>}
       <Row gap={14}>
         {!!job?.failed && (
           <PressScale onPress={retryFailed} style={styles.action}>
@@ -79,7 +78,7 @@ function UploadSheet({ visible, onClose }: { visible: boolean; onClose: () => vo
         {finished > 0 && (
           <PressScale onPress={clearFinished} style={styles.action}>
             <Txt v="caption" color={colors.inkSoft} style={{ fontWeight: '600' }}>
-              收起已完成的
+              清除已完成
             </Txt>
           </PressScale>
         )}
