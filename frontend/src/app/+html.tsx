@@ -26,8 +26,9 @@ const APP_CSS = [
 // 整页本身从不滚动（滚动都在页面里面）：刷新后不要恢复上次的滚动位置，否则 iOS 上整页错位、底部标签栏被挤出屏幕
 const NO_SCROLL_RESTORE = `try{history.scrollRestoration='manual'}catch(e){}window.addEventListener('pageshow',function(){if(window.scrollY)window.scrollTo(0,0)});`;
 
-// 刷新后安卓偶尔拿到过时的屏幕高度（切后台再回来才恢复）：加载后再量几次，页面和可见区域对不上就让浏览器重新计算
-const FIT_VIEWPORT = `(function(){function fit(){var d=document.documentElement,r=document.getElementById('root');if(!r)return;if(Math.abs(r.offsetHeight-d.clientHeight)>1){var m=document.querySelector('meta[name=viewport]');if(m){var v=m.getAttribute('content');m.setAttribute('content',v+',height=device-height');requestAnimationFrame(function(){m.setAttribute('content',v)})}}window.dispatchEvent(new Event('resize'))}function soon(){setTimeout(fit,300);setTimeout(fit,1200)}window.addEventListener('load',soon);window.addEventListener('pageshow',function(e){if(e.persisted)soon()})})();`;
+// 刷新后安卓偶尔拿到过时的屏幕高度（切后台再回来才恢复）：加载后再量几次，页面和可见区域对不上就让浏览器重新计算。
+// 只在安卓上做：iPhone 从主屏幕打开时（全屏）这两个高度本来就对不上，往 viewport 里写 height 会让 iOS 按两倍宽排版、整页缩小，而且改回去也不恢复。
+const FIT_VIEWPORT = `(function(){if(!/Android/i.test(navigator.userAgent))return;function fit(){var d=document.documentElement,r=document.getElementById('root');if(!r)return;if(Math.abs(r.offsetHeight-d.clientHeight)>1){var m=document.querySelector('meta[name=viewport]');if(m){var v=m.getAttribute('content');m.setAttribute('content',v+',height=device-height');requestAnimationFrame(function(){m.setAttribute('content',v)})}}window.dispatchEvent(new Event('resize'))}function soon(){setTimeout(fit,300);setTimeout(fit,1200)}window.addEventListener('load',soon);window.addEventListener('pageshow',function(e){if(e.persisted)soon()})})();`;
 
 const NO_MEDIA_MENU = `document.addEventListener('contextmenu',function(e){var t=e.target;if(t&&t.closest&&t.closest('img,video,[data-media]'))e.preventDefault();},{capture:true});`;
 

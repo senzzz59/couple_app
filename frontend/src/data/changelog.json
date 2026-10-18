@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "id": "fix-ios-standalone-viewport",
+      "date": "2026-10-19",
+      "title": "修复 iPhone 主屏幕打开页面变小",
+      "changes": [
+        { "type": "fix", "text": "修复 iPhone 从主屏幕图标打开时，整个页面变小、两边空出一大块的问题（更新后把 App 从后台划掉再打开一次）" }
+      ]
+    },
+    {
       "id": "viewer-polish-and-effects",
       "date": "2026-10-19",
       "title": "看照片更清爽，发表情有特效",
