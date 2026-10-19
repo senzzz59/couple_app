@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "id": "ios-desktop-mode-hint",
+      "date": "2026-10-19",
+      "title": "主屏幕 App 显示变小时给出提示",
+      "changes": [
+        { "type": "fix", "text": "iPhone 打开了「请求桌面网站」时，从主屏幕打开的 App 会被当成电脑网页缩得很小。现在会弹出提示，告诉你去哪里关掉，关掉后重新打开就正常了" }
+      ]
+    },
+    {
       "id": "upload-confirm-live-edit",
       "date": "2026-10-19",
       "title": "上传前可选日期，Live 图可以换封面",
