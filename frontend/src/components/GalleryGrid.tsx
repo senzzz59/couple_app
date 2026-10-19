@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { Check, ChevronDown, ChevronRight, Heart } from 'lucide-react-native';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withTiming, ZoomIn } from 'react-native-reanimated';
 
@@ -14,9 +14,13 @@ import { Avatar, PressScale, Row, Txt } from './ui';
 
 const GAP = 3;
 
-export function useGridColumns() {
+/**
+ * 每行几张、每张多大。按网格实际量到的宽度算（各页面左右留白不一样，
+ * 按屏幕宽度猜会算宽，第三张挤不下就掉到下一行，变成两列）；还没量到时先按屏幕估。
+ */
+export function useGridColumns(measured = 0) {
   const { width } = useWindowDimensions();
-  const w = Math.min(width, 720) - 32;
+  const w = measured > 0 ? measured : Math.min(width, 720) - 32;
   const cols = w > 600 ? 5 : w > 420 ? 4 : 3;
   return { cols, cell: Math.floor((w - GAP * (cols - 1)) / cols) };
 }
@@ -73,12 +77,13 @@ export function GalleryGrid({
   /** 另一半正在看的那张：描边 + 头像 */
   peer?: { itemId: string | null; user: User | null } | null;
 }) {
-  const { cell } = useGridColumns();
+  const [boxW, setBoxW] = useState(0);
+  const { cell } = useGridColumns(boxW);
   const groups = useMemo(() => (grouped ? groupByMonth(items) : [{ key: 'all', label: '', items }]), [items, grouped]);
   const indexOf = useMemo(() => new Map(items.map((x, i) => [x.id, i])), [items]);
 
   return (
-    <View style={{ gap: 18 }}>
+    <View style={{ gap: 18 }} onLayout={(e) => setBoxW(Math.floor(e.nativeEvent.layout.width))}>
       {groups.map((g) => (
         <View key={g.key} style={{ gap: 8 }} onLayout={onMonthLayout && ((e) => onMonthLayout(g.key, e.nativeEvent.layout.y))}>
           {!!g.label && (

@@ -207,6 +207,78 @@ export default function Viewer() {
   // Live 图换了封面：这里也换
   useEffect(() => onEntryChanged((e) => setItems((xs) => xs.map((x) => (x.id && x.id === e.id ? { ...x, ...e } : x)))), []);
 
+  // ---- 网页上翻页：只认手指 / 滚轮翻的页
+  // 浏览器自己也会滚（打开时跳到点的那张、页面排版变化后重新对齐吸附点），
+  // 这些滚动不能改当前是第几张，否则会跳到别的照片（比如点的是照片，打开却是第二个视频）
+  const isWeb = Platform.OS === 'web';
+  // 翻页停稳后的那张：视频 / Live 图停稳了才开始加载播放，滑动中不会卡、不会突然切过去
+  const [settled, setSettled] = useState(cur);
+  const touching = useRef(false);
+  const byUser = useRef(false);
+  const scrolling = useRef(false);
+  const idle = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pageAt = (x: number) => Math.max(0, Math.min(itemsRef.current.length - 1, Math.round(x / width)));
+  const scrollX = () => {
+    const node = list.current?.getScrollableNode?.() as { scrollLeft?: number } | undefined;
+    return node?.scrollLeft ?? curRef.current * width;
+  };
+  const settle = () => {
+    scrolling.current = false;
+    if (touching.current) return;
+    const i = pageAt(scrollX());
+    if (byUser.current) {
+      setCur(i);
+      setSettled(i);
+    } else {
+      if (i !== curRef.current) list.current?.scrollToIndex({ index: curRef.current, animated: false });
+      setSettled(curRef.current);
+    }
+    byUser.current = false;
+  };
+  const armSettle = (ms = 140) => {
+    if (idle.current) clearTimeout(idle.current);
+    idle.current = setTimeout(settle, ms);
+  };
+  const onWebScroll = (x: number) => {
+    scrolling.current = true;
+    if (byUser.current) setCur(pageAt(x));
+    armSettle();
+  };
+  useEffect(() => {
+    if (!isWeb) return;
+    const down = () => {
+      touching.current = true;
+      byUser.current = true;
+    };
+    const up = () => {
+      touching.current = false;
+      armSettle();
+    };
+    const wheel = () => {
+      byUser.current = true;
+    };
+    window.addEventListener('touchstart', down, { passive: true });
+    window.addEventListener('touchend', up);
+    window.addEventListener('touchcancel', up);
+    window.addEventListener('wheel', wheel, { passive: true });
+    // 打开后检查一次：没停在点的那张就拉回来
+    armSettle(250);
+    return () => {
+      window.removeEventListener('touchstart', down);
+      window.removeEventListener('touchend', up);
+      window.removeEventListener('touchcancel', up);
+      window.removeEventListener('wheel', wheel);
+      if (idle.current) clearTimeout(idle.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // 不是滑动换的张（按方向键、删除、一起看跟过去）：没在滚就直接算停稳
+  useEffect(() => {
+    if (!isWeb) return;
+    const t = setTimeout(() => !scrolling.current && setSettled(curRef.current), 160);
+    return () => clearTimeout(t);
+  }, [cur, isWeb]);
+
   const go = (i: number) => {
     const next = Math.max(0, Math.min(items.length - 1, i));
     if (next === cur) return;
@@ -367,7 +439,8 @@ export default function Viewer() {
 
 
   const page = ({ item: e, index }: { item: ViewerEntry; index: number }) => {
-    const active = index === cur;
+    // 手机 App 上 cur 本来就是翻页停稳后才更新的
+    const active = index === cur && (!isWeb || settled === cur);
     const box = fitted(e);
     return (
       <Pressable onPress={toggleChrome} style={{ width, height }}>
@@ -384,7 +457,7 @@ export default function Viewer() {
           {e.kind === 'video' && e.video ? (
             active ? (
               // 视频大小正好等于画面：进度条贴着画面底边，跟着上下按钮一起显示 / 隐藏
-              <Video uri={mediaUrl(e.video)!} poster={mediaUrl(e.image)} autoPlay controlsVisible={chrome} onTap={toggleChrome} style={box} />
+              <Video uri={mediaUrl(e.video)!} poster={mediaUrl(e.image)} placeholder={mediaUrl(e.image, 'thumb')} autoPlay controlsVisible={chrome} onTap={toggleChrome} style={box} />
             ) : (
               <Image source={mediaUrl(e.image, 'thumb')} style={box} contentFit="contain" />
             )
@@ -405,7 +478,7 @@ export default function Viewer() {
       <FlatList
         ref={list}
         data={items}
-        extraData={`${cur}-${chrome}-${area.w}x${area.h}`}
+        extraData={`${cur}-${settled}-${chrome}-${area.w}x${area.h}`}
         horizontal
         pagingEnabled
         initialScrollIndex={cur}
@@ -417,7 +490,7 @@ export default function Viewer() {
         showsHorizontalScrollIndicator={false}
         keyExtractor={(x, i) => `${x.id ?? x.image ?? x.video}-${i}`}
         onMomentumScrollEnd={(e) => setCur(Math.round(e.nativeEvent.contentOffset.x / width))}
-        onScroll={Platform.OS === 'web' ? (e) => setCur(Math.round(e.nativeEvent.contentOffset.x / width)) : undefined}
+        onScroll={isWeb ? (e) => onWebScroll(e.nativeEvent.contentOffset.x) : undefined}
         scrollEventThrottle={64}
         renderItem={page}
       />
