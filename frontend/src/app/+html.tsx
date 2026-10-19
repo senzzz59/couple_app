@@ -1,7 +1,7 @@
 import { ScrollViewStyleReset, useServerDocumentContext } from 'expo-router/html';
 import type { PropsWithChildren } from 'react';
 
-import { LAUNCH_CSS, LAUNCH_HTML, LAUNCH_JS, SPLASH, VIEWPORT, VIEWPORT_JS } from '@/lib/launchScreen';
+import { DESKTOP_MODE_JS, LAUNCH_CSS, LAUNCH_HTML, LAUNCH_JS, SPLASH, VIEWPORT, VIEWPORT_JS } from '@/lib/launchScreen';
 
 /**
  * 让网页用起来像 App：
@@ -62,7 +62,7 @@ export default function Root({ children }: PropsWithChildren) {
         <ScrollViewStyleReset />
         <style dangerouslySetInnerHTML={{ __html: APP_CSS }} />
         <style dangerouslySetInnerHTML={{ __html: LAUNCH_CSS }} />
-        <script dangerouslySetInnerHTML={{ __html: NO_SCROLL_RESTORE + FIT_VIEWPORT + NO_MEDIA_MENU + VIEWPORT_JS }} />
+        <script dangerouslySetInnerHTML={{ __html: NO_SCROLL_RESTORE + FIT_VIEWPORT + NO_MEDIA_MENU + DESKTOP_MODE_JS + VIEWPORT_JS }} />
         <script src="/web-build.js" />
         {headNodes}
       </head>
