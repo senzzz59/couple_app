@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 
+import { haptic } from '@/lib/haptics';
 import { fmtDuration, mediaUrl } from '@/lib/media';
 import type { MediaItem } from '@/lib/types';
 import { openViewer, type ViewerEntry } from '@/lib/viewer';
@@ -99,9 +100,19 @@ export function LivePhoto({ item, style, fit = 'cover', autoPlay, onPress, label
           <Video ref={video} uri={mediaUrl(item.video)!} controls={false} muted autoPlay={autoPlay} fit={fit} style={StyleSheet.absoluteFill} onPlaying={() => setPlaying(true)} onEnded={() => setPlaying(false)} />
         </View>
       )}
-      <View style={[styles.topLeft, { left: 8, top: 8 }]}>
+      {/* 点左上角的 LIVE：完整播一遍动态部分（和 iPhone 相册一样） */}
+      <Pressable
+        onPress={(e) => {
+          e.stopPropagation?.();
+          haptic.tap();
+          start();
+        }}
+        hitSlop={10}
+        accessibilityRole="button"
+        accessibilityLabel="播放 Live 图"
+        style={[styles.topLeft, { left: 8, top: 8 }]}>
         <LiveBadge />
-      </View>
+      </Pressable>
       {playing && glow && <Animated.View entering={FadeIn.duration(120)} exiting={FadeOut.duration(200)} pointerEvents="none" style={styles.liveGlow} />}
       {children}
     </Pressable>

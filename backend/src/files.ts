@@ -465,6 +465,26 @@ export async function copyFile(name: string | null | undefined): Promise<string 
   return next;
 }
 
+/** ffmpeg 能读的视频地址：本地文件，或对象存储的临时链接；都没有返回 null */
+export async function videoInput(name: string | null | undefined): Promise<string | null> {
+  if (!name || !FILE_NAME_RE.test(name)) return null;
+  const local = storage.localPath('main', name);
+  if (await fs.stat(local).catch(() => null)) return local;
+  if (storage.enabled && (await storage.existsRemote('main', name))) return (await storage.signedUrl('main', name)).url;
+  return null;
+}
+
+/** 把一张图片（比如从 Live 图里截的一帧）存成展示图 + 缩略图，和上传的照片一样 */
+export async function storeStill(buf: Buffer): Promise<{ image: string; width: number | null; height: number | null; size: number }> {
+  const image = `${crypto.randomUUID()}.jpg`;
+  const main = path.join(env.uploadDir, image);
+  const thumb = path.join(THUMB_DIR, image);
+  const info = await sharp(buf, { failOn: 'none' }).rotate().resize({ width: 2400, height: 2400, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 88, mozjpeg: true }).toFile(main);
+  await sharp(buf, { failOn: 'none' }).rotate().resize({ width: 600, withoutEnlargement: true }).jpeg({ quality: 78 }).toFile(thumb);
+  void offloadWritten([main, thumb]);
+  return { image, width: info.width ?? null, height: info.height ?? null, size: info.size ?? buf.length };
+}
+
 const VOICE_LIMIT = 3 * 1024 * 1024;
 const VOICE_TYPES = /^audio\/(webm|ogg|mp4|x-m4a|m4a|aac|mpeg)|^video\/(webm|mp4)/;
 

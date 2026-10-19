@@ -3,7 +3,7 @@ import { FastForward, Maximize, Minimize, Pause, Play, RotateCw, Volume2, Volume
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { ActivityIndicator, GestureResponderEvent, Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 
-export type VideoHandle = { play: () => void; pause: () => void; restart: () => void };
+export type VideoHandle = { play: () => void; pause: () => void; restart: () => void; /** 停在第几秒（选帧用） */ seek: (t: number) => void };
 
 export type VideoProps = {
   uri: string;
@@ -88,6 +88,13 @@ export const Video = forwardRef<VideoHandle, VideoProps>(function Video(
       if (!el.current) return;
       el.current.currentTime = 0;
       play();
+    },
+    seek: (t: number) => {
+      const v = el.current;
+      if (!v) return;
+      v.pause();
+      // 原生 fastSeek 更快但不精确；选帧要准，直接设 currentTime
+      v.currentTime = Math.max(0, Math.min(t, Number.isFinite(v.duration) ? v.duration : t));
     },
   }));
 

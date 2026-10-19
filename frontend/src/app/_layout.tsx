@@ -7,6 +7,7 @@ import { AppState, Platform, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { ConfirmHost } from '@/components/Confirm';
+import { UploadConfirmHost } from '@/components/UploadConfirm';
 // 尽早监听浏览器的「安装应用」事件
 import '@/lib/install';
 import { ConfettiHost, toast, ToastHost } from '@/components/motion';
@@ -144,6 +145,7 @@ function RootStack({ fontsLoaded }: { fontsLoaded: boolean }) {
           <Stack.Screen name="todo/new" options={modal} />
           <Stack.Screen name="anniversary/edit" options={modal} />
           <Stack.Screen name="viewer" options={{ presentation: 'transparentModal', animation: 'fade', contentStyle: { backgroundColor: 'transparent' } }} />
+          <Stack.Screen name="live-edit" options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }} />
         </Stack.Protected>
         <Stack.Protected guard={status === 'signedOut'}>
           <Stack.Screen name="login" options={{ animation: 'fade' }} />
@@ -182,6 +184,7 @@ export default function RootLayout() {
         </View>
         <ConfettiHost />
         <EffectsHost />
+        <UploadConfirmHost />
         <ConfirmHost />
         <ToastHost />
       </SessionProvider>

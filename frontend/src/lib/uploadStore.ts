@@ -5,6 +5,7 @@ export type StoredUpload = {
   id: string;
   albumId?: string;
   addedAt: number;
+  dateMode?: 'taken' | 'upload';
   meta: Omit<LocalMedia, 'uri' | 'videoUri' | 'posterUri'>;
   still?: Blob;
   video?: Blob;

@@ -111,6 +111,23 @@ export async function makePoster(file: string, out: string) {
   return again.code === 0;
 }
 
+/** 从视频里截一帧（at 秒处），保持原尺寸；at 超出结尾时退回最后附近 / 开头 */
+export async function extractFrame(input: string, at: number, out: string) {
+  const args = (ss: string[]) => ['-v', 'error', '-y', ...ss, '-i', input, '-frames:v', '1', '-q:v', '2', '-f', 'image2', out];
+  for (const ss of [['-ss', String(Math.max(0, at))], ['-sseof', '-0.2'], []]) {
+    const r = await exec('ffmpeg', args(ss), 60_000);
+    if (r.code === 0 && (await fs.stat(out).then((st) => st.size > 0).catch(() => false))) return true;
+  }
+  return false;
+}
+
+/** 胶片条：均匀截 count 帧，横着拼成一张图（每帧高 height） */
+export async function makeStrip(input: string, out: string, count: number, duration: number, height = 160) {
+  const fps = count / Math.max(0.1, duration);
+  const r = await exec('ffmpeg', ['-v', 'error', '-y', '-i', input, '-vf', `fps=${fps.toFixed(4)},scale=-2:${height},tile=${count}x1`, '-frames:v', '1', '-q:v', '5', '-f', 'image2', out], 60_000);
+  return r.code === 0;
+}
+
 const SCALE = "scale='if(gt(iw,ih),min(1920,iw),-2)':'if(gt(iw,ih),-2,min(1920,ih))'";
 
 export function transcodeArgs(input: string, output: string, plan: 'remux' | 'transcode') {

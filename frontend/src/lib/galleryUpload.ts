@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSyncExternalStore } from 'react';
 import { AppState, Platform } from 'react-native';
 
@@ -7,6 +8,7 @@ import { api, ApiError } from './api';
 import { haptic } from './haptics';
 import { pickMedia, releaseLocal, uploadMedia, type LocalMedia } from './media';
 import { invalidate } from './store';
+import { isCancelled } from './upload';
 import { deleteUpload, loadUploads, saveUpload } from './uploadStore';
 
 /**
@@ -17,6 +19,9 @@ import { deleteUpload, loadUploads, saveUpload } from './uploadStore';
  * - 同一个文件以前传过就「快速上传」：服务器直接复制一份，不用再传
  * 每传完一项就登记到相册，中途失败已经传好的不会丢。
  */
+/** 日期以什么为准：照片的拍摄时间（默认） / 上传的时间 */
+export type DateMode = 'taken' | 'upload';
+
 export type UploadStatus = 'queued' | 'uploading' | 'processing' | 'done' | 'instant' | 'failed';
 export type UploadItem = {
   id: string;
@@ -29,6 +34,7 @@ export type UploadItem = {
   /** 网络出错后，等到这个时间再重试 */
   retryAt?: number;
   addedAt: number;
+  dateMode?: DateMode;
 };
 export type UploadJob = { total: number; done: number; instant: number; failed: number; active: number; progress: number; status: 'uploading' | 'done' };
 
@@ -50,12 +56,21 @@ function summarize(): UploadJob | null {
   return { total: items.length, done: items.length - active, instant: count('instant'), failed: count('failed'), active, progress: sent / total, status: active ? 'uploading' : 'done' };
 }
 function emit() {
+  if (emitTimer) clearTimeout(emitTimer);
+  emitTimer = null;
   job = summarize();
   listeners.forEach((l) => l());
 }
+/** 进度一秒能来几十次：合并成最多 10 次刷新，几百项一起传时页面也不卡 */
+let emitTimer: ReturnType<typeof setTimeout> | null = null;
+function emitSoon() {
+  emitTimer ??= setTimeout(emit, 100);
+}
 function update(id: string, patch: Partial<UploadItem>) {
   items = items.map((i) => (i.id === id ? { ...i, ...patch } : i));
-  emit();
+  // 只有进度变了就晚一点再刷新；状态变化马上显示
+  if (Object.keys(patch).length === 1 && 'progress' in patch) emitSoon();
+  else emit();
 }
 const subscribe = (cb: () => void) => {
   listeners.add(cb);
@@ -111,23 +126,35 @@ function listen() {
   }
 }
 
+/** 正在传的每一项的取消开关 */
+const aborts = new Map<string, AbortController>();
+const alive = (id: string) => items.some((i) => i.id === id);
+
 async function work(item: UploadItem) {
   const { id, media: m, albumId } = item;
+  const ctl = new AbortController();
+  aborts.set(id, ctl);
   update(id, { status: 'uploading', progress: 0, error: undefined, retryAt: undefined });
   try {
     const [u] = await uploadMedia([m], {
       original: true,
-      onProgress: (p) => update(id, { progress: p }),
-      onStage: (s) => update(id, { status: s === 'processing' ? 'processing' : 'uploading' }),
+      signal: ctl.signal,
+      onProgress: (p) => alive(id) && update(id, { progress: p }),
+      onStage: (s) => alive(id) && update(id, { status: s === 'processing' ? 'processing' : 'uploading' }),
     });
+    // 传完了但已经被取消：不登记到相册（文件由服务器的定期清理删掉）
+    if (ctl.signal.aborted || !alive(id)) return;
+    // 按上传时间：用排进队列的时间（每项差 1 毫秒），不管哪项先传完，都按选择的顺序排
+    const takenAt = item.dateMode === 'upload' ? new Date(item.addedAt).toISOString() : (u.takenAt ?? null);
     await api.post('/api/gallery', {
       albumId,
-      items: [{ kind: u.kind, image: u.image, video: u.video, original: u.original ?? null, fileName: u.fileName ?? null, width: u.w ?? null, height: u.h ?? null, duration: u.duration ?? null, size: u.size ?? null, takenAt: u.takenAt ?? null }],
+      items: [{ kind: u.kind, image: u.image, video: u.video, original: u.original ?? null, fileName: u.fileName ?? null, width: u.w ?? null, height: u.h ?? null, duration: u.duration ?? null, size: u.size ?? null, takenAt }],
     });
     update(id, { status: u.instant ? 'instant' : 'done', progress: 1 });
     invalidate('gallery');
     void deleteUpload(id);
   } catch (e) {
+    if (isCancelled(e) || ctl.signal.aborted || !alive(id)) return;
     const attempts = item.attempts + 1;
     // 网络问题（断网、切到后台被系统掐断）或服务器临时出错：过一会儿自动重试
     if (e instanceof ApiError && (e.status === 0 || e.status >= 500) && attempts < MAX_ATTEMPTS) {
@@ -135,12 +162,18 @@ async function work(item: UploadItem) {
     } else {
       update(id, { status: 'failed', attempts, error: (e as Error).message });
     }
+  } finally {
+    aborts.delete(id);
   }
 }
 
 function finished() {
   const s = job;
-  if (!s) return;
+  if (!s) {
+    // 全部取消了：相册数量可能变过（取消前已经传完的几张）
+    invalidate('albums');
+    return;
+  }
   invalidate('albums');
   const parts = [s.instant ? `其中 ${s.instant} 项快速上传` : ''].filter(Boolean);
   if (s.failed) toast(`${s.failed} 项没传上去`, '⚠️', '可在上传列表中重试');
@@ -157,11 +190,11 @@ function finished() {
 
 // ---------------- 对外
 /** 把选好的照片 / 视频排进上传队列（可直接放进某个相册） */
-export function startGalleryUpload(list: LocalMedia[], albumId?: string) {
+export function startGalleryUpload(list: LocalMedia[], albumId?: string, dateMode: DateMode = 'taken') {
   if (!list.length) return;
   listen();
   const now = Date.now();
-  const added = list.map((media, n): UploadItem => ({ id: media.key, media, albumId, status: 'queued', progress: 0, attempts: 0, addedAt: now + n }));
+  const added = list.map((media, n): UploadItem => ({ id: media.key, media, albumId, status: 'queued', progress: 0, attempts: 0, addedAt: now + n, dateMode }));
   items = [...items, ...added];
   emit();
   pump();
@@ -174,7 +207,7 @@ async function persist(list: UploadItem[]) {
     const blob = async (file: Blob | undefined, uri?: string | null) => file ?? (uri ? await fetch(uri).then((r) => r.blob()).catch(() => undefined) : undefined);
     const { uri, videoUri, posterUri, file, videoFile, posterFile, ...meta } = it.media;
     const still = it.media.kind === 'video' ? undefined : await blob(file, uri);
-    const rec = { id: it.id, albumId: it.albumId, addedAt: it.addedAt, meta, still, video: await blob(videoFile, videoUri), poster: await blob(posterFile, posterUri) };
+    const rec = { id: it.id, albumId: it.albumId, addedAt: it.addedAt, dateMode: it.dateMode, meta, still, video: await blob(videoFile, videoUri), poster: await blob(posterFile, posterUri) };
     // 已经传完了就不用存了
     if (!items.some((i) => i.id === it.id && ACTIVE.includes(i.status))) continue;
     await saveUpload(rec).catch(() => {});
@@ -196,7 +229,7 @@ export async function restoreUploads() {
       const stillUri = url(r.still);
       const posterUri = url(r.poster);
       const media: LocalMedia = { ...r.meta, uri: stillUri ?? posterUri ?? null, videoUri: url(r.video), posterUri: posterUri ?? null, file: r.still, videoFile: r.video, posterFile: r.poster };
-      return { id: r.id, media, albumId: r.albumId, status: 'queued', progress: 0, attempts: 0, addedAt: r.addedAt };
+      return { id: r.id, media, albumId: r.albumId, status: 'queued', progress: 0, attempts: 0, addedAt: r.addedAt, dateMode: r.dateMode };
     });
   items = [...items, ...added];
   emit();
@@ -225,6 +258,20 @@ export function removeUpload(id: string) {
   void deleteUpload(id);
 }
 
+/** 一键取消：正在传的立刻中断，排队 / 失败的全部移除；已经传完的保留在相册里 */
+export function cancelAll() {
+  const gone = items.filter((i) => i.status !== 'done' && i.status !== 'instant');
+  if (!gone.length) return;
+  for (const it of gone) aborts.get(it.id)?.abort();
+  items = items.filter((i) => !gone.includes(i));
+  emit();
+  pump();
+  releaseLocal(gone.map((i) => i.media));
+  for (const it of gone) void deleteUpload(it.id);
+  if (!items.length) invalidate('albums');
+  toast(`已取消 ${gone.length} 项上传`, '✓');
+}
+
 /** 收起已经传完的 */
 export function clearFinished() {
   const gone = items.filter((i) => i.status === 'done' || i.status === 'instant');
@@ -234,9 +281,49 @@ export function clearFinished() {
   releaseLocal(gone.map((i) => i.media));
 }
 
-/** 选照片 / 视频并在后台上传到共享相册（可直接放进某个相册） */
+// ---------------- 选好之后的确认弹层（缩略图 + 日期以什么为准）
+export type PendingUpload = { list: LocalMedia[]; albumId?: string };
+let pending: PendingUpload | null = null;
+const pendingListeners = new Set<() => void>();
+function setPending(p: PendingUpload | null) {
+  pending = p;
+  pendingListeners.forEach((l) => l());
+}
+/** 等待确认的一批（UploadConfirm 用） */
+export function usePendingUpload() {
+  return useSyncExternalStore(
+    (cb) => {
+      pendingListeners.add(cb);
+      return () => void pendingListeners.delete(cb);
+    },
+    () => pending
+  );
+}
+
+const DATE_MODE_KEY = 'gallery:dateMode';
+export async function loadDateMode(): Promise<DateMode> {
+  const v = await AsyncStorage.getItem(DATE_MODE_KEY).catch(() => null);
+  return v === 'upload' ? 'upload' : 'taken';
+}
+
+/** 确认上传：记住这次选的日期方式，排进上传队列 */
+export function confirmPendingUpload(dateMode: DateMode) {
+  const p = pending;
+  setPending(null);
+  if (!p) return;
+  void AsyncStorage.setItem(DATE_MODE_KEY, dateMode).catch(() => {});
+  startGalleryUpload(p.list, p.albumId, dateMode);
+}
+
+export function dismissPendingUpload() {
+  const p = pending;
+  setPending(null);
+  if (p) releaseLocal(p.list);
+}
+
+/** 选照片 / 视频，确认后在后台上传到共享相册（可直接放进某个相册） */
 export async function uploadToGallery(albumId?: string) {
   const picked = await pickMedia({ max: 300 });
   if (!picked.length) return;
-  startGalleryUpload(picked, albumId);
+  setPending({ list: picked, albumId });
 }

@@ -29,7 +29,25 @@ export type UploadOptions = {
   onStage?: (stage: UploadStage) => void;
   /** 保留原图（相册用）：不在浏览器里压缩 */
   original?: boolean;
+  /** 取消上传：正在传的请求会立刻中断 */
+  signal?: AbortSignal;
 };
+
+/** 用户取消了上传（不是出错，不用重试、不用提示） */
+export const CANCELLED = -1;
+const cancelled = () => new ApiError('已取消', CANCELLED);
+export const isCancelled = (e: unknown) => e instanceof ApiError && e.status === CANCELLED;
+
+/** 把 XHR 和取消信号接起来；返回解绑函数 */
+function bindAbort(xhr: XMLHttpRequest, signal: AbortSignal | undefined, reject: (e: unknown) => void) {
+  if (!signal) return () => {};
+  const onAbort = () => {
+    xhr.abort();
+    reject(cancelled());
+  };
+  signal.addEventListener('abort', onAbort);
+  return () => signal.removeEventListener('abort', onAbort);
+}
 
 // 第二档：服务器说文件太大时，再压一次重试
 const LEVELS = [
@@ -147,9 +165,12 @@ const MIME_BY_EXT: Record<string, string> = {
 
 const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)}MB`;
 
-function send(form: FormData, total: number, onProgress?: (p: number) => void, query = '', onStage?: (s: UploadStage) => void) {
+function send(form: FormData, total: number, onProgress?: (p: number) => void, query = '', onStage?: (s: UploadStage) => void, signal?: AbortSignal) {
   return new Promise<unknown>((resolve, reject) => {
+    if (signal?.aborted) return reject(cancelled());
     const xhr = new XMLHttpRequest();
+    const unbind = bindAbort(xhr, signal, reject);
+    xhr.onloadend = unbind;
     xhr.open('POST', `${getBaseUrl()}/api/files${query}`);
     const token = getToken();
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
@@ -205,9 +226,12 @@ export async function fingerprint(blob: Blob): Promise<string | undefined> {
 let directOff = false;
 let directWorked = false;
 
-function put(url: string, blob: Blob, headers: Record<string, string>, onProgress: (loaded: number) => void) {
+function put(url: string, blob: Blob, headers: Record<string, string>, onProgress: (loaded: number) => void, signal?: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) return reject(cancelled());
     const xhr = new XMLHttpRequest();
+    const unbind = bindAbort(xhr, signal, reject);
+    xhr.onloadend = unbind;
     xhr.open('PUT', url);
     for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
     xhr.upload.onprogress = (e) => onProgress(e.loaded);
@@ -220,7 +244,7 @@ function put(url: string, blob: Blob, headers: Record<string, string>, onProgres
 }
 
 /** 直传到对象存储；返回 null 表示这次不能直传，调用方改走服务器 */
-async function sendDirect(files: Prepared[], original: boolean, onProgress?: (p: number) => void, onStage?: (s: UploadStage) => void): Promise<unknown | null> {
+async function sendDirect(files: Prepared[], original: boolean, onProgress?: (p: number) => void, onStage?: (s: UploadStage) => void, signal?: AbortSignal): Promise<unknown | null> {
   if (directOff || Platform.OS !== 'web') return null;
   let tickets: DirectTicket[] | undefined;
   const hashes = await Promise.all(files.map((f) => fingerprint(f.source ?? f.blob)));
@@ -246,13 +270,14 @@ async function sendDirect(files: Prepared[], original: boolean, onProgress?: (p:
     if (!('url' in t)) continue;
     const progress = (loaded: number) => onProgress?.(((done + loaded) / total) * 0.95);
     try {
-      await put(t.url, files[i].blob, t.headers, progress).catch(async (e) => {
+      await put(t.url, files[i].blob, t.headers, progress, signal).catch(async (e) => {
         // 网络抖了一下：等一会儿再传一次
         if (!(e instanceof ApiError && e.status === 0)) throw e;
         await new Promise((r) => setTimeout(r, 1500));
-        await put(t.url, files[i].blob, t.headers, progress);
+        await put(t.url, files[i].blob, t.headers, progress, signal);
       });
     } catch (e) {
+      if (isCancelled(e)) throw e;
       if (directWorked) throw e instanceof ApiError ? e : new ApiError('network', 0);
       // 从来没直传成功过：多半是对象存储不允许跨域，这次打开页面都走服务器
       if (e instanceof ApiError && e.status === 0) directOff = true;
@@ -261,6 +286,7 @@ async function sendDirect(files: Prepared[], original: boolean, onProgress?: (p:
     directWorked = true;
     done += files[i].blob.size;
   }
+  if (signal?.aborted) throw cancelled();
   try {
     onStage?.('processing');
     const out = await api.post<{ items: ServerItem[] }>('/api/files/complete', { uploads: pending.map(({ t, i }) => ({ id: t.id, name: files[i].name, hash: hashes[i] })), original });
@@ -297,25 +323,28 @@ export async function uploadFiles<T = { files: string[] }>(inputs: UploadInput[]
   if (Platform.OS === 'web' && !directOff) {
     prepared = [];
     for (const input of inputs) prepared.push(await webBlob(input, original, 0));
-    const direct = await sendDirect(prepared, original, opts.onProgress, opts.onStage);
+    if (opts.signal?.aborted) throw cancelled();
+    const direct = await sendDirect(prepared, original, opts.onProgress, opts.onStage, opts.signal);
     if (direct) return direct as T;
   }
   opts.onStage?.('uploading');
   let { form, total } = await buildForm(inputs, original, 0, prepared);
+  const sig = opts.signal;
   try {
-    return (await send(form, total, opts.onProgress, query, opts.onStage)) as T;
+    return (await send(form, total, opts.onProgress, query, opts.onStage, sig)) as T;
   } catch (e) {
-    if (!(e instanceof ApiError)) throw e;
+    if (!(e instanceof ApiError) || isCancelled(e)) throw e;
     // 服务器嫌大：网页上再压缩一档重试
     if (e.status === 413 && !original && Platform.OS === 'web') {
       ({ form, total } = await buildForm(inputs, original, 1));
-      return (await send(form, total, opts.onProgress, query, opts.onStage)) as T;
+      return (await send(form, total, opts.onProgress, query, opts.onStage, sig)) as T;
     }
     if (e.status !== 0) throw e;
     // 网络抖动：等一下再试一次
     await new Promise((r) => setTimeout(r, 1200));
+    if (sig?.aborted) throw cancelled();
     try {
-      return (await send(form, total, opts.onProgress, query, opts.onStage)) as T;
+      return (await send(form, total, opts.onProgress, query, opts.onStage, sig)) as T;
     } catch (e2) {
       if (e2 instanceof ApiError && e2.status === 0) {
         throw new ApiError(
