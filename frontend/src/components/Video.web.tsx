@@ -1,13 +1,20 @@
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { FastForward, Maximize, Minimize, Pause, Play, RotateCw, Volume2, VolumeX } from 'lucide-react-native';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { ActivityIndicator, GestureResponderEvent, Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import Animated, { FadeOut } from 'react-native-reanimated';
 
 export type VideoHandle = { play: () => void; pause: () => void; restart: () => void; /** 停在第几秒（选帧用） */ seek: (t: number) => void };
 
 export type VideoProps = {
   uri: string;
   poster?: string;
+  /**
+   * 已经加载好的小图（比如缩略图）：画面真正播出来之前一直盖着 poster（先显示这张小图），
+   * 播出来再淡出，翻到视频时不会先黑一下
+   */
+  placeholder?: string;
   style?: StyleProp<ViewStyle>;
   /** 显示自己的播放控件（不用浏览器自带的） */
   controls?: boolean;
@@ -49,7 +56,7 @@ const web = (p: Record<string, unknown>) => p as object;
 
 /** 网页版直接用 <video>：iPhone 上 playsInline 才能在页面里播放，不会强制全屏；控件是自己画的 */
 export const Video = forwardRef<VideoHandle, VideoProps>(function Video(
-  { uri, poster, style, controls = true, controlsVisible = true, onTap, autoPlay, muted = false, loop, fit = 'contain', onEnded, onPlaying },
+  { uri, poster, placeholder, style, controls = true, controlsVisible = true, onTap, autoPlay, muted = false, loop, fit = 'contain', onEnded, onPlaying },
   ref
 ) {
   const el = useRef<HTMLVideoElement>(null);
@@ -67,6 +74,8 @@ export const Video = forwardRef<VideoHandle, VideoProps>(function Video(
   const [fs, setFs] = useState(false);
   const [fsBar, setFsBar] = useState(true);
   const [landscape, setLandscape] = useState(false);
+  // 第一帧播出来了（或拖过进度条）：可以拿掉盖着的封面
+  const [shown, setShown] = useState(false);
 
   const play = () => {
     const v = el.current;
@@ -238,10 +247,12 @@ export const Video = forwardRef<VideoHandle, VideoProps>(function Video(
         onPause={() => setPaused(true)}
         onPlaying={() => {
           setWaiting(false);
+          setShown(true);
           onPlaying?.();
         }}
         onWaiting={() => setWaiting(true)}
         onCanPlay={() => setWaiting(false)}
+        onSeeked={() => setShown(true)}
         onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
         onDurationChange={(e) => setDuration(e.currentTarget.duration)}
         onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
@@ -251,6 +262,12 @@ export const Video = forwardRef<VideoHandle, VideoProps>(function Video(
         }}
         style={{ width: '100%', height: '100%', objectFit: fit, background: 'transparent', display: 'block', WebkitTouchCallout: 'none', userSelect: 'none' }}
       />
+
+      {!!placeholder && !shown && (
+        <Animated.View pointerEvents="none" exiting={FadeOut.duration(220)} style={StyleSheet.absoluteFill}>
+          <Image source={poster ?? placeholder} placeholder={placeholder} style={StyleSheet.absoluteFill} contentFit={fit} />
+        </Animated.View>
+      )}
 
       {controls && (
         <>
