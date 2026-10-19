@@ -1,10 +1,11 @@
 import { Image } from 'expo-image';
-import { ChevronRight, Play, RotateCw, X, Zap } from 'lucide-react-native';
+import { Ban, ChevronRight, Play, RotateCw, X, Zap } from 'lucide-react-native';
 import { useState } from 'react';
-import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { FlatList, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
-import { clearFinished, removeUpload, retryFailed, retryUpload, useUploadItems, useUploadJob, type UploadItem } from '@/lib/galleryUpload';
+import { confirm } from '@/lib/confirm';
+import { cancelAll, clearFinished, removeUpload, retryFailed, retryUpload, useUploadItems, useUploadJob, type UploadItem } from '@/lib/galleryUpload';
 import { fmtSize } from '@/lib/media';
 import { colors, radius, shadow } from '@/theme';
 
@@ -60,6 +61,13 @@ function UploadSheet({ visible, onClose }: { visible: boolean; onClose: () => vo
   const job = useUploadJob();
   const { height } = useWindowDimensions();
   const finished = items.filter((i) => i.status === 'done' || i.status === 'instant').length;
+  const unfinished = items.length - finished;
+  const cancel = async () => {
+    // 先收起上传列表，确认框才不会被它挡住
+    onClose();
+    if (!(await confirm(`取消全部 ${unfinished} 项上传？`, finished ? '已经传完的会保留在相册里' : '正在传的会立刻停下', '全部取消', { cancelText: '继续上传' }))) return;
+    cancelAll();
+  };
   return (
     <Sheet visible={visible} onClose={onClose} dragAnywhere={false} style={{ gap: 12 }}>
       <Row style={{ justifyContent: 'space-between' }}>
@@ -75,6 +83,14 @@ function UploadSheet({ visible, onClose }: { visible: boolean; onClose: () => vo
             </Txt>
           </PressScale>
         )}
+        {unfinished > 0 && (
+          <PressScale onPress={cancel} style={styles.action}>
+            <Ban size={14} color={colors.pinkInk} />
+            <Txt v="caption" color={colors.pinkInk} style={{ fontWeight: '600' }}>
+              全部取消
+            </Txt>
+          </PressScale>
+        )}
         {finished > 0 && (
           <PressScale onPress={clearFinished} style={styles.action}>
             <Txt v="caption" color={colors.inkSoft} style={{ fontWeight: '600' }}>
@@ -83,11 +99,16 @@ function UploadSheet({ visible, onClose }: { visible: boolean; onClose: () => vo
           </PressScale>
         )}
       </Row>
-      <ScrollView style={{ maxHeight: height * 0.55 }} contentContainerStyle={{ gap: 2, paddingBottom: 12 }}>
-        {items.map((it) => (
-          <UploadRow key={it.id} it={it} />
-        ))}
-      </ScrollView>
+      {/* 几百项时只渲染看得到的几行 */}
+      <FlatList
+        style={{ maxHeight: height * 0.55 }}
+        contentContainerStyle={{ paddingBottom: 12 }}
+        data={items}
+        keyExtractor={(it) => it.id}
+        renderItem={({ item }) => <UploadRow it={item} />}
+        initialNumToRender={12}
+        windowSize={5}
+      />
     </Sheet>
   );
 }

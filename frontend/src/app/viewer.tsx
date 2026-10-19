@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
-import { useLocalSearchParams } from 'expo-router';
-import { ChevronLeft, ChevronRight, Download, FolderPlus, Heart, ImageDown, PenLine, Send, Trash2, Users, X } from 'lucide-react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import { ChevronLeft, ChevronRight, Download, FolderPlus, Heart, ImageDown, PenLine, Send, SquarePen, Trash2, Users, X } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, FadeOut, ZoomIn } from 'react-native-reanimated';
@@ -25,7 +25,7 @@ import { useCouple } from '@/lib/session';
 import { BLOB_REACTIONS, blobReaction, reactionText } from '@/lib/stickers';
 import { invalidate } from '@/lib/store';
 import type { GalleryItem } from '@/lib/types';
-import { galleryEntry, saveEntry, viewerSession, type ViewerEntry, type ViewerSession } from '@/lib/viewer';
+import { galleryEntry, onEntryChanged, saveEntry, viewerSession, type ViewerEntry, type ViewerSession } from '@/lib/viewer';
 import { colors, radius } from '@/theme';
 
 const fmtWhen = (iso?: string) => {
@@ -204,6 +204,9 @@ export default function Viewer() {
       }),
     [partnerName]
   );
+  // Live 图换了封面：这里也换
+  useEffect(() => onEntryChanged((e) => setItems((xs) => xs.map((x) => (x.id && x.id === e.id ? { ...x, ...e } : x)))), []);
+
   const go = (i: number) => {
     const next = Math.max(0, Math.min(items.length - 1, i));
     if (next === cur) return;
@@ -470,6 +473,9 @@ export default function Viewer() {
                 </Txt>
               )}
             </View>
+            {shared && item.kind === 'live' && !!item.video && (
+              <IconButton icon={SquarePen} bg="rgba(255,255,255,0.15)" color={colors.white} onPress={() => router.push({ pathname: '/live-edit', params: { id: item.id! } })} label="编辑 Live 图" />
+            )}
             <IconButton icon={X} bg="rgba(255,255,255,0.15)" color={colors.white} onPress={goBack} label="关闭" />
           </Row>
           {chips && (

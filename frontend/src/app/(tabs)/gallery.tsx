@@ -28,12 +28,11 @@ import { useKept } from '@/lib/useKept';
 import { galleryEntry, openViewer } from '@/lib/viewer';
 import { colors, radius, shadow } from '@/theme';
 
-type Filter = 'all' | 'image' | 'video' | 'live' | 'favorite';
+type Filter = 'all' | 'image' | 'video' | 'favorite';
 const FILTERS: { key: Filter; label: string; empty: string; emoji: string }[] = [
   { key: 'all', label: '全部', empty: '还没有照片', emoji: '🖼️' },
   { key: 'image', label: '照片', empty: '还没有照片', emoji: '🖼️' },
   { key: 'video', label: '视频', empty: '还没有视频', emoji: '🎞️' },
-  { key: 'live', label: 'Live 图', empty: '还没有 Live 图', emoji: '🎞️' },
   { key: 'favorite', label: '收藏', empty: '还没有收藏', emoji: '❤️' },
 ];
 const TZ = (() => {
@@ -45,7 +44,8 @@ const TZ = (() => {
 })();
 const PAGE = 300;
 
-const filterQuery = (f: Filter) => (f === 'favorite' ? '&favorite=1' : f === 'all' ? '' : `&kind=${f}`);
+// 「照片」里也有 Live 图（kind=photo）：Live 图本来就是照片
+const filterQuery = (f: Filter) => (f === 'favorite' ? '&favorite=1' : f === 'all' ? '' : f === 'image' ? '&kind=photo' : `&kind=${f}`);
 
 function AlbumCard({ a, size }: { a: Album; size: number }) {
   return (

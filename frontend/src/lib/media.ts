@@ -102,49 +102,62 @@ export function probeVideo(uri: string): Promise<{ w?: number; h?: number; durat
   });
 }
 
-function imageSize(uri: string): Promise<{ w?: number; h?: number }> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
-    img.onerror = () => resolve({});
-    img.src = uri;
-  });
-}
-
 /**
- * 把选中的文件整理成媒体：
+ * 把选中的文件整理成媒体（只做马上能做完的事，选几百张也不用等）：
  * - 同名的照片 + 视频（iPhone 导出的 IMG_1234.HEIC + IMG_1234.MOV）合成一张 Live 图
- * - 视频截取封面
+ * - 视频截封面、读时长放到真正上传前再做（probeLocal），不挡着上传进度出来
  */
 export async function prepareFiles(files: File[], allowVideo = true): Promise<LocalMedia[]> {
   const videos = files.filter(isVideoFile);
   const images = files.filter((f) => !isVideoFile(f) && (f.type.startsWith('image/') || /\.(jpe?g|png|gif|webp|heic|heif)$/i.test(f.name)));
+  // 按名字建索引：几百个文件配对也是一眨眼
+  const videoByBase = new Map<string, File[]>();
+  for (const v of videos) videoByBase.set(base(v.name), [...(videoByBase.get(base(v.name)) ?? []), v]);
+  const imageSet = new Set(images);
+  const imageBases = new Set(images.map((f) => base(f.name)));
   const used = new Set<File>();
   const out: LocalMedia[] = [];
   for (const f of files) {
     if (used.has(f)) continue;
-    if (!isVideoFile(f) && images.includes(f)) {
-      const pair = videos.find((v) => !used.has(v) && base(v.name) === base(f.name));
+    if (imageSet.has(f)) {
       used.add(f);
+      const pair = allowVideo ? videoByBase.get(base(f.name))?.find((v) => !used.has(v)) : undefined;
       const uri = URL.createObjectURL(f);
-      const size = await imageSize(uri);
-      if (pair && allowVideo) {
+      if (pair) {
         used.add(pair);
-        const videoUri = URL.createObjectURL(pair);
-        const meta = await probeVideo(videoUri);
-        out.push({ key: key(), kind: 'live', uri, name: f.name, mime: f.type, videoUri, videoName: pair.name, videoMime: pair.type, ...size, duration: meta.duration, lastModified: f.lastModified, size: f.size + pair.size, file: f, videoFile: pair });
+        out.push({ key: key(), kind: 'live', uri, name: f.name, mime: f.type, videoUri: URL.createObjectURL(pair), videoName: pair.name, videoMime: pair.type, lastModified: f.lastModified, size: f.size + pair.size, file: f, videoFile: pair });
       } else {
-        out.push({ key: key(), kind: 'image', uri, name: f.name, mime: f.type, ...size, lastModified: f.lastModified, size: f.size, file: f });
+        out.push({ key: key(), kind: 'image', uri, name: f.name, mime: f.type, lastModified: f.lastModified, size: f.size, file: f });
       }
-    } else if (isVideoFile(f) && allowVideo) {
+    } else if (isVideoFile(f) && allowVideo && !imageBases.has(base(f.name))) {
+      // 有同名照片的视频是 Live 图的动态部分，跟着照片一起处理（不管选的时候谁在前）
       used.add(f);
-      const videoUri = URL.createObjectURL(f);
-      const meta = await probeVideo(videoUri);
-      const posterUri = meta.poster ? URL.createObjectURL(meta.poster) : null;
-      out.push({ key: key(), kind: 'video', uri: posterUri, posterUri, name: f.name, videoUri, videoName: f.name, videoMime: f.type, w: meta.w, h: meta.h, duration: meta.duration, lastModified: f.lastModified, size: f.size, videoFile: f, posterFile: meta.poster ?? undefined });
+      out.push({ key: key(), kind: 'video', uri: null, posterUri: null, name: f.name, videoUri: URL.createObjectURL(f), videoName: f.name, videoMime: f.type, lastModified: f.lastModified, size: f.size, videoFile: f });
     }
   }
   return out;
+}
+
+const probing = new Map<string, Promise<LocalMedia>>();
+/**
+ * 网页：补上视频封面、时长和尺寸（浏览器里截一帧）。同一项只做一次；
+ * 确认弹层里先显示的几项、上传前都会调用。
+ */
+export function probeLocal(m: LocalMedia): Promise<LocalMedia> {
+  if (Platform.OS !== 'web' || m.kind === 'image' || !m.videoUri) return Promise.resolve(m);
+  if (m.kind === 'video' && m.posterUri) return Promise.resolve(m);
+  if (m.kind === 'live' && m.duration) return Promise.resolve(m);
+  let p = probing.get(m.key);
+  if (!p) {
+    p = probeVideo(m.videoUri).then((meta) => {
+      if (m.kind === 'live') return { ...m, duration: meta.duration };
+      const posterUri = meta.poster ? URL.createObjectURL(meta.poster) : null;
+      return { ...m, uri: posterUri, posterUri, w: meta.w, h: meta.h, duration: meta.duration, posterFile: meta.poster ?? undefined };
+    });
+    probing.set(m.key, p);
+    void p.finally(() => setTimeout(() => probing.delete(m.key), 60_000));
+  }
+  return p;
 }
 
 /** 选照片 / 视频（网页用文件选择框，原生用系统相册） */
@@ -184,8 +197,8 @@ export type UploadedMedia = MediaItem & { original?: string | null; fileName?: s
  * 逐项上传（一项失败不影响已经传完的），返回服务器上的媒体。
  * original：相册用，保留原图供下载。
  */
-export async function uploadMedia(list: LocalMedia[], opts: { original?: boolean; onProgress?: (p: number) => void; onStage?: (s: UploadStage) => void } = {}): Promise<UploadedMedia[]> {
-  const onStage = opts.onStage;
+export async function uploadMedia(list: LocalMedia[], opts: { original?: boolean; onProgress?: (p: number) => void; onStage?: (s: UploadStage) => void; signal?: AbortSignal } = {}): Promise<UploadedMedia[]> {
+  const { onStage, signal } = opts;
   const total = list.reduce((s, m) => s + (m.size ?? 1), 0) || 1;
   let done = 0;
   const out: UploadedMedia[] = [];
@@ -193,21 +206,23 @@ export async function uploadMedia(list: LocalMedia[], opts: { original?: boolean
   for (const m of list) {
     const lastModified = m.lastModified ? new Date(m.lastModified).toISOString() : null;
     if (m.kind === 'image') {
-      const res = await uploadFiles<UploadResponse>([{ uri: m.uri!, name: m.name, mime: m.mime }], { original: opts.original, onProgress: step(m, 1), onStage });
+      const res = await uploadFiles<UploadResponse>([{ uri: m.uri!, name: m.name, mime: m.mime }], { original: opts.original, onProgress: step(m, 1), onStage, signal });
       const it = res.items?.[0];
       out.push({ kind: it?.kind ?? 'image', image: it?.image ?? res.files[0], video: it?.video ?? null, w: it?.width ?? m.w, h: it?.height ?? m.h, original: it?.original, fileName: m.name, size: it?.size ?? m.size, takenAt: it?.takenAt ?? lastModified, instant: !!res.instant });
     } else if (m.kind === 'video') {
-      const v = await uploadFiles<UploadResponse>([{ uri: m.videoUri!, name: m.videoName, mime: m.videoMime }], { original: opts.original, onProgress: step(m, 0.95), onStage });
+      const v = await uploadFiles<UploadResponse>([{ uri: m.videoUri!, name: m.videoName, mime: m.videoMime }], { original: opts.original, onProgress: step(m, 0.95), onStage, signal });
       const it = v.items?.[0];
       // 服务器截的封面优先（iPhone 的 HEVC 视频在很多安卓浏览器里截不到）
       let image: string | null = it?.image ?? null;
-      if (!image && m.posterUri) image = (await uploadFiles<UploadResponse>([{ uri: m.posterUri, name: 'poster.jpg', mime: 'image/jpeg' } as UploadInput])).files[0];
+      // 服务器截不到封面（没装 ffmpeg）时，才在浏览器里截一帧补上
+      const posterUri = image ? null : (await probeLocal(m)).posterUri;
+      if (posterUri) image = (await uploadFiles<UploadResponse>([{ uri: posterUri, name: 'poster.jpg', mime: 'image/jpeg' } as UploadInput], { signal })).files[0];
       out.push({ kind: 'video', image, video: it?.video ?? v.files[0], w: it?.width ?? m.w, h: it?.height ?? m.h, duration: it?.duration ?? m.duration, original: it?.original ?? null, fileName: m.videoName, size: it?.size ?? m.size, takenAt: lastModified, instant: !!v.instant });
     } else {
-      const still = await uploadFiles<UploadResponse>([{ uri: m.uri!, name: m.name, mime: m.mime }], { original: opts.original, onProgress: step(m, 0.4), onStage });
-      const vid = await uploadFiles<UploadResponse>([{ uri: m.videoUri!, name: m.videoName, mime: m.videoMime }], { onProgress: step(m, 0.6), onStage });
+      const still = await uploadFiles<UploadResponse>([{ uri: m.uri!, name: m.name, mime: m.mime }], { original: opts.original, onProgress: step(m, 0.4), onStage, signal });
+      const vid = await uploadFiles<UploadResponse>([{ uri: m.videoUri!, name: m.videoName, mime: m.videoMime }], { onProgress: step(m, 0.6), onStage, signal });
       const it = still.items?.[0];
-      out.push({ kind: 'live', image: it?.image ?? still.files[0], video: vid.items?.[0]?.video ?? vid.files[0], w: it?.width ?? m.w, h: it?.height ?? m.h, duration: m.duration, original: it?.original, fileName: m.name, size: m.size, takenAt: it?.takenAt ?? lastModified, instant: !!still.instant && !!vid.instant });
+      out.push({ kind: 'live', image: it?.image ?? still.files[0], video: vid.items?.[0]?.video ?? vid.files[0], w: it?.width ?? m.w, h: it?.height ?? m.h, duration: vid.items?.[0]?.duration ?? m.duration, original: it?.original, fileName: m.name, size: m.size, takenAt: it?.takenAt ?? lastModified, instant: !!still.instant && !!vid.instant });
     }
     done += m.size ?? 1;
     opts.onProgress?.(Math.min(1, done / total));

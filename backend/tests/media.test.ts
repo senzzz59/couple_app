@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import sharp from 'sharp';
 
 import { downloadName, exifTakenAt, galleryCursor, findEmbeddedVideo, mediaFiles, normalizeMedia, videoExt } from '../src/media.ts';
-import { displaySize, makePoster, probeVideo, transcodeArgs, videoPlan } from '../src/transcode.ts';
+import { displaySize, extractFrame, makePoster, makeStrip, probeVideo, transcodeArgs, videoPlan } from '../src/transcode.ts';
 import { crc32, uniqueNames, zipStream } from '../src/zip.ts';
 
 test('video uploads are recognised by mime type or by extension', () => {
@@ -108,6 +108,28 @@ test('an iPhone-style HEVC 10-bit video becomes H.264 that every browser plays',
     assert.equal(after?.pixFmt, 'yuv420p');
     assert.equal(videoPlan(after!), 'ok');
     assert.ok(await makePoster(src, path.join(dir, 'poster.jpg')));
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('live photo editing: a frame is cut at full size and a film strip has every frame side by side', { skip: !execSync('command -v ffmpeg || true').toString().trim() }, async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'couple-live-'));
+  try {
+    const src = path.join(dir, 'live.mp4');
+    execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=duration=2:size=360x640:rate=15', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', src]);
+    const frame = path.join(dir, 'frame.jpg');
+    assert.ok(await extractFrame(src, 1.2, frame));
+    const meta = await sharp(frame).metadata();
+    assert.equal(meta.width, 360);
+    assert.equal(meta.height, 640);
+    // 超出结尾也能截到（退回最后附近）
+    assert.ok(await extractFrame(src, 30, path.join(dir, 'late.jpg')));
+    const strip = path.join(dir, 'strip.jpg');
+    assert.ok(await makeStrip(src, strip, 10, 2, 160));
+    const s = await sharp(strip).metadata();
+    assert.equal(s.height, 160);
+    assert.equal(s.width, 90 * 10);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

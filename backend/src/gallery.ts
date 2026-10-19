@@ -4,7 +4,12 @@ import { z } from 'zod';
 
 import { db, schema } from './db/index.ts';
 import { env } from './env.ts';
-import { copyFile, FILE_NAME_RE, fileSource, ORIG_RE, removeFiles, removeOriginals } from './files.ts';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
+import { copyFile, FILE_NAME_RE, fileSource, ORIG_RE, removeFiles, removeOriginals, storeStill, videoInput } from './files.ts';
+import { extractFrame, ffmpegAvailable, makeStrip, probeVideo } from './transcode.ts';
 import { broadcast } from './realtime.ts';
 import { notifyPartner } from './webPush.ts';
 import { pickCovers } from './monthCovers.ts';
@@ -19,6 +24,11 @@ const uploaded = z.string().regex(FILE_NAME_RE, '文件名不对');
 const original = z.string().regex(ORIG_RE, '文件名不对');
 const ids = z.array(z.string().length(36)).min(1).max(1000);
 const opt = <T extends z.ZodType>(t: T) => t.nullable().optional();
+/** 「照片」筛选里也有 Live 图：它们本来就是照片，只是多了一段动态 */
+export const kindFilter = (kind: 'image' | 'video' | 'live' | 'photo') => (kind === 'photo' ? inArray(g.kind, ['image', 'live']) : eq(g.kind, kind));
+/** 胶片条缓存（重启后重新生成就行） */
+const STRIP_DIR = path.join(os.tmpdir(), 'us-live-strips');
+const STRIP_FRAMES = 10;
 
 const itemInput = z
   .object({
@@ -50,14 +60,14 @@ export async function galleryRoutes(app: FastifyInstance) {
         limit: z.coerce.number().int().min(1).max(10000).default(300),
         before: z.string().optional(),
         album: z.string().length(36).optional(),
-        kind: z.enum(['image', 'video', 'live']).optional(),
+        kind: z.enum(['image', 'video', 'live', 'photo']).optional(),
         favorite: z.enum(['1']).optional(),
       })
       .parse(req.query);
     const cursor = galleryCursor(q.before);
     const conds: (SQL | undefined)[] = [];
     if (cursor) conds.push(or(lt(g.takenAt, cursor.at), and(eq(g.takenAt, cursor.at), lt(g.id, cursor.id))));
-    if (q.kind) conds.push(eq(g.kind, q.kind));
+    if (q.kind) conds.push(kindFilter(q.kind));
     if (q.favorite) conds.push(eq(g.favorite, true));
     if (q.album) conds.push(inArray(g.id, db.select({ id: s.albumItems.itemId }).from(s.albumItems).where(eq(s.albumItems.albumId, q.album))));
     return db
@@ -72,7 +82,7 @@ export async function galleryRoutes(app: FastifyInstance) {
   app.get('/api/gallery/months', auth, async (req) => {
     const q = z
       .object({
-        kind: z.enum(['image', 'video', 'live']).optional(),
+        kind: z.enum(['image', 'video', 'live', 'photo']).optional(),
         favorite: z.enum(['1']).optional(),
         tz: z.string().max(64).optional(),
       })
@@ -87,7 +97,7 @@ export async function galleryRoutes(app: FastifyInstance) {
       }
     }
     const conds: (SQL | undefined)[] = [];
-    if (q.kind) conds.push(eq(g.kind, q.kind));
+    if (q.kind) conds.push(kindFilter(q.kind));
     if (q.favorite) conds.push(eq(g.favorite, true));
     const rows = await db
       .select({ at: g.takenAt, image: g.image, favorite: g.favorite })
@@ -195,6 +205,75 @@ export async function galleryRoutes(app: FastifyInstance) {
     if (Object.keys(data).length) await db.update(g).set(data).where(eq(g.id, id));
     changed(req.user.sub);
     return (await db.select().from(g).where(eq(g.id, id)))[0];
+  });
+
+  // ---- Live 图编辑：胶片条（均匀截 10 帧拼成一张），选帧用
+  app.get('/api/gallery/:id/strip', auth, async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const [row] = await db.select().from(g).where(eq(g.id, id));
+    if (!row || row.kind !== 'live' || !row.video) return reply.code(404).send({ message: '这张不是 Live 图' });
+    if (!(await ffmpegAvailable())) return reply.code(503).send({ message: '服务器暂不支持编辑 Live 图' });
+    const input = await videoInput(row.video);
+    if (!input) return reply.code(404).send({ message: '找不到这张 Live 图的视频' });
+    let duration = row.duration ?? null;
+    if (!duration) duration = (await probeVideo(input))?.duration ?? null;
+    if (!duration) return reply.code(422).send({ message: '读不出这段 Live 视频的时长' });
+    await fs.mkdir(STRIP_DIR, { recursive: true });
+    const file = path.join(STRIP_DIR, `${row.video}.jpg`);
+    if (!(await fs.stat(file).catch(() => null)) && !(await makeStrip(input, file, STRIP_FRAMES, duration))) {
+      return reply.code(500).send({ message: '生成预览失败' });
+    }
+    const buf = await fs.readFile(file);
+    return { strip: `data:image/jpeg;base64,${buf.toString('base64')}`, frames: STRIP_FRAMES, duration };
+  });
+
+  // ---- Live 图编辑：把某一帧设为封面，或者导出成一张新照片
+  app.post('/api/gallery/:id/frame', auth, async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const body = z.object({ at: z.number().min(0).max(600), action: z.enum(['cover', 'photo']) }).parse(req.body);
+    const [row] = await db.select().from(g).where(eq(g.id, id));
+    if (!row || row.kind !== 'live' || !row.video) return reply.code(404).send({ message: '这张不是 Live 图' });
+    if (!(await ffmpegAvailable())) return reply.code(503).send({ message: '服务器暂不支持编辑 Live 图' });
+    const input = await videoInput(row.video);
+    if (!input) return reply.code(404).send({ message: '找不到这张 Live 图的视频' });
+    await fs.mkdir(STRIP_DIR, { recursive: true });
+    const tmp = path.join(STRIP_DIR, `${crypto.randomUUID()}.jpg`);
+    let still: Awaited<ReturnType<typeof storeStill>>;
+    try {
+      if (!(await extractFrame(input, body.at, tmp))) return reply.code(500).send({ message: '截取画面失败' });
+      still = await storeStill(await fs.readFile(tmp));
+    } finally {
+      await fs.rm(tmp, { force: true });
+    }
+    if (body.action === 'cover') {
+      // 封面换成这一帧；下载也跟着变成这一帧（旧的封面和原图一起删掉）
+      await db.update(g).set({ image: still.image, original: null }).where(eq(g.id, id));
+      await removeFiles([row.image]);
+      await removeOriginals([row.original]);
+      changed(req.user.sub);
+      return (await db.select().from(g).where(eq(g.id, id)))[0];
+    }
+    const base = (row.fileName ?? '').replace(/\.[^.]+$/, '') || 'live';
+    const item = {
+      id: crypto.randomUUID(),
+      kind: 'image' as const,
+      image: still.image,
+      video: null,
+      original: null,
+      fileName: `${base}-frame.jpg`,
+      width: still.width,
+      height: still.height,
+      duration: null,
+      size: still.size,
+      // 紧挨着原来那张
+      takenAt: new Date(new Date(row.takenAt).getTime() + 1),
+      createdBy: req.user.sub,
+    };
+    await db.insert(g).values(item);
+    const albums = await db.select({ albumId: s.albumItems.albumId }).from(s.albumItems).where(eq(s.albumItems.itemId, id));
+    if (albums.length) await db.insert(s.albumItems).values(albums.map((a) => ({ albumId: a.albumId, itemId: item.id })));
+    changed(req.user.sub);
+    return (await db.select().from(g).where(eq(g.id, item.id)))[0];
   });
 
   // ---- 批量操作：删除 / 收藏 / 取消收藏

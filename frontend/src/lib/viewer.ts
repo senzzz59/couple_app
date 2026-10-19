@@ -137,3 +137,14 @@ export async function downloadMany(ids: string[]) {
   if (Platform.OS === 'web') anchorDownload(full);
   else await Linking.openURL(full);
 }
+
+/** 某一项被改了（比如 Live 图换了封面）：打开着的查看器跟着换 */
+type EntryListener = (e: ViewerEntry) => void;
+const entryListeners = new Set<EntryListener>();
+export function onEntryChanged(fn: EntryListener) {
+  entryListeners.add(fn);
+  return () => void entryListeners.delete(fn);
+}
+export function entryChanged(e: ViewerEntry) {
+  entryListeners.forEach((l) => l(e));
+}
