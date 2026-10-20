@@ -191,7 +191,7 @@ function send(form: FormData, total: number, onProgress?: (p: number) => void, q
     };
     xhr.onerror = () => reject(new ApiError('network', 0));
     xhr.ontimeout = () => reject(new ApiError('network', 0));
-    xhr.timeout = 30 * 60 * 1000;
+    xhr.timeout = 3 * 60 * 60 * 1000;
     xhr.send(form);
   });
 }
@@ -238,7 +238,7 @@ function put(url: string, blob: Blob, headers: Record<string, string>, onProgres
     xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new ApiError(`上传失败（${xhr.status}）`, xhr.status)));
     xhr.onerror = () => reject(new ApiError('network', 0));
     xhr.ontimeout = () => reject(new ApiError('network', 0));
-    xhr.timeout = 30 * 60 * 1000;
+    xhr.timeout = 3 * 60 * 60 * 1000;
     xhr.send(blob);
   });
 }

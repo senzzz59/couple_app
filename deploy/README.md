@@ -54,7 +54,7 @@ node --env-file=/www/couple-app/shared/frontend.env deploy/deploy-all.mjs
 3. 在站点 `server {}` 内加入 `deploy/baota-nginx.conf`，替换原来的 `location /`，保留宝塔生成的证书、监听端口和域名配置。
 4. 检测并重载 Nginx。打开 `/api/health`，应返回 `{"ok":true}`，然后打开首页。
 
-上传照片或视频提示「文件太大」「上传中断」时，检查 `location ^~ /api/` 中是否有 `client_max_body_size 520m;`、`client_body_timeout 600s;` 和 `proxy_request_buffering off;`。宝塔默认的上传上限很小，视频会被拦下。如果网站前面还有 CDN，CDN 的上传上限也需要放宽。
+上传照片或视频提示「文件太大」「上传中断」时，检查 `location ^~ /api/` 中是否有 `client_max_body_size 2100m;`（视频最大 2GB）、`client_body_timeout 600s;` 和 `proxy_request_buffering off;`。宝塔默认的上传上限很小，视频会被拦下。如果网站前面还有 CDN，CDN 的上传上限也需要放宽。
 
 部署脚本不自动删除旧版本。新版本保留旧的带哈希资源，避免仍打开旧页面的手机加载失败。
 

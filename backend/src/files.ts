@@ -61,7 +61,9 @@ export async function initStorage(log: { info: (o: object, m: string) => void; w
 }
 
 const IMAGE_LIMIT = 60 * 1024 * 1024;
-const VIDEO_LIMIT = 500 * 1024 * 1024;
+const VIDEO_LIMIT = 2 * 1024 * 1024 * 1024;
+const VIDEO_MAX = '2GB';
+const IMAGE_MAX = '60MB';
 
 export type UploadedItem = {
   kind: 'image' | 'video' | 'live';
@@ -188,7 +190,7 @@ async function processRemoteVideo(remote: string, vext: string, fileName: string
 
 /** 图片：按 EXIF 摆正、限制最长边 2400px、生成 600px 缩略图，可选保留原图；安卓动态照片拆出视频 */
 async function processImage(buf: Buffer, mimetype: string, fileName: string, keepOriginal: boolean, written: string[], log: Log, remote?: string): Promise<UploadedItem> {
-  if (buf.length > IMAGE_LIMIT) throw new UploadError(413, `图片太大了（最大 60MB）：${fileName}`);
+  if (buf.length > IMAGE_LIMIT) throw new UploadError(413, `图片太大了（最大 ${IMAGE_MAX}）：${fileName}`);
   const isGif = mimetype === 'image/gif';
   const id = crypto.randomUUID();
   const name = `${id}.${isGif ? 'gif' : 'jpg'}`;
@@ -294,7 +296,7 @@ async function rememberHash(hash: string | undefined, original: boolean, item: U
 /**
  * 上传：
  * - 图片自动按 EXIF 摆正、限制最长边 2400px、生成 600px 缩略图；?original=1 时额外保留原图（相册下载用）
- * - 视频原样保存（最大 500MB），支持断点续传式的 Range 播放
+ * - 视频原样保存（最大 2GB），支持断点续传式的 Range 播放
  * - 安卓「动态照片」会拆出里面的视频，变成 Live 图
  * 文件名是随机 UUID（不可猜测），通过 /files/<name>、/files/thumb/<name>、/files/orig/<name> 访问。
  * 配置了对象存储时，网页先把文件直传到对象存储（/api/files/direct → PUT → /api/files/complete），不经过服务器带宽。
@@ -314,7 +316,7 @@ export async function fileRoutes(app: FastifyInstance) {
           const target = path.join(env.uploadDir, `${crypto.randomUUID()}.${vext}`);
           written.push(target);
           await pipeline(part.file, createWriteStream(target));
-          if (part.file.truncated) throw new UploadError(413, `视频太大了（最大 500MB）：${part.filename}`);
+          if (part.file.truncated) throw new UploadError(413, `视频太大了（最大 ${VIDEO_MAX}）：${part.filename}`);
           items.push(await processVideo(target, vext, part.filename, keepOriginal, written, req.log));
           continue;
         }
@@ -324,7 +326,7 @@ export async function fileRoutes(app: FastifyInstance) {
       // 中途失败：把已经写下的文件清掉，避免留下孤儿文件
       await Promise.all(written.map((f) => fs.rm(f, { force: true })));
       if (e instanceof UploadError) return reply.code(e.status).send({ message: e.message });
-      if ((e as { code?: string }).code === 'FST_REQ_FILE_TOO_LARGE') return reply.code(413).send({ message: '文件太大了（视频最大 500MB）' });
+      if ((e as { code?: string }).code === 'FST_REQ_FILE_TOO_LARGE') return reply.code(413).send({ message: `文件太大了（视频最大 ${VIDEO_MAX}）` });
       throw e;
     }
     void offloadWritten(written);
@@ -337,7 +339,7 @@ export async function fileRoutes(app: FastifyInstance) {
     if (!storage.directUpload) return { enabled: false };
     for (const f of body.files) {
       const video = !!videoExt(f.type, f.name);
-      if (f.size > (video ? VIDEO_LIMIT : IMAGE_LIMIT)) return reply.code(413).send({ message: `${video ? '视频太大了（最大 500MB）' : '图片太大了（最大 60MB）'}：${f.name}` });
+      if (f.size > (video ? VIDEO_LIMIT : IMAGE_LIMIT)) return reply.code(413).send({ message: `${video ? `视频太大了（最大 ${VIDEO_MAX}）` : `图片太大了（最大 ${IMAGE_MAX}）`}：${f.name}` });
     }
     const uploads = await Promise.all(
       body.files.map(async (f) => {
@@ -366,7 +368,7 @@ export async function fileRoutes(app: FastifyInstance) {
         const head = await storage.headIncoming(u.id);
         if (!head) throw new UploadError(400, `上传没有完成，请重试：${u.name}`);
         const vext = videoExt(head.type, u.name);
-        if (head.size > (vext ? VIDEO_LIMIT : IMAGE_LIMIT)) throw new UploadError(413, `${vext ? '视频太大了（最大 500MB）' : '图片太大了（最大 60MB）'}：${u.name}`);
+        if (head.size > (vext ? VIDEO_LIMIT : IMAGE_LIMIT)) throw new UploadError(413, `${vext ? `视频太大了（最大 ${VIDEO_MAX}）` : `图片太大了（最大 ${IMAGE_MAX}）`}：${u.name}`);
         const remote = head.key;
         if (vext) {
           const direct = await processRemoteVideo(remote, vext, u.name, head.size, !!body.original, written, req.log).catch(() => null);

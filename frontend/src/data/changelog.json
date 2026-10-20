@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "id": "video-upload-2gb",
+      "date": "2026-10-20",
+      "title": "可以上传更大的视频了",
+      "changes": [
+        { "type": "improve", "text": "视频上传上限从 500MB 提高到 2GB，长一点的视频也能直接传进相册" },
+        { "type": "improve", "text": "网速慢时大视频不会传到一半就提示中断，最长可以连续上传 3 小时" }
+      ]
+    },
+    {
       "id": "gallery-grid-viewer-smooth",
       "date": "2026-10-19",
       "title": "相册恢复三列，翻看照片和视频更顺",
