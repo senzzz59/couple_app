@@ -3,6 +3,7 @@ import type { MySqlColumn, MySqlTable } from 'drizzle-orm/mysql-core';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
+import { coupleOf } from './auth.ts';
 import { db, schema } from './db/index.ts';
 import { FILE_NAME_RE, removeFiles } from './files.ts';
 import { mediaFiles, normalizeMedia } from './media.ts';
@@ -35,9 +36,16 @@ function badRequest(message: string): never {
 
 type Row = Record<string, unknown> & { id: string; createdBy?: string | null };
 
+/** 引用的店 / 动态必须是这一对自己的 */
+async function ownedBy(table: MySqlTable & { id: MySqlColumn; coupleId: MySqlColumn }, coupleId: string, id: unknown, message: string) {
+  if (id === undefined || id === null) return;
+  const [row] = await db.select({ id: table.id }).from(table).where(and(eq(table.coupleId, coupleId), eq(table.id, String(id))));
+  if (!row) badRequest(message);
+}
+
 interface Resource {
   name: string;
-  table: MySqlTable & { id: MySqlColumn; createdBy?: MySqlColumn };
+  table: MySqlTable & { id: MySqlColumn; coupleId: MySqlColumn; createdBy?: MySqlColumn };
   body: z.ZodObject;
   /** ?query 参数 -> 列 */
   filters?: Record<string, MySqlColumn>;
@@ -45,6 +53,8 @@ interface Resource {
   /** 只有创建者能修改；true 时删除也只能创建者，'edit' 时两个人都能删除 */
   ownerOnly?: boolean | 'edit';
   beforeSave?: (data: Record<string, unknown>, prev?: Row) => void;
+  /** 保存前检查引用（例如探店记录的店是不是这一对的） */
+  checkRefs?: (data: Record<string, unknown>, coupleId: string) => Promise<void>;
   /** 删除前收集需要清理的文件 */
   filesOf?: (row: Row) => Promise<(string | null | undefined)[]>;
 }
@@ -88,6 +98,7 @@ const resources: Resource[] = [
       note: opt(z.string().max(3000)),
     }),
     filters: { place: s.visits.placeId },
+    checkRefs: (data, coupleId) => ownedBy(s.places, coupleId, data.placeId, '这家店不存在'),
     order: [desc(s.visits.date), desc(s.visits.createdAt)],
     filesOf: async (row) => row.photos as string[],
   },
@@ -132,6 +143,7 @@ const resources: Resource[] = [
       sticker: opt(stickerRef),
     }),
     filters: { moment: s.comments.momentId },
+    checkRefs: (data, coupleId) => ownedBy(s.moments, coupleId, data.momentId, '这条动态不存在'),
     order: [asc(s.comments.createdAt)],
     ownerOnly: 'edit',
     beforeSave: (data, prev) => {
@@ -159,6 +171,7 @@ const resources: Resource[] = [
     }),
     order: [desc(s.moments.createdAt)],
     ownerOnly: 'edit',
+    checkRefs: (data, coupleId) => ownedBy(s.places, coupleId, data.placeId, '这家店不存在'),
     beforeSave: (data) => {
       // 旧版 App 只认 photos：把图片 / 封面同步过去
       if (Array.isArray(data.media)) data.photos = (data.media as { image?: string | null }[]).map((m) => m.image).filter(Boolean);
@@ -192,15 +205,15 @@ async function notifyCreated(name: string, data: Record<string, unknown>, by: st
 }
 
 export async function resourceRoutes(app: FastifyInstance) {
-  const auth = { preHandler: app.authenticate };
+  const auth = { preHandler: app.paired };
 
   for (const r of resources) {
     const t = r.table;
     const base = `/api/${r.name}`;
-    const find = async (id: string) => ((await db.select().from(t).where(eq(t.id, id)).limit(1)) as Row[])[0];
-    const changed = (id: string | undefined, by: string) => {
-      broadcast({ type: 'change', collection: r.name, id, by });
-      if (r.name === 'comments') broadcast({ type: 'change', collection: 'moments', by });
+    const find = async (coupleId: string, id: string) => ((await db.select().from(t).where(and(eq(t.coupleId, coupleId), eq(t.id, id))).limit(1)) as Row[])[0];
+    const changed = (coupleId: string, id: string | undefined, by: string) => {
+      broadcast(coupleId, { type: 'change', collection: r.name, id, by });
+      if (r.name === 'comments') broadcast(coupleId, { type: 'change', collection: 'moments', by });
     };
 
     if (r.name !== 'moments') {
@@ -209,37 +222,41 @@ export async function resourceRoutes(app: FastifyInstance) {
         const conds = Object.entries(r.filters ?? {})
           .filter(([k]) => q[k])
           .map(([k, col]) => eq(col, q[k]));
-        return db.select().from(t).where(and(...conds)).orderBy(...r.order);
+        return db.select().from(t).where(and(eq(t.coupleId, coupleOf(req)), ...conds)).orderBy(...r.order);
       });
     }
 
     app.get(`${base}/:id`, auth, async (req, reply) => {
-      const row = await find((req.params as { id: string }).id);
+      const row = await find(coupleOf(req), (req.params as { id: string }).id);
       return row ?? reply.code(404).send({ message: '不存在' });
     });
 
     app.post(base, auth, async (req) => {
       const data: Record<string, unknown> = r.body.parse(req.body);
+      const coupleId = coupleOf(req);
       r.beforeSave?.(data);
+      await r.checkRefs?.(data, coupleId);
       const id = crypto.randomUUID();
-      await db.insert(t).values({ ...data, id, createdBy: req.user.sub } as never);
-      changed(id, req.user.sub);
+      await db.insert(t).values({ ...data, id, coupleId, createdBy: req.user.sub } as never);
+      changed(coupleId, id, req.user.sub);
       void notifyCreated(r.name, data, req.user.sub, (e) => req.log.warn(e, 'web push failed'));
-      const row = await find(id);
+      const row = await find(coupleId, id);
       // 带餐厅的动态：顺便记一次探店（失败不影响动态本身）
-      if (r.name === 'moments' && row?.placeId) await visitFromMoment(row as never, req.user.sub).catch((e) => req.log.warn(e, 'visit from moment failed'));
+      if (r.name === 'moments' && row?.placeId) await visitFromMoment(row as never, req.user.sub, coupleId).catch((e) => req.log.warn(e, 'visit from moment failed'));
       return row;
     });
 
     app.patch(`${base}/:id`, auth, async (req, reply) => {
       const id = (req.params as { id: string }).id;
-      const prev = await find(id);
+      const coupleId = coupleOf(req);
+      const prev = await find(coupleId, id);
       if (!prev) return reply.code(404).send({ message: '不存在' });
       if (r.ownerOnly && prev.createdBy !== req.user.sub) return reply.code(403).send({ message: '只能修改自己发的内容' });
       const data: Record<string, unknown> = r.body.partial().parse(req.body);
       // 只对请求里出现的字段生效（partial 之后 default 不会补值）
       for (const k of Object.keys(data)) if (!(k in (req.body as object))) delete data[k];
       r.beforeSave?.(data, prev);
+      await r.checkRefs?.(data, coupleId);
       if (Object.keys(data).length) await db.update(t).set(data as never).where(eq(t.id, id));
       // 被替换掉的照片清理掉
       if (r.filesOf) {
@@ -247,19 +264,20 @@ export async function resourceRoutes(app: FastifyInstance) {
         const now = new Set(await r.filesOf({ ...prev, ...data } as Row));
         await removeFiles([...before].filter((f) => !now.has(f)));
       }
-      changed(id, req.user.sub);
-      return find(id);
+      changed(coupleId, id, req.user.sub);
+      return find(coupleId, id);
     });
 
     app.delete(`${base}/:id`, auth, async (req, reply) => {
       const id = (req.params as { id: string }).id;
-      const prev = await find(id);
+      const coupleId = coupleOf(req);
+      const prev = await find(coupleId, id);
       if (!prev) return { ok: true };
       if (r.ownerOnly === true && prev.createdBy !== req.user.sub) return reply.code(403).send({ message: '只能删除自己发的内容' });
       const files = (await r.filesOf?.(prev)) ?? [];
       await db.delete(t).where(eq(t.id, id));
       await removeFiles(files);
-      changed(id, req.user.sub);
+      changed(coupleId, id, req.user.sub);
       return { ok: true };
     });
   }
@@ -268,11 +286,12 @@ export async function resourceRoutes(app: FastifyInstance) {
   app.get('/api/moments', auth, async (req) => {
     const q = req.query as { limit?: string; before?: string };
     const { limit, before } = momentPagination(q);
+    const coupleId = coupleOf(req);
     let cursor: SQL | undefined;
     if (before) {
       cursor = or(lt(s.moments.createdAt, before.at), and(eq(s.moments.createdAt, before.at), lt(s.moments.id, before.id)));
     }
-    const rows = await db.select().from(s.moments).where(cursor).orderBy(desc(s.moments.createdAt), desc(s.moments.id)).limit(limit);
+    const rows = await db.select().from(s.moments).where(and(eq(s.moments.coupleId, coupleId), cursor)).orderBy(desc(s.moments.createdAt), desc(s.moments.id)).limit(limit);
     if (!rows.length) return [];
     const ids = rows.map((m) => m.id);
     const likes = await db.select().from(s.momentLikes).where(inArray(s.momentLikes.momentId, ids));
@@ -285,16 +304,18 @@ export async function resourceRoutes(app: FastifyInstance) {
     }));
   });
 
-  app.post('/api/moments/:id/like', auth, async (req) => {
+  app.post('/api/moments/:id/like', auth, async (req, reply) => {
     const momentId = (req.params as { id: string }).id;
+    const coupleId = coupleOf(req);
+    const [moment] = await db.select({ createdBy: s.moments.createdBy, content: s.moments.content }).from(s.moments).where(and(eq(s.moments.coupleId, coupleId), eq(s.moments.id, momentId)));
+    if (!moment) return reply.code(404).send({ message: '这条动态不存在' });
     const where = and(eq(s.momentLikes.momentId, momentId), eq(s.momentLikes.userId, req.user.sub));
     const [existing] = await db.select().from(s.momentLikes).where(where);
     if (existing) await db.delete(s.momentLikes).where(where);
     else await db.insert(s.momentLikes).values({ momentId, userId: req.user.sub });
-    broadcast({ type: 'change', collection: 'moments', id: momentId, by: req.user.sub });
+    broadcast(coupleId, { type: 'change', collection: 'moments', id: momentId, by: req.user.sub });
     if (!existing) {
-      const [moment] = await db.select({ createdBy: s.moments.createdBy, content: s.moments.content }).from(s.moments).where(eq(s.moments.id, momentId));
-      if (moment && moment.createdBy !== req.user.sub) {
+      if (moment.createdBy !== req.user.sub) {
         const text = snippet(moment.content, 20);
         notifyPartner(req.user.sub, { title: '{name}', body: `赞了你的动态${text ? `「${text}」` : ''} ❤️`, url: '/moments', tag: `like-${momentId}` }, (e) => req.log.warn(e, 'web push failed'));
       }
@@ -305,23 +326,25 @@ export async function resourceRoutes(app: FastifyInstance) {
   // ---- 每日一问：每人每天一条，可修改
   app.get('/api/answers', auth, async (req) => {
     const { day } = z.object({ day: dateStr }).parse(req.query);
-    return visibleAnswers(await db.select().from(s.answers).where(eq(s.answers.day, day)), req.user.sub);
+    return visibleAnswers(await db.select().from(s.answers).where(and(eq(s.answers.coupleId, coupleOf(req)), eq(s.answers.day, day))), req.user.sub);
   });
 
   app.put('/api/answers/:day', auth, async (req) => {
     const day = dateStr.parse((req.params as { day: string }).day);
     const body = z.object({ question: z.number().int().min(0), content: z.string().trim().min(1).max(1000) }).parse(req.body);
-    const [answered] = await db.select({ day: s.answers.day }).from(s.answers).where(and(eq(s.answers.day, day), eq(s.answers.createdBy, req.user.sub))).limit(1);
+    const coupleId = coupleOf(req);
+    const ofDay = and(eq(s.answers.coupleId, coupleId), eq(s.answers.day, day));
+    const [answered] = await db.select({ day: s.answers.day }).from(s.answers).where(and(ofDay, eq(s.answers.createdBy, req.user.sub))).limit(1);
     await db
       .insert(s.answers)
-      .values({ day, ...body, createdBy: req.user.sub })
+      .values({ day, ...body, coupleId, createdBy: req.user.sub })
       .onDuplicateKeyUpdate({ set: { content: body.content } });
-    broadcast({ type: 'change', collection: 'answers', by: req.user.sub });
+    broadcast(coupleId, { type: 'change', collection: 'answers', by: req.user.sub });
     if (!answered) notifyPartner(req.user.sub, { title: '{name}', body: '回答了今天的问题，你也来答一下就能看到 TA 的答案 💌', url: '/question', tag: `answer-${day}` }, (e) => req.log.warn(e, 'web push failed'));
-    return visibleAnswers(await db.select().from(s.answers).where(eq(s.answers.day, day)), req.user.sub);
+    return visibleAnswers(await db.select().from(s.answers).where(ofDay), req.user.sub);
   });
 
   app.get('/api/answers/history', auth, async (req) => {
-    return visibleAnswers(await db.select().from(s.answers).orderBy(desc(s.answers.day)).limit(200), req.user.sub);
+    return visibleAnswers(await db.select().from(s.answers).where(eq(s.answers.coupleId, coupleOf(req))).orderBy(desc(s.answers.day)).limit(200), req.user.sub);
   });
 }

@@ -16,7 +16,6 @@ services:
       UPLOAD_DIR: /app/uploads
       PORT: 8787
       HOST: 127.0.0.1
-      MAX_USERS: ${MAX_USERS:-2}
       APP_TZ: ${APP_TZ:-Asia/Shanghai}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-465}

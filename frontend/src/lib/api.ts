@@ -49,7 +49,9 @@ export const normalizeUrl = (u: string) => {
 export class ApiError extends Error {
   constructor(
     message: string,
-    public status: number
+    public status: number,
+    /** 服务器给的错误代码，例如 NOT_PAIRED */
+    public code?: string
   ) {
     super(message);
   }
@@ -58,6 +60,12 @@ export class ApiError extends Error {
 let onUnauthorized: (() => void) | null = null;
 export function setUnauthorizedHandler(fn: () => void) {
   onUnauthorized = fn;
+}
+
+/** 在别的设备上解除了关系：这台设备再请求共享数据会收到 NOT_PAIRED */
+let onNotPaired: (() => void) | null = null;
+export function setNotPairedHandler(fn: (() => void) | null) {
+  onNotPaired = fn;
 }
 
 async function request<T>(method: string, path: string, body?: unknown, url = baseUrl): Promise<T> {
@@ -75,13 +83,14 @@ async function request<T>(method: string, path: string, body?: unknown, url = ba
     throw new ApiError('连不上服务器，检查一下网络或服务器地址', 0);
   }
   const text = await res.text();
-  let data: { message?: string } | null = null;
+  let data: { message?: string; code?: string } | null = null;
   try { data = text ? JSON.parse(text) : null; } catch {
     throw new ApiError(res.status >= 500 ? '服务器暂时无法连接，请稍后重试' : '服务器响应异常，请检查网站配置', res.status);
   }
   if (!res.ok) {
     if (res.status === 401 && !path.startsWith('/api/auth/')) onUnauthorized?.();
-    throw new ApiError(data?.message ?? `请求失败 (${res.status})`, res.status);
+    if (res.status === 403 && data?.code === 'NOT_PAIRED') onNotPaired?.();
+    throw new ApiError(data?.message ?? `请求失败 (${res.status})`, res.status, data?.code);
   }
   return data as T;
 }
@@ -95,7 +104,6 @@ export const api = {
   deletePushToken: (pushToken: string) => request('DELETE', '/api/push-token', { token: pushToken }),
   deleteWebPush: (endpoint: string) => request('DELETE', '/api/web-push/subscription', { endpoint }),
   login: (url: string, email: string, password: string) => request<AuthResult>('POST', '/api/auth/login', { email, password }, url),
-  authStatus: (url: string) => request<{ registrationOpen: boolean; users: number; maxUsers: number; mail: boolean }>('GET', '/api/auth/status', undefined, url),
   sendCode: (url: string, email: string, purpose: 'register' | 'reset') =>
     request<{ ok: boolean; resendAfter: number }>('POST', '/api/auth/send-code', { email, purpose }, url),
   register: (url: string, body: { email: string; code: string; password: string; name: string }) => request<AuthResult>('POST', '/api/auth/register', body, url),

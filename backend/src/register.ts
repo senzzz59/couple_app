@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import { and, count, desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { createHash, randomInt } from 'node:crypto';
 import { z } from 'zod';
@@ -8,7 +8,6 @@ import { publicUser } from './auth.ts';
 import { db, schema } from './db/index.ts';
 import { env } from './env.ts';
 import { sendCodeMail, smtpConfigured } from './mail.ts';
-import { broadcast } from './realtime.ts';
 
 const t = schema.emailCodes;
 const CODE_TTL = 10 * 60 * 1000;
@@ -23,7 +22,6 @@ const hash = (code: string, mail: string) => createHash('sha256').update(`${code
 // 每个 IP 每小时最多发 10 封
 const ipSends = new Map<string, number[]>();
 
-const userCount = async () => (await db.select({ n: count() }).from(schema.users))[0].n;
 const findUser = async (mail: string) => (await db.select().from(schema.users).where(eq(schema.users.email, mail)))[0];
 
 /** 校验验证码：成功后删除，失败累计次数 */
@@ -47,11 +45,8 @@ async function verify(mail: string, p: 'register' | 'reset', code: string) {
 export async function registerRoutes(app: FastifyInstance) {
   const sign = (id: string) => app.jwt.sign({ sub: id }, { expiresIn: env.tokenTtl });
 
-  /** 登录页用：还能不能注册 */
-  app.get('/api/auth/status', async () => {
-    const n = await userCount();
-    return { registrationOpen: n < env.maxUsers, users: n, maxUsers: env.maxUsers, mail: smtpConfigured() };
-  });
+  /** 登录页用：注册是否开放、能不能发验证码邮件 */
+  app.get('/api/auth/status', async () => ({ registrationOpen: true, mail: smtpConfigured() }));
 
   app.post('/api/auth/send-code', async (req, reply) => {
     const body = z.object({ email, purpose }).parse(req.body);
@@ -63,7 +58,6 @@ export async function registerRoutes(app: FastifyInstance) {
     const user = await findUser(body.email);
     if (body.purpose === 'register') {
       if (user) return reply.code(409).send({ message: '这个邮箱已经注册过了，直接登录吧' });
-      if ((await userCount()) >= env.maxUsers) return reply.code(403).send({ message: '注册名额已满（这个空间只属于两个人）' });
     } else if (!user) {
       return reply.code(404).send({ message: '这个邮箱还没有注册' });
     }
@@ -93,13 +87,11 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post('/api/auth/register', async (req, reply) => {
     const body = z.object({ email, code: z.string().length(6), password, name: z.string().trim().min(1, '起个昵称吧').max(40) }).parse(req.body);
     if (await findUser(body.email)) return reply.code(409).send({ message: '这个邮箱已经注册过了' });
-    if ((await userCount()) >= env.maxUsers) return reply.code(403).send({ message: '注册名额已满' });
     const err = await verify(body.email, 'register', body.code);
     if (err) return reply.code(400).send({ message: err });
 
     const id = crypto.randomUUID();
     await db.insert(schema.users).values({ id, email: body.email, name: body.name, passwordHash: await bcrypt.hash(body.password, 10) });
-    broadcast({ type: 'change', collection: 'users', id, by: id });
     const user = (await findUser(body.email))!;
     return { token: sign(id), user: publicUser(user) };
   });

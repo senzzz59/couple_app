@@ -25,8 +25,8 @@ import { NUDGES } from '@/lib/nudge';
 import { subscribeNudgeNotifications } from '@/lib/nudgeNotifications';
 import { SessionProvider, useCouple, useSession } from '@/lib/session';
 import type { NudgeEvent } from '@/lib/session';
-import { useQuery } from '@/lib/store';
-import type { Anniversary, Capsule, Todo } from '@/lib/types';
+import { refetchAll, useQuery } from '@/lib/store';
+import type { Anniversary, Capsule, Todo, User } from '@/lib/types';
 import { openViewerById } from '@/lib/viewer';
 import { colors } from '@/theme';
 
@@ -105,10 +105,31 @@ function NudgeListener() {
   return null;
 }
 
+/**
+ * 登录后是否已经有空间（配对过或自己建了）。读不到（比如断网）时按已配对处理，和以前一样能看缓存。
+ * 换了一对（配对、解除关系，也可能是在另一台设备上）时丢掉缓存，重新拉这一对的数据。
+ */
+function usePaired(signedIn: boolean) {
+  const me = useQuery<{ me: User }>(signedIn ? '/api/me' : null);
+  const coupleId = me.data?.me.coupleId;
+  const last = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (coupleId === undefined) return;
+    if (last.current !== undefined && last.current !== coupleId) refetchAll();
+    last.current = coupleId;
+  }, [coupleId]);
+  useEffect(() => {
+    if (!signedIn) last.current = undefined;
+  }, [signedIn]);
+  if (!signedIn) return false;
+  return me.data ? !!coupleId : me.error ? true : undefined;
+}
+
 function RootStack({ fontsLoaded }: { fontsLoaded: boolean }) {
   const updateReady = useUpdateStartup();
   const { status } = useSession();
-  const ready = fontsLoaded && status !== 'loading' && updateReady;
+  const paired = usePaired(status === 'signedIn');
+  const ready = fontsLoaded && status !== 'loading' && updateReady && paired !== undefined;
   useEffect(() => {
     if (!ready) return;
     SplashScreen.hideAsync();
@@ -120,11 +141,12 @@ function RootStack({ fontsLoaded }: { fontsLoaded: boolean }) {
   return (
     <>
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg }, animation: 'slide_from_right' }}>
-        <Stack.Protected guard={status === 'signedIn'}>
+        <Stack.Protected guard={status === 'signedIn' && paired === true}>
           <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
           <Stack.Screen name="place/[id]" />
           <Stack.Screen name="anniversaries" />
           <Stack.Screen name="settings/index" />
+          <Stack.Screen name="settings/space" />
           <Stack.Screen name="settings/about" />
           <Stack.Screen name="settings/changelog" />
           <Stack.Screen name="settings/profile" options={modal} />
@@ -147,12 +169,15 @@ function RootStack({ fontsLoaded }: { fontsLoaded: boolean }) {
           <Stack.Screen name="viewer" options={{ presentation: 'transparentModal', animation: 'fade', contentStyle: { backgroundColor: 'transparent' } }} />
           <Stack.Screen name="live-edit" options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }} />
         </Stack.Protected>
+        <Stack.Protected guard={status === 'signedIn' && paired === false}>
+          <Stack.Screen name="pair" options={{ animation: 'fade' }} />
+        </Stack.Protected>
         <Stack.Protected guard={status === 'signedOut'}>
           <Stack.Screen name="login" options={{ animation: 'fade' }} />
         </Stack.Protected>
       </Stack>
       <UpdateHost signedIn={status === 'signedIn'} />
-      {status === 'signedIn' && (
+      {status === 'signedIn' && paired && (
         <>
           <ReminderSync />
           <TravelPickerHost />

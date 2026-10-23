@@ -1,7 +1,8 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
+import { coupleOf } from './auth.ts';
 import { db, schema } from './db/index.ts';
 import { broadcast } from './realtime.ts';
 
@@ -17,10 +18,11 @@ export const SETTINGS = {
 export type SettingKey = keyof typeof SETTINGS;
 
 export async function settingsRoutes(app: FastifyInstance) {
-  const auth = { preHandler: app.authenticate };
+  const auth = { preHandler: app.paired };
+  const t = schema.sharedSettings;
 
-  app.get('/api/settings', auth, async () => {
-    const rows = await db.select().from(schema.sharedSettings);
+  app.get('/api/settings', auth, async (req) => {
+    const rows = await db.select().from(t).where(eq(t.coupleId, coupleOf(req)));
     return Object.fromEntries(rows.filter((r) => r.key in SETTINGS).map((r) => [r.key, r.value]));
   });
 
@@ -28,10 +30,12 @@ export async function settingsRoutes(app: FastifyInstance) {
     const key = (req.params as { key: string }).key;
     if (!(key in SETTINGS)) return reply.code(404).send({ message: '没有这个设置' });
     const value = SETTINGS[key as SettingKey].parse((req.body as { value?: unknown })?.value);
-    const [prev] = await db.select().from(schema.sharedSettings).where(eq(schema.sharedSettings.key, key));
-    if (prev) await db.update(schema.sharedSettings).set({ value }).where(eq(schema.sharedSettings.key, key));
-    else await db.insert(schema.sharedSettings).values({ key, value });
-    broadcast({ type: 'change', collection: 'settings', by: req.user.sub });
+    const coupleId = coupleOf(req);
+    const where = and(eq(t.coupleId, coupleId), eq(t.key, key));
+    const [prev] = await db.select().from(t).where(where);
+    if (prev) await db.update(t).set({ value }).where(where);
+    else await db.insert(t).values({ coupleId, key, value });
+    broadcast(coupleId, { type: 'change', collection: 'settings', by: req.user.sub });
     return { [key]: value };
   });
 }

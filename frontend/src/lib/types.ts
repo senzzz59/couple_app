@@ -1,5 +1,7 @@
 export interface User {
   id: string;
+  /** 属于哪一对；还没配对时为 null */
+  coupleId: string | null;
   email: string;
   name: string;
   avatar: string | null;
@@ -14,7 +16,7 @@ export interface User {
 }
 
 export interface Space {
-  id: number;
+  id: string;
   startDate: string | null;
   title: string | null;
 }

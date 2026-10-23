@@ -1,7 +1,8 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
+import { coupleOf } from './auth.ts';
 import { db, schema } from './db/index.ts';
 import { env } from './env.ts';
 import { removeFiles } from './files.ts';
@@ -33,16 +34,16 @@ function present(c: Row) {
 }
 
 export async function capsuleRoutes(app: FastifyInstance) {
-  const auth = { preHandler: app.authenticate };
-  const find = async (id: string) => (await db.select().from(t).where(eq(t.id, id)).limit(1))[0];
+  const auth = { preHandler: app.paired };
+  const find = async (coupleId: string, id: string) => (await db.select().from(t).where(and(eq(t.coupleId, coupleId), eq(t.id, id))).limit(1))[0];
 
-  app.get('/api/capsules', auth, async () => {
-    const rows = await db.select().from(t).orderBy(asc(t.unlockAt));
+  app.get('/api/capsules', auth, async (req) => {
+    const rows = await db.select().from(t).where(eq(t.coupleId, coupleOf(req))).orderBy(asc(t.unlockAt));
     return rows.map(present);
   });
 
   app.get('/api/capsules/:id', auth, async (req, reply) => {
-    const c = await find((req.params as { id: string }).id);
+    const c = await find(coupleOf(req), (req.params as { id: string }).id);
     return c ? present(c) : reply.code(404).send({ message: '不存在' });
   });
 
@@ -57,32 +58,35 @@ export async function capsuleRoutes(app: FastifyInstance) {
       .parse(req.body);
     if (body.unlockAt <= todayStr()) return reply.code(400).send({ message: '解锁日期要在今天之后' });
     const id = crypto.randomUUID();
-    await db.insert(t).values({ ...body, id, createdBy: req.user.sub });
-    broadcast({ type: 'change', collection: 'capsules', id, by: req.user.sub });
+    const coupleId = coupleOf(req);
+    await db.insert(t).values({ ...body, id, coupleId, createdBy: req.user.sub });
+    broadcast(coupleId, { type: 'change', collection: 'capsules', id, by: req.user.sub });
     notifyPartner(req.user.sub, { title: '{name}', body: `埋下了一颗时光胶囊，${body.unlockAt} 才能打开 ⏳`, url: '/capsules', tag: 'capsule' }, (e) => req.log.warn(e, 'web push failed'));
-    return present((await find(id))!);
+    return present((await find(coupleId, id))!);
   });
 
   /** 记录“我打开过了”，只有解锁后才允许 */
   app.post('/api/capsules/:id/open', auth, async (req, reply) => {
-    const c = await find((req.params as { id: string }).id);
+    const coupleId = coupleOf(req);
+    const c = await find(coupleId, (req.params as { id: string }).id);
     if (!c) return reply.code(404).send({ message: '不存在' });
     if (c.unlockAt > todayStr()) return reply.code(403).send({ message: '还没到打开的日子' });
     if (!c.openedBy.includes(req.user.sub)) {
       await db.update(t).set({ openedBy: [...c.openedBy, req.user.sub] }).where(eq(t.id, c.id));
-      broadcast({ type: 'change', collection: 'capsules', id: c.id, by: req.user.sub });
+      broadcast(coupleId, { type: 'change', collection: 'capsules', id: c.id, by: req.user.sub });
     }
-    return present((await find(c.id))!);
+    return present((await find(coupleId, c.id))!);
   });
 
   /** 封存后不能修改，只有作者能删除 */
   app.delete('/api/capsules/:id', auth, async (req, reply) => {
-    const c = await find((req.params as { id: string }).id);
+    const coupleId = coupleOf(req);
+    const c = await find(coupleId, (req.params as { id: string }).id);
     if (!c) return { ok: true };
     if (c.createdBy !== req.user.sub) return reply.code(403).send({ message: '只能删除自己写的胶囊' });
     await db.delete(t).where(eq(t.id, c.id));
     await removeFiles(c.photos);
-    broadcast({ type: 'change', collection: 'capsules', id: c.id, by: req.user.sub });
+    broadcast(coupleId, { type: 'change', collection: 'capsules', id: c.id, by: req.user.sub });
     return { ok: true };
   });
 }

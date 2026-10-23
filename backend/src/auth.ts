@@ -1,11 +1,12 @@
 import bcrypt from 'bcryptjs';
-import { eq, ne } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
 import { db, schema } from './db/index.ts';
 import { env } from './env.ts';
 import { removeFiles } from './files.ts';
+import { partnerOf } from './couple.ts';
 import { broadcast, isOnline, sendTo, setShareViewing } from './realtime.ts';
 import { pushNudge } from './push.ts';
 import { sendWebPush } from './webPush.ts';
@@ -19,7 +20,19 @@ declare module '@fastify/jwt' {
 declare module 'fastify' {
   interface FastifyInstance {
     authenticate: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    /** 登录并且已经配对：共享数据的接口都用这个 */
+    paired: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
+  interface FastifyRequest {
+    /** 登录的人属于哪一对（authenticate 之后才有；没配对时为 null） */
+    coupleId: string | null;
+  }
+}
+
+/** 已配对接口里取当前情侣 id（paired 已经保证有值） */
+export function coupleOf(req: FastifyRequest): string {
+  if (!req.coupleId) throw Object.assign(new Error('还没有和 TA 配对'), { statusCode: 403 });
+  return req.coupleId;
 }
 
 export const publicUser = ({ passwordHash: _, ...u }: typeof schema.users.$inferSelect) => u;
@@ -32,15 +45,26 @@ const WINDOW = 15 * 60 * 1000;
 
 /** 在根实例上直接调用（不能放进 register 的插件里，否则装饰器不会共享） */
 export function decorateAuth(app: FastifyInstance) {
-  app.decorate('authenticate', async (req: FastifyRequest, reply: FastifyReply) => {
+  app.decorateRequest('coupleId', null);
+  const authenticate = async (req: FastifyRequest, reply: FastifyReply) => {
     try {
       await req.jwtVerify();
       if (!req.user?.sub) throw new Error('not a session token');
-      const [u] = await db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.id, req.user.sub));
+      const [u] = await db.select({ id: schema.users.id, coupleId: schema.users.coupleId }).from(schema.users).where(eq(schema.users.id, req.user.sub));
       if (!u) throw new Error('user gone');
+      req.coupleId = u.coupleId;
+      return true;
     } catch {
       reply.code(401).send({ message: '请重新登录' });
+      return false;
     }
+  };
+  app.decorate('authenticate', async (req: FastifyRequest, reply: FastifyReply) => {
+    await authenticate(req, reply);
+  });
+  app.decorate('paired', async (req: FastifyRequest, reply: FastifyReply) => {
+    if (!(await authenticate(req, reply))) return;
+    if (!req.coupleId) reply.code(403).send({ message: '还没有和 TA 配对', code: 'NOT_PAIRED' });
   });
 }
 
@@ -65,11 +89,10 @@ export async function authRoutes(app: FastifyInstance) {
 
   const auth = { preHandler: app.authenticate };
 
-  /** 自己 + 另一半 */
+  /** 自己 + 另一半（还没配对时 partner 为 null，me.coupleId 也为 null） */
   app.get('/api/me', auth, async (req) => {
-    const all = await db.select().from(schema.users);
-    const me = all.find((u) => u.id === req.user.sub)!;
-    const partner = all.find((u) => u.id !== req.user.sub) ?? null;
+    const [me] = await db.select().from(schema.users).where(eq(schema.users.id, req.user.sub));
+    const partner = await partnerOf(me.id, me.coupleId);
     return { me: publicUser(me), partner: partner && publicUser(partner) };
   });
 
@@ -98,30 +121,17 @@ export async function authRoutes(app: FastifyInstance) {
     }
     if (Object.keys(patch).length) await db.update(schema.users).set(patch).where(eq(schema.users.id, req.user.sub));
     if (body.shareViewing !== undefined) setShareViewing(req.user.sub, body.shareViewing);
-    broadcast({ type: 'change', collection: 'users', id: req.user.sub, by: req.user.sub });
+    broadcast(req.coupleId, { type: 'change', collection: 'users', id: req.user.sub, by: req.user.sub });
     const [me] = await db.select().from(schema.users).where(eq(schema.users.id, req.user.sub));
     return publicUser(me);
-  });
-
-  app.get('/api/space', auth, async () => {
-    const [s] = await db.select().from(schema.space).where(eq(schema.space.id, 1));
-    return s ?? { id: 1, startDate: null, title: null };
-  });
-
-  app.patch('/api/space', auth, async (req) => {
-    const body = z.object({ startDate: dateStr.nullable(), title: z.string().max(40).nullable() }).partial().parse(req.body);
-    await db.insert(schema.space).values({ id: 1, ...body }).onDuplicateKeyUpdate({ set: body.startDate === undefined && body.title === undefined ? { id: 1 } : body });
-    broadcast({ type: 'change', collection: 'space', by: req.user.sub });
-    const [s] = await db.select().from(schema.space).where(eq(schema.space.id, 1));
-    return s;
   });
 
   const NUDGE_TEXT = { miss: '想你了 💗', hug: '要抱抱 🫂', kiss: '亲你一下 😘', hungry: '饿了，一起吃饭吗 🍜', poke: '戳了你一下 👉' } as const;
 
   /** 戳一戳：只推给另一半 */
-  app.post('/api/nudges', auth, async (req) => {
+  app.post('/api/nudges', { preHandler: app.paired }, async (req) => {
     const { kind } = z.object({ kind: z.enum(['miss', 'hug', 'kiss', 'hungry', 'poke']) }).parse(req.body);
-    const [partner] = await db.select({ id: schema.users.id }).from(schema.users).where(ne(schema.users.id, req.user.sub)).limit(1);
+    const partner = await partnerOf(req.user.sub, req.coupleId);
     if (!partner) return { ok: false };
     const id = crypto.randomUUID();
     const event = { id, kind, from: req.user.sub, at: new Date().toISOString() };

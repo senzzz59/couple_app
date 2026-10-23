@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { db, schema } from './db/index.ts';
 
 /**
- * 实时通道：
+ * 实时通道（只在同一对情侣之间转发）：
  * - 数据变化广播 { type: 'change', collection }，客户端收到后重新拉取对应列表。两个人的数据量很小，这样最稳。
  * - 相册里「TA 在看哪张」「一起看」「快速回应」：只在内存里转发给另一半，不存库。
  */
@@ -12,6 +12,8 @@ type Socket = { readyState: number; send: (msg: string) => void };
 type Where = 'grid' | 'viewer' | null;
 type SocketInfo = {
   userId: string;
+  /** 还没配对时为空：只收发给自己的消息 */
+  coupleId: string | null;
   active: boolean;
   where: Where;
   itemId: string | null;
@@ -54,18 +56,23 @@ function send(ws: Socket, event: RealtimeEvent) {
   if (open(ws)) ws.send(JSON.stringify(event));
 }
 
-export function broadcast(event: RealtimeEvent) {
-  for (const ws of sockets.keys()) send(ws, event);
+/** 发给这一对情侣的所有设备 */
+export function broadcast(coupleId: string | null, event: RealtimeEvent) {
+  if (!coupleId) return;
+  for (const [ws, s] of sockets) if (s.coupleId === coupleId) send(ws, event);
 }
 
 export function sendTo(userId: string, event: RealtimeEvent) {
   for (const [ws, s] of sockets) if (s.userId === userId) send(ws, event);
 }
 
-/** 只有一对情侣：发给不是自己的那个人 */
-function sendToPartnerOf(userId: string, event: RealtimeEvent) {
-  for (const [ws, s] of sockets) if (s.userId !== userId) send(ws, event);
+/** 发给同一对里不是自己的那个人 */
+function sendToPartnerOf(userId: string, coupleId: string | null, event: RealtimeEvent) {
+  if (!coupleId) return;
+  for (const [ws, s] of sockets) if (s.coupleId === coupleId && s.userId !== userId) send(ws, event);
 }
+
+const coupleOfUser = (userId: string) => [...sockets.values()].find((s) => s.userId === userId)?.coupleId ?? null;
 
 /** 某个人现在的状态：在线 = 有前台连接；在看哪张取最近一次更新的前台连接 */
 export function peerStateOf(userId: string): PeerState {
@@ -81,30 +88,44 @@ export function peerStateOf(userId: string): PeerState {
 }
 
 /** 状态变了才告诉另一半 */
-function publishPeer(userId: string, force = false) {
+function publishPeer(userId: string, force = false, coupleId = coupleOfUser(userId)) {
   const state = peerStateOf(userId);
   const key = JSON.stringify(state);
   if (!force && lastSent.get(userId) === key) return;
   lastSent.set(userId, key);
-  sendToPartnerOf(userId, { type: 'peer', ...state });
+  sendToPartnerOf(userId, coupleId, { type: 'peer', ...state });
 }
 
 /** 新连接：告诉它另一半现在的状态（另一半不在线也要说一声） */
-function greet(ws: Socket, userId: string) {
-  const partner = [...sockets.values()].find((s) => s.userId !== userId)?.userId;
+function greet(ws: Socket, userId: string, coupleId: string | null) {
+  const partner = coupleId ? [...sockets.values()].find((s) => s.coupleId === coupleId && s.userId !== userId)?.userId : undefined;
   send(ws, { type: 'peer', ...(partner ? peerStateOf(partner) : { online: false, where: null, itemId: null }) });
 }
 
-export function attachSocket(ws: Socket, userId: string, share = true) {
+export function attachSocket(ws: Socket, userId: string, coupleId: string | null, share = true) {
   shareViewing.set(userId, share);
-  sockets.set(ws, { userId, active: false, where: null, itemId: null, lookAt: 0, windowStart: -Infinity, count: 0 });
-  greet(ws, userId);
+  sockets.set(ws, { userId, coupleId, active: false, where: null, itemId: null, lookAt: 0, windowStart: -Infinity, count: 0 });
+  greet(ws, userId, coupleId);
+}
+
+/** 配对 / 解除关系后：已经连着的设备换到新的情侣里，并告诉两边对方现在的状态 */
+export function moveUser(userId: string, coupleId: string | null) {
+  const before = coupleOfUser(userId);
+  if (before && before !== coupleId) sendToPartnerOf(userId, before, { type: 'peer', online: false, where: null, itemId: null });
+  for (const [ws, s] of sockets) {
+    if (s.userId !== userId) continue;
+    s.coupleId = coupleId;
+    greet(ws, userId, coupleId);
+  }
+  lastSent.delete(userId);
+  publishPeer(userId, true);
 }
 
 export function detachSocket(ws: Socket) {
   const s = sockets.get(ws);
   sockets.delete(ws);
-  if (s) publishPeer(s.userId);
+  // 最后一个连接断开后已经查不到 TA 属于哪一对，用这个连接记着的
+  if (s) publishPeer(s.userId, false, s.coupleId);
 }
 
 export function setShareViewing(userId: string, share: boolean) {
@@ -147,13 +168,13 @@ export function handleMessage(ws: Socket, raw: string, now = Date.now()) {
     const emoji = typeof e.emoji === 'string' && REACTION_EMOJIS.includes(e.emoji) ? e.emoji : undefined;
     const text = emoji ? '' : str(e.text, 30);
     if (!emoji && !text) return;
-    sendToPartnerOf(s.userId, { type: 'react', from: s.userId, itemId, ...(emoji ? { emoji } : { text }), at });
+    sendToPartnerOf(s.userId, s.coupleId, { type: 'react', from: s.userId, itemId, ...(emoji ? { emoji } : { text }), at });
   } else if (e.type === 'coview') {
     const action = COVIEW_ACTIONS.includes(e.action as CoviewAction) ? (e.action as CoviewAction) : null;
     if (!action || (action !== 'leave' && !itemId)) return;
     // 关掉了「让 TA 看到我在看哪张」就不能一起看
     if (action !== 'leave' && shareViewing.get(s.userId) === false) return;
-    sendToPartnerOf(s.userId, { type: 'coview', from: s.userId, action, ...(itemId ? { itemId } : {}), at });
+    sendToPartnerOf(s.userId, s.coupleId, { type: 'coview', from: s.userId, action, ...(itemId ? { itemId } : {}), at });
   }
 }
 
@@ -179,9 +200,10 @@ export async function realtimeRoutes(app: FastifyInstance) {
     const early: string[] = [];
     const queue = (raw: unknown) => early.push(String(raw));
     socket.on('message', queue);
-    const [u] = await db.select({ share: schema.users.shareViewing }).from(schema.users).where(eq(schema.users.id, userId)).catch(() => []);
+    const [u] = await db.select({ share: schema.users.shareViewing, coupleId: schema.users.coupleId }).from(schema.users).where(eq(schema.users.id, userId)).catch(() => []);
     if (socket.readyState !== 1) return;
-    attachSocket(socket, userId, u?.share !== false);
+    if (!u) return socket.close(4401, 'unauthorized');
+    attachSocket(socket, userId, u.coupleId, u.share !== false);
     socket.off('message', queue);
     for (const raw of early) handleMessage(socket, raw);
     socket.on('message', (raw) => handleMessage(socket, raw.toString()));

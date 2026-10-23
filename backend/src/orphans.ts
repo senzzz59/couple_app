@@ -1,3 +1,6 @@
+import { eq } from 'drizzle-orm';
+import type { MySqlColumn } from 'drizzle-orm/mysql-core';
+
 import { planCleanup, type References } from './cleanupPlan.ts';
 import { db, schema } from './db/index.ts';
 import { FILE_NAME_RE, ORIG_RE, storage } from './files.ts';
@@ -16,30 +19,32 @@ type Log = { info: (o: object, m: string) => void; warn: (o: object, m: string) 
  * upload_hashes（快速上传的缓存）故意不算：它只是记着「上次处理出来的文件」，文件被删了就失效，
  * 不应该因为它把删掉的照片留下来。
  */
-export async function collectReferences(): Promise<References> {
+export async function collectReferences(coupleId?: string): Promise<References> {
   const s = schema;
   const files = new Set<string>();
   const originals = new Set<string>();
   const add = (n: unknown) => typeof n === 'string' && n && files.add(n);
-  for (const u of await db.select({ avatar: s.users.avatar }).from(s.users)) add(u.avatar);
-  for (const p of await db.select({ cover: s.places.cover }).from(s.places)) add(p.cover);
-  for (const v of await db.select({ photos: s.visits.photos }).from(s.visits)) (v.photos ?? []).forEach(add);
-  for (const m of await db.select({ photos: s.moments.photos, media: s.moments.media }).from(s.moments)) {
+  // 传了 coupleId：只收集这一对的文件（删除空间时用）；头像属于个人，不算在内
+  const of = (t: { coupleId: MySqlColumn }) => (coupleId ? eq(t.coupleId, coupleId) : undefined);
+  if (!coupleId) for (const u of await db.select({ avatar: s.users.avatar }).from(s.users)) add(u.avatar);
+  for (const p of await db.select({ cover: s.places.cover }).from(s.places).where(of(s.places))) add(p.cover);
+  for (const v of await db.select({ photos: s.visits.photos }).from(s.visits).where(of(s.visits))) (v.photos ?? []).forEach(add);
+  for (const m of await db.select({ photos: s.moments.photos, media: s.moments.media }).from(s.moments).where(of(s.moments))) {
     (m.photos ?? []).forEach(add);
     mediaFiles(m.media).forEach(add);
   }
-  for (const c of await db.select({ image: s.comments.image, sticker: s.comments.sticker }).from(s.comments)) {
+  for (const c of await db.select({ image: s.comments.image, sticker: s.comments.sticker }).from(s.comments).where(of(s.comments))) {
     add(c.image);
     add(c.sticker);
   }
-  for (const st of await db.select({ file: s.stickers.file }).from(s.stickers)) add(st.file);
-  for (const m of await db.select({ image: s.messages.image, sticker: s.messages.sticker, voice: s.messages.voice }).from(s.messages)) {
+  for (const st of await db.select({ file: s.stickers.file }).from(s.stickers).where(of(s.stickers))) add(st.file);
+  for (const m of await db.select({ image: s.messages.image, sticker: s.messages.sticker, voice: s.messages.voice }).from(s.messages).where(of(s.messages))) {
     add(m.image);
     add(m.sticker);
     add(m.voice);
   }
-  for (const c of await db.select({ photos: s.capsules.photos }).from(s.capsules)) (c.photos ?? []).forEach(add);
-  for (const g of await db.select({ image: s.galleryItems.image, video: s.galleryItems.video, original: s.galleryItems.original }).from(s.galleryItems)) {
+  for (const c of await db.select({ photos: s.capsules.photos }).from(s.capsules).where(of(s.capsules))) (c.photos ?? []).forEach(add);
+  for (const g of await db.select({ image: s.galleryItems.image, video: s.galleryItems.video, original: s.galleryItems.original }).from(s.galleryItems).where(of(s.galleryItems))) {
     add(g.image);
     add(g.video);
     if (g.original) originals.add(g.original);

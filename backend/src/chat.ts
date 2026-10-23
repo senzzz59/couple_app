@@ -2,6 +2,8 @@ import { and, desc, eq, gt, inArray, lt, ne, or, sql, type SQL } from 'drizzle-o
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
+import { coupleOf } from './auth.ts';
+import { partnerOf } from './couple.ts';
 import { db, schema } from './db/index.ts';
 import { FILE_NAME_RE, removeFiles, VOICE_RE } from './files.ts';
 import { broadcast, sendTo } from './realtime.ts';
@@ -65,17 +67,17 @@ const galleryCols = {
 };
 
 /** 带上引用的相册照片（删了就是 null）和被回复的消息（撤回了就是 null） */
-async function loadMessages(where: SQL | undefined, limit: number) {
+async function loadMessages(coupleId: string, where: SQL | undefined, limit: number) {
   const rows = await db
     .select({ msg: m, gallery: galleryCols })
     .from(m)
-    .leftJoin(g, eq(m.galleryId, g.id))
-    .where(where)
+    .leftJoin(g, and(eq(m.galleryId, g.id), eq(g.coupleId, coupleId)))
+    .where(and(eq(m.coupleId, coupleId), where))
     .orderBy(desc(m.createdAt), desc(m.id))
     .limit(limit);
   const replyIds = [...new Set(rows.map((r) => r.msg.replyToId).filter((x): x is string => !!x))];
   const replies = replyIds.length
-    ? await db.select({ id: m.id, kind: m.kind, content: m.content, image: m.image, sticker: m.sticker, createdBy: m.createdBy }).from(m).where(inArray(m.id, replyIds))
+    ? await db.select({ id: m.id, kind: m.kind, content: m.content, image: m.image, sticker: m.sticker, createdBy: m.createdBy }).from(m).where(and(eq(m.coupleId, coupleId), inArray(m.id, replyIds)))
     : [];
   const byId = new Map(replies.map((r) => [r.id, r]));
   return rows.map(({ msg, gallery }) => ({
@@ -88,33 +90,34 @@ async function loadMessages(where: SQL | undefined, limit: number) {
 export type ChatMessage = Awaited<ReturnType<typeof loadMessages>>[number];
 
 export async function chatRoutes(app: FastifyInstance) {
-  const auth = { preHandler: app.authenticate };
-  const changed = (by: string) => broadcast({ type: 'change', collection: 'chat', by });
-  const partnerOf = async (userId: string) => (await db.select({ id: s.users.id }).from(s.users).where(ne(s.users.id, userId)).limit(1))[0]?.id ?? null;
+  const auth = { preHandler: app.paired };
+  const changed = (coupleId: string, by: string) => broadcast(coupleId, { type: 'change', collection: 'chat', by });
 
   // ---- 消息列表：最新的在前，before 传一条消息的 id 往前翻
   app.get('/api/chat/messages', auth, async (req) => {
     const q = z.object({ limit: z.coerce.number().int().min(1).max(200).default(50), before: z.string().length(36).optional() }).parse(req.query);
+    const coupleId = coupleOf(req);
     let where: SQL | undefined;
     if (q.before) {
-      const [cur] = await db.select({ at: m.createdAt }).from(m).where(eq(m.id, q.before));
+      const [cur] = await db.select({ at: m.createdAt }).from(m).where(and(eq(m.coupleId, coupleId), eq(m.id, q.before)));
       if (cur) where = or(lt(m.createdAt, cur.at), and(eq(m.createdAt, cur.at), lt(m.id, q.before)));
     }
-    return loadMessages(where, q.limit);
+    return loadMessages(coupleId, where, q.limit);
   });
 
   app.post('/api/chat/messages', auth, async (req, reply) => {
     const body = messageInput.parse(req.body);
     const by = req.user.sub;
+    const coupleId = coupleOf(req);
     if (body.galleryId) {
-      const [item] = await db.select({ id: g.id }).from(g).where(eq(g.id, body.galleryId));
+      const [item] = await db.select({ id: g.id }).from(g).where(and(eq(g.coupleId, coupleId), eq(g.id, body.galleryId)));
       if (!item) return reply.code(404).send({ message: '这张照片已经删除了' });
     }
     const id = crypto.randomUUID();
-    await db.insert(m).values({ id, ...body, createdBy: by });
-    const [msg] = await loadMessages(eq(m.id, id), 1);
-    changed(by);
-    const partner = await partnerOf(by);
+    await db.insert(m).values({ id, ...body, coupleId, createdBy: by });
+    const [msg] = await loadMessages(coupleId, eq(m.id, id), 1);
+    changed(coupleId, by);
+    const partner = (await partnerOf(by, coupleId))?.id;
     const log = (e: unknown) => req.log.warn(e, 'chat push failed');
     if (partner) {
       sendTo(partner, { type: 'chat', message: msg });
@@ -131,14 +134,15 @@ export async function chatRoutes(app: FastifyInstance) {
   // ---- 撤回：只能撤回自己 2 分钟内发的
   app.delete('/api/chat/messages/:id', auth, async (req, reply) => {
     const id = (req.params as { id: string }).id;
-    const [row] = await db.select().from(m).where(eq(m.id, id));
+    const coupleId = coupleOf(req);
+    const [row] = await db.select().from(m).where(and(eq(m.coupleId, coupleId), eq(m.id, id)));
     if (!row) return { ok: true };
     if (row.createdBy !== req.user.sub) return reply.code(403).send({ message: '只能撤回自己的消息' });
     if (Date.now() - new Date(row.createdAt).getTime() > RECALL_MS) return reply.code(400).send({ message: '超过 2 分钟，不能撤回了' });
     await db.delete(m).where(eq(m.id, id));
     // 表情包的文件是表情库里的，不删
     await removeFiles([row.image, row.voice]);
-    changed(req.user.sub);
+    changed(coupleId, req.user.sub);
     return { ok: true };
   });
 
@@ -146,17 +150,19 @@ export async function chatRoutes(app: FastifyInstance) {
   app.post('/api/chat/read', auth, async (req) => {
     const now = new Date();
     await db.insert(s.chatReads).values({ userId: req.user.sub, readAt: now }).onDuplicateKeyUpdate({ set: { readAt: now } });
-    changed(req.user.sub);
+    changed(coupleOf(req), req.user.sub);
     return { readAt: now };
   });
 
   // ---- 未读数 + 对方读到哪（显示「已读」）
   app.get('/api/chat/unread', auth, async (req) => {
     const me = req.user.sub;
-    const reads = await db.select().from(s.chatReads);
+    const coupleId = coupleOf(req);
+    const partner = await partnerOf(me, coupleId);
+    const reads = await db.select().from(s.chatReads).where(inArray(s.chatReads.userId, partner ? [me, partner.id] : [me]));
     const mine = reads.find((r) => r.userId === me)?.readAt ?? null;
-    const partnerReadAt = reads.find((r) => r.userId !== me)?.readAt ?? null;
-    const conds: SQL[] = [ne(m.createdBy, me)];
+    const partnerReadAt = partner ? (reads.find((r) => r.userId === partner.id)?.readAt ?? null) : null;
+    const conds: SQL[] = [eq(m.coupleId, coupleId), ne(m.createdBy, me)];
     if (mine) conds.push(gt(m.createdAt, mine));
     const [row] = await db.select({ count: sql<number>`count(*)` }).from(m).where(and(...conds));
     return { count: Number(row?.count ?? 0), partnerReadAt };

@@ -95,6 +95,15 @@ export function peekQuery<T>(match: (key: string) => boolean): T | undefined {
   return undefined;
 }
 
+/** 换了一对（配对、解除关系）：丢掉所有缓存，正在显示的马上重新拉 */
+export function refetchAll() {
+  generation++;
+  cache.clear();
+  pendingInvalidations.clear();
+  for (const [key, l] of listeners) if (l.size) void fetchKey(key);
+  for (const key of listeners.keys()) emit(key);
+}
+
 export function clearCache() {
   generation++;
   cache.clear();

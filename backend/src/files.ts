@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import { createHash } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -255,6 +256,9 @@ const directFile = z.object({ name: z.string().min(1).max(300), type: z.string()
  * 快速上传：同一个文件以前处理过，就在存储里把处理好的文件各复制一份（新文件名），不用重新上传。
  * 复制而不是共用，删掉其中一份不会影响另一份。原来的文件不在了、视频还没转完，就当没有，正常上传。
  */
+/** 快速上传的缓存按账号分开：不能凭一个指纹复制到别人传过的文件 */
+const hashKey = (userId: string, hash: string) => createHash('sha256').update(`${userId}:${hash}`).digest('hex');
+
 async function instantCopy(hash: string, original: boolean, fileName: string): Promise<UploadedItem | null> {
   const where = and(eq(schema.uploadHashes.hash, hash), eq(schema.uploadHashes.original, original));
   const [row] = await db.select().from(schema.uploadHashes).where(where);
@@ -344,7 +348,7 @@ export async function fileRoutes(app: FastifyInstance) {
     const uploads = await Promise.all(
       body.files.map(async (f) => {
         // 同一个文件传过：直接复制一份，不用再传
-        const instant = f.hash ? await instantCopy(f.hash, !!body.original, f.name).catch((e) => (req.log.warn(e, 'instant upload failed'), null)) : null;
+        const instant = f.hash ? await instantCopy(hashKey(req.user.sub, f.hash), !!body.original, f.name).catch((e) => (req.log.warn(e, 'instant upload failed'), null)) : null;
         if (instant) return { instant };
         const ext = (f.name.split('.').pop() ?? '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5) || 'bin';
         const id = `${crypto.randomUUID()}.${ext}`;
@@ -374,7 +378,7 @@ export async function fileRoutes(app: FastifyInstance) {
           const direct = await processRemoteVideo(remote, vext, u.name, head.size, !!body.original, written, req.log).catch(() => null);
           if (direct) {
             items.push(direct);
-            await rememberHash(u.hash, !!body.original, direct);
+            await rememberHash(u.hash && hashKey(req.user.sub, u.hash), !!body.original, direct);
             continue;
           }
           const target = path.join(env.uploadDir, `${crypto.randomUUID()}.${vext}`);
@@ -386,7 +390,7 @@ export async function fileRoutes(app: FastifyInstance) {
           for await (const c of await storage.readIncoming(u.id)) chunks.push(c as Buffer);
           items.push(await processImage(Buffer.concat(chunks), head.type, u.name, !!body.original, written, req.log, remote));
         }
-        await rememberHash(u.hash, !!body.original, items[items.length - 1]);
+        await rememberHash(u.hash && hashKey(req.user.sub, u.hash), !!body.original, items[items.length - 1]);
       }
     } catch (e) {
       await Promise.all(written.map((f) => fs.rm(f, { force: true })));

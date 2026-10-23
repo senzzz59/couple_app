@@ -114,7 +114,7 @@ export default function Settings() {
         <Animated.View entering={enter(1)}>
           <Group title="我们">
             <SettingRow first icon={CalendarHeart} label="在一起的日子" value={space?.startDate ? fmtFullDate(space.startDate) : '未设置'} onPress={() => router.push('/anniversaries')} />
-            <SettingRow icon={Heart} label="另一半" value={partner?.name ?? '还没加入'} />
+            <SettingRow icon={Heart} label="我们的空间" value={partner?.name ?? undefined} badge={partner ? undefined : '邀请 TA'} onPress={() => router.push('/settings/space')} />
             <SettingRow
               icon={Eye}
               label="让 TA 看到我在看哪张照片"

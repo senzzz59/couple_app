@@ -24,8 +24,25 @@ const timestamps = {
   updatedAt: timestamp('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`).onUpdateNow(),
 };
 
+/**
+ * 一对情侣：所有两个人共享的数据都挂在这里（couple_id）。
+ * 先注册的人建好空间拿到邀请码，另一半填邀请码加入；满两个人后邀请码清空。
+ */
+export const couples = mysqlTable('couples', {
+  id: id(),
+  inviteCode: varchar('invite_code', { length: 12 }).unique(),
+  startDate: date('start_date', { mode: 'string' }),
+  title: varchar('title', { length: 40 }),
+  ...timestamps,
+});
+
+/** 共享数据属于哪一对；空间删除时一起删除 */
+const coupleRef = () => varchar('couple_id', { length: 36 }).notNull().references(() => couples.id, { onDelete: 'cascade' });
+
 export const users = mysqlTable('users', {
   id: id(),
+  /** 还没配对时为空 */
+  coupleId: varchar('couple_id', { length: 36 }).references(() => couples.id, { onDelete: 'set null' }),
   email: varchar('email', { length: 191 }).notNull().unique(),
   passwordHash: varchar('password_hash', { length: 100 }).notNull(),
   name: varchar('name', { length: 40 }).notNull().default(''),
@@ -71,13 +88,18 @@ export const pushReceipts = mysqlTable('push_receipts', {
 /**
  * 两个人共用的自定义设置（键值）：待办分类等。值的格式由 src/settings.ts 校验。
  */
-export const sharedSettings = mysqlTable('shared_settings', {
-  key: varchar('key', { length: 64 }).primaryKey(),
-  value: json('value').$type<unknown>().notNull(),
-  updatedAt: timestamp('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`).onUpdateNow(),
-});
+export const sharedSettings = mysqlTable(
+  'shared_settings',
+  {
+    coupleId: coupleRef(),
+    key: varchar('key', { length: 64 }).notNull(),
+    value: json('value').$type<unknown>().notNull(),
+    updatedAt: timestamp('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`).onUpdateNow(),
+  },
+  (t) => [primaryKey({ columns: [t.coupleId, t.key] })]
+);
 
-/** 涓や汉绌洪棿璁剧疆锛屽彧鏈?id=1 涓€琛?*/
+/** 旧版的空间设置（只有 id=1 一行），已迁到 couples，保留不再使用 */
 export const space = mysqlTable('space', {
   id: int('id').primaryKey(),
   startDate: date('start_date', { mode: 'string' }),
@@ -89,6 +111,7 @@ export const places = mysqlTable(
   'places',
   {
     id: id(),
+    coupleId: coupleRef(),
     name: varchar('name', { length: 80 }).notNull(),
     address: varchar('address', { length: 200 }),
     city: varchar('city', { length: 40 }),
@@ -116,6 +139,7 @@ export const visits = mysqlTable(
   'visits',
   {
     id: id(),
+    coupleId: coupleRef(),
     placeId: varchar('place_id', { length: 36 })
       .notNull()
       .references(() => places.id, { onDelete: 'cascade' }),
@@ -132,6 +156,7 @@ export const visits = mysqlTable(
 
 export const anniversaries = mysqlTable('anniversaries', {
   id: id(),
+  coupleId: coupleRef(),
   title: varchar('title', { length: 40 }).notNull(),
   date: date('date', { mode: 'string' }).notNull(),
   kind: mysqlEnum('kind', ['love', 'birthday', 'custom']).notNull().default('custom'),
@@ -151,6 +176,7 @@ export type MediaItem = { kind: 'image' | 'video' | 'live'; image?: string | nul
 
 export const moments = mysqlTable('moments', {
   id: id(),
+  coupleId: coupleRef(),
   content: text('content'),
   photos: json('photos').$type<string[]>().notNull().$defaultFn(() => []),
   /** 新版媒体（视频 / Live 图）；旧记录为 null，读取时由 photos 补出 */
@@ -176,6 +202,7 @@ export const comments = mysqlTable(
   'comments',
   {
     id: id(),
+    coupleId: coupleRef(),
     momentId: varchar('moment_id', { length: 36 })
       .notNull()
       .references(() => moments.id, { onDelete: 'cascade' }),
@@ -194,6 +221,7 @@ export const comments = mysqlTable(
 
 export const todos = mysqlTable('todos', {
   id: id(),
+  coupleId: coupleRef(),
   title: varchar('title', { length: 120 }).notNull(),
   note: text('note'),
   done: boolean('done').notNull().default(false),
@@ -209,13 +237,14 @@ export const answers = mysqlTable(
   'answers',
   {
     id: id(),
+    coupleId: coupleRef(),
     day: varchar('day', { length: 10 }).notNull(), // YYYY-MM-DD
     question: int('question').notNull(),
     content: text('content').notNull(),
     createdBy: userRef('created_by').notNull(),
     ...timestamps,
   },
-  (t) => [uniqueIndex('answers_day_user').on(t.day, t.createdBy)]
+  (t) => [uniqueIndex('answers_couple_day_user').on(t.coupleId, t.day, t.createdBy)]
 );
 
 /** 问答：两个人互相提问。askerAnswers：提问的人也一起答（两个人都答完才互相看到） */
@@ -223,12 +252,13 @@ export const questions = mysqlTable(
   'questions',
   {
     id: id(),
+    coupleId: coupleRef(),
     text: varchar('text', { length: 200 }).notNull(),
     askerAnswers: boolean('asker_answers').notNull().default(true),
     createdBy: userRef('created_by').notNull(),
     ...timestamps,
   },
-  (t) => [index('questions_created_idx').on(t.createdAt)]
+  (t) => [index('questions_couple_created_idx').on(t.coupleId, t.createdAt)]
 );
 
 export const questionAnswers = mysqlTable(
@@ -273,6 +303,7 @@ export const capsules = mysqlTable(
   'capsules',
   {
     id: id(),
+    coupleId: coupleRef(),
     title: varchar('title', { length: 40 }).notNull(),
     content: text('content').notNull(),
     photos: json('photos').$type<string[]>().notNull().$defaultFn(() => []),
@@ -282,7 +313,7 @@ export const capsules = mysqlTable(
     createdBy: userRef('created_by').notNull(),
     ...timestamps,
   },
-  (t) => [index('capsules_unlock_idx').on(t.unlockAt)]
+  (t) => [index('capsules_couple_unlock_idx').on(t.coupleId, t.unlockAt)]
 );
 
 /** Private food category preferences; null/missing row uses starter categories. */
@@ -294,6 +325,7 @@ export const foodPreferences = mysqlTable('food_preferences', {
 /** 两个人共用的自定义表情包 */
 export const stickers = mysqlTable('stickers', {
   id: id(),
+  coupleId: coupleRef(),
   file: varchar('file', { length: 100 }).notNull(),
   createdBy: userRef('created_by'),
   ...timestamps,
@@ -304,6 +336,7 @@ export const galleryItems = mysqlTable(
   'gallery_items',
   {
     id: id(),
+    coupleId: coupleRef(),
     kind: mysqlEnum('kind', ['image', 'video', 'live']).notNull().default('image'),
     /** 展示用图片（视频 / Live 图的封面） */
     image: varchar('image', { length: 100 }),
@@ -321,11 +354,12 @@ export const galleryItems = mysqlTable(
     createdBy: userRef('created_by'),
     ...timestamps,
   },
-  (t) => [index('gallery_taken_idx').on(t.takenAt)]
+  (t) => [index('gallery_couple_taken_idx').on(t.coupleId, t.takenAt)]
 );
 
 export const albums = mysqlTable('albums', {
   id: id(),
+  coupleId: coupleRef(),
   title: varchar('title', { length: 40 }).notNull(),
   emoji: varchar('emoji', { length: 16 }),
   description: varchar('description', { length: 200 }),
@@ -369,6 +403,7 @@ export const messages = mysqlTable(
   'messages',
   {
     id: id(),
+    coupleId: coupleRef(),
     kind: mysqlEnum('kind', ['text', 'image', 'sticker', 'voice', 'photo']).notNull().default('text'),
     content: varchar('content', { length: 1000 }),
     image: varchar('image', { length: 100 }),
@@ -381,7 +416,7 @@ export const messages = mysqlTable(
     createdBy: userRef('created_by'),
     ...timestamps,
   },
-  (t) => [index('messages_created_idx').on(t.createdAt)]
+  (t) => [index('messages_couple_created_idx').on(t.coupleId, t.createdAt)]
 );
 
 /** 每个人读到哪里（之后对方发的算未读） */
