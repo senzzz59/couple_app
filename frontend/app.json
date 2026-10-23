@@ -9,20 +9,17 @@
     "userInterfaceStyle": "light",
     "backgroundColor": "#FFF7F5",
     "ios": {
-      "bundleIdentifier": "com.us.couple",
+      "bundleIdentifier": "com.senfoundry.us",
       "supportsTablet": false,
       "infoPlist": {
         "LSApplicationQueriesSchemes": [
           "iosamap",
           "xhsdiscover"
-        ],
-        "NSAppTransportSecurity": {
-          "NSAllowsArbitraryLoads": true
-        }
+        ]
       }
     },
     "android": {
-      "package": "com.us.couple",
+      "package": "com.senfoundry.us",
       "adaptiveIcon": {
         "backgroundColor": "#FDE2E8",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
