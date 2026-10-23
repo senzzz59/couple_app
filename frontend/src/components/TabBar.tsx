@@ -3,11 +3,11 @@ import { BlurView } from 'expo-blur';
 import { House, Images, ListChecks, LucideIcon, Sparkles, UtensilsCrossed } from 'lucide-react-native';
 import { useEffect } from 'react';
 import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
-import Animated, { FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { haptic } from '@/lib/haptics';
-import { colors, radius, shadow, springs } from '@/theme';
+import { colors, radius, shadow } from '@/theme';
 
 import { Txt } from './ui';
 
@@ -26,7 +26,8 @@ function Tab({ name, focused, onPress }: { name: string; focused: boolean; onPre
   const tab = TABS[name];
   const p = useSharedValue(focused ? 1 : 0);
   useEffect(() => {
-    p.value = withSpring(focused ? 1 : 0, springs.soft);
+    // 短一点、不回弹：宽度动画每帧都要重新排版，和页面切换同时结束才不会卡
+    p.value = withTiming(focused ? 1 : 0, { duration: 200, easing: Easing.out(Easing.cubic) });
   }, [focused, p]);
   const grow = useAnimatedStyle(() => ({ flexGrow: 1 + p.value * 1.1 }));
   const pill = useAnimatedStyle(() => ({ opacity: p.value, transform: [{ scaleX: 0.6 + 0.4 * p.value }, { scaleY: 0.8 + 0.2 * p.value }] }));
@@ -51,7 +52,19 @@ function Tab({ name, focused, onPress }: { name: string; focused: boolean; onPre
   );
 }
 
+/** 打开 App 一会儿后，在后台把没打开过的标签页先渲染好：第一次切过去不用现搭整个页面 */
+const PRELOAD_AFTER_MS = 1500;
+const PRELOAD_GAP_MS = 400;
+
 export function TabBar({ state, navigation }: BottomTabBarProps) {
+  useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const names = state.routes.map((r) => r.name).filter((n, i) => i !== state.index && TABS[n]);
+    names.forEach((name, i) => timers.push(setTimeout(() => navigation.preload(name), PRELOAD_AFTER_MS + i * PRELOAD_GAP_MS)));
+    return () => timers.forEach(clearTimeout);
+    // 只在启动时预加载一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const rowW = Math.min(width - 24, 440);

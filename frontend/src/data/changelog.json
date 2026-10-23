@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "id": "smooth-tab-switch",
+      "date": "2026-10-23",
+      "title": "底部切换页面更顺滑",
+      "changes": [
+        { "type": "improve", "text": "打开 App 后会在后台提前准备好动态、相册、美食和清单页，第一次点过去不会再卡一下" },
+        { "type": "improve", "text": "切走的页面不再在后台反复刷新，来回切换更跟手" },
+        { "type": "improve", "text": "底部按钮的粉色胶囊动画更利落，和页面切换一起结束" }
+      ]
+    },
+    {
       "id": "app-installer-update",
       "date": "2026-10-23",
       "title": "App 里直接下载新版本",
