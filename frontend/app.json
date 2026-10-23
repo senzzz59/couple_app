@@ -68,7 +68,8 @@
             "usesCleartextTraffic": true
           }
         }
-      ]
+      ],
+      "./plugins/withGradleProjectName"
     ],
     "experiments": {
       "typedRoutes": true,
