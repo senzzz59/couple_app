@@ -265,7 +265,7 @@ export const Video = forwardRef<VideoHandle, VideoProps>(function Video(
 
       {!!placeholder && !shown && (
         <Animated.View pointerEvents="none" exiting={FadeOut.duration(220)} style={StyleSheet.absoluteFill}>
-          <Image source={poster ?? placeholder} placeholder={placeholder} style={StyleSheet.absoluteFill} contentFit={fit} />
+          <Image source={poster ?? placeholder} placeholder={placeholder} style={StyleSheet.absoluteFill} contentFit={fit} placeholderContentFit={fit} />
         </Animated.View>
       )}
 

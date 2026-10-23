@@ -96,7 +96,7 @@ function PeekBody({ p, visits, km, onClose }: { p: Place; visits: Visit[]; km: n
                 scrollEventThrottle={32}
                 onScroll={(e) => setIndex(Math.round(e.nativeEvent.contentOffset.x / width))}>
                 {slides.map((s) => (
-                  <Image key={s.key} source={s.uri} placeholder={s.thumb} style={{ width, height: photoH }} contentFit="cover" transition={200} />
+                  <Image key={s.key} source={s.uri} placeholder={s.thumb} style={{ width, height: photoH }} contentFit="cover" placeholderContentFit="cover" transition={200} />
                 ))}
               </ScrollView>
             ) : (
