@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Bell, CalendarHeart, ChevronRight, Download, Eye, Heart, Info, KeyRound, LogOut, Package, Smartphone } from 'lucide-react-native';
+import { Bell, CalendarHeart, ChevronRight, Download, Eye, Heart, Info, KeyRound, LogOut, Smartphone } from 'lucide-react-native';
 import { useCallback, useEffect, useState } from 'react';
 import { Platform, StyleSheet, Switch, View } from 'react-native';
 import Animated from 'react-native-reanimated';
@@ -52,7 +52,7 @@ export default function Settings() {
   const PUSH_LABEL: Record<WebPushState, string> = { on: '已开启', off: '未开启', denied: '已关闭', 'needs-install': '需添加到主屏幕', unsupported: '不支持' };
   const webNotifications = async () => {
     if (pushState === 'needs-install') return setInstallGuide(true);
-    if (pushState === 'unsupported') return toast('这个浏览器收不到后台通知', '⚠️', isIOS() ? '需要 iOS 16.4 以上，从主屏幕图标打开' : '安卓需要手机有谷歌服务，或换用 App 版');
+    if (pushState === 'unsupported') return toast('这个浏览器收不到后台通知', '⚠️', isIOS() ? '需要 iOS 16.4 以上，从主屏幕图标打开' : '安卓需要手机有谷歌服务');
     if (pushState === 'denied') return toast('通知权限被关掉了', '⚠️', isIOS() ? '去「设置 → 通知 → us.」里打开' : '在浏览器的网站设置里允许 us. 发通知');
     setPushBusy(true);
     try {
@@ -89,17 +89,6 @@ export default function Settings() {
       setShareViewing(!next);
       toast((e as Error).message, '⚠️');
     }
-  };
-
-  // 网页版：下载安卓 App 安装包（服务器上的 /download/us.apk），iPhone 暂时没有 App 版
-  const downloadApp = async () => {
-    if (isIOS()) return toast('iPhone 暂时不支持 App 版', '🍎', '继续用 Safari 添加到主屏幕就好');
-    // 服务器配了对象存储时给的是对象存储的链接，下载快很多；没有就用服务器上的 /download/us.apk
-    const info = await fetch('/api/app/android', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-    if (info?.url) return window.location.assign(info.url);
-    const ready = await fetch('/download/android.json', { cache: 'no-store' }).then((r) => r.ok).catch(() => false);
-    if (!ready) return toast('安装包还没准备好，稍后再试', '⚠️');
-    window.location.assign('/download/us.apk');
   };
 
   const logout = async () => {
@@ -145,8 +134,7 @@ export default function Settings() {
         <Animated.View entering={enter(3)}>
           <Group title="应用">
             {web && !isStandalone() && <SettingRow first icon={Smartphone} label="添加到主屏幕" onPress={install} />}
-            {web && <SettingRow first={isStandalone()} icon={Package} label="下载 App 版" value={isIOS() ? undefined : '安卓'} onPress={downloadApp} />}
-            <SettingRow first={!web} icon={Download} label={update.pending ? '更新到新版本' : '检查更新'} value={update.pending ? undefined : appVersion} badge={update.pending ? '新版本' : undefined} busy={update.busy} onPress={update.check} />
+            <SettingRow first={!web || isStandalone()} icon={Download} label={update.pending ? '更新到新版本' : '检查更新'} value={update.pending ? undefined : appVersion} badge={update.pending ? '新版本' : undefined} busy={update.busy} onPress={update.check} />
             <SettingRow icon={Info} label="关于" onPress={() => router.push('/settings/about')} />
           </Group>
         </Animated.View>
