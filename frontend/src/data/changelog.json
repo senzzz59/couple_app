@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "id": "hide-app-download",
+      "date": "2026-10-24",
+      "title": "先不用 App 版了",
+      "changes": [
+        { "type": "improve", "text": "设置里的「下载 App 版」先藏起来了，安卓和 iPhone 都推荐用浏览器「添加到主屏幕」，和 App 一样有桌面图标、全屏打开，更新也不用重新下载" }
+      ]
+    },
+    {
       "id": "photo-no-small-flash",
       "date": "2026-10-24",
       "title": "打开照片不再先小后大",
