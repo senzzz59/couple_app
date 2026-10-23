@@ -75,7 +75,6 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
-  const [regOpen, setRegOpen] = useState<boolean | null>(null);
   const pwRef = useRef<TextInput>(null);
 
   const shake = useSharedValue(0);
@@ -86,18 +85,7 @@ export default function Login() {
     shake.set(withSequence(...[10, -10, 7, -7, 3, 0].map((x) => withTiming(x, { duration: 55 }))));
   };
 
-  // 服务器地址变化后查一下还能不能注册
   const server = normalizeUrl(url);
-  useEffect(() => {
-    if (!server) return;
-    const t = setTimeout(() => {
-      api
-        .authStatus(server)
-        .then((s) => setRegOpen(s.registrationOpen))
-        .catch(() => setRegOpen(null));
-    }, 400);
-    return () => clearTimeout(t);
-  }, [server]);
 
   const switchMode = (m: Mode) => {
     setMode(m);
@@ -149,7 +137,6 @@ export default function Login() {
 
   const canSubmit =
     mode === 'login' ? !!email && !!password : mode === 'register' ? !!email && code.length === 6 && password.length >= 8 && !!name.trim() : !!email && code.length === 6 && password.length >= 8;
-  const registerClosed = mode === 'register' && regOpen === false;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -197,84 +184,73 @@ export default function Login() {
                 </Animated.View>
               )}
 
-              {registerClosed ? (
-                <Animated.View entering={FadeIn} style={styles.notice}>
-                  <Text style={{ fontSize: 28 }}>💑</Text>
-                  <View style={{ flex: 1 }}>
-                    <Txt v="bodyStrong">两个账号都已经注册啦</Txt>
+              <View>
+                <Field
+                  label="邮箱"
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder="you@example.com"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  textContentType="username"
+                  returnKeyType="next"
+                  onSubmitEditing={() => mode === 'login' && pwRef.current?.focus()}
+                />
+                {mode !== 'login' && (
+                  <View style={styles.sendWrap}>
+                    <SendCodeButton onSend={sendCode} disabled={!/^\S+@\S+\.\S+$/.test(email.trim())} />
                   </View>
+                )}
+              </View>
+
+              {mode !== 'login' && codeSent && (
+                <Animated.View entering={FadeInDown.springify().damping(16)} exiting={FadeOut} style={{ gap: 8 }}>
+                  <Txt v="label" style={{ marginLeft: 4 }}>
+                    验证码
+                  </Txt>
+                  <CodeInput value={code} onChange={setCode} />
                 </Animated.View>
-              ) : (
-                <>
-                  <View>
-                    <Field
-                      label="邮箱"
-                      value={email}
-                      onChangeText={setEmail}
-                      placeholder="you@example.com"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      keyboardType="email-address"
-                      textContentType="username"
-                      returnKeyType="next"
-                      onSubmitEditing={() => mode === 'login' && pwRef.current?.focus()}
-                    />
-                    {mode !== 'login' && (
-                      <View style={styles.sendWrap}>
-                        <SendCodeButton onSend={sendCode} disabled={!/^\S+@\S+\.\S+$/.test(email.trim())} />
-                      </View>
-                    )}
-                  </View>
+              )}
 
-                  {mode !== 'login' && codeSent && (
-                    <Animated.View entering={FadeInDown.springify().damping(16)} exiting={FadeOut} style={{ gap: 8 }}>
-                      <Txt v="label" style={{ marginLeft: 4 }}>
-                        验证码
-                      </Txt>
-                      <CodeInput value={code} onChange={setCode} />
-                    </Animated.View>
-                  )}
+              {mode === 'register' && codeSent && (
+                <Animated.View entering={FadeInDown.delay(60).springify().damping(16)}>
+                  <Field label="昵称" value={name} onChangeText={setName} placeholder="TA 怎么称呼你" maxLength={40} />
+                </Animated.View>
+              )}
 
-                  {mode === 'register' && codeSent && (
-                    <Animated.View entering={FadeInDown.delay(60).springify().damping(16)}>
-                      <Field label="昵称" value={name} onChangeText={setName} placeholder="TA 怎么称呼你" maxLength={40} />
-                    </Animated.View>
-                  )}
+              {(mode === 'login' || codeSent) && (
+                <Animated.View entering={FadeInDown.delay(100).springify().damping(16)}>
+                  <Field
+                    ref={pwRef}
+                    label={mode === 'login' ? '密码' : mode === 'register' ? '设置密码（至少 8 位）' : '新密码（至少 8 位）'}
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder="••••••••"
+                    secureTextEntry
+                    textContentType={mode === 'login' ? 'password' : 'newPassword'}
+                    returnKeyType="go"
+                    onSubmitEditing={() => canSubmit && submit()}
+                  />
+                </Animated.View>
+              )}
 
-                  {(mode === 'login' || codeSent) && (
-                    <Animated.View entering={FadeInDown.delay(100).springify().damping(16)}>
-                      <Field
-                        ref={pwRef}
-                        label={mode === 'login' ? '密码' : mode === 'register' ? '设置密码（至少 8 位）' : '新密码（至少 8 位）'}
-                        value={password}
-                        onChangeText={setPassword}
-                        placeholder="••••••••"
-                        secureTextEntry
-                        textContentType={mode === 'login' ? 'password' : 'newPassword'}
-                        returnKeyType="go"
-                        onSubmitEditing={() => canSubmit && submit()}
-                      />
-                    </Animated.View>
-                  )}
+              {!!(error || info) && (
+                <Animated.View key={error || info} entering={FadeIn}>
+                  <Txt v="caption" color={error ? colors.accent : colors.sageInk} style={{ textAlign: 'center' }}>
+                    {error || info}
+                  </Txt>
+                </Animated.View>
+              )}
 
-                  {!!(error || info) && (
-                    <Animated.View key={error || info} entering={FadeIn}>
-                      <Txt v="caption" color={error ? colors.accent : colors.sageInk} style={{ textAlign: 'center' }}>
-                        {error || info}
-                      </Txt>
-                    </Animated.View>
-                  )}
-
-                  {(mode === 'login' || codeSent) && (
-                    <Button
-                      title={mode === 'login' ? '进入我们的空间' : mode === 'register' ? '创建账号' : '重置并登录'}
-                      onPress={submit}
-                      loading={loading}
-                      disabled={!canSubmit}
-                      style={{ marginTop: 4 }}
-                    />
-                  )}
-                </>
+              {(mode === 'login' || codeSent) && (
+                <Button
+                  title={mode === 'login' ? '进入我们的空间' : mode === 'register' ? '创建账号' : '重置并登录'}
+                  onPress={submit}
+                  loading={loading}
+                  disabled={!canSubmit}
+                  style={{ marginTop: 4 }}
+                />
               )}
             </Animated.View>
           </Animated.View>
@@ -303,5 +279,4 @@ export default function Login() {
 const styles = StyleSheet.create({
   sendWrap: { position: 'absolute', right: 6, bottom: 6 },
   sendBtn: { height: 40, paddingHorizontal: 14, borderRadius: radius.pill, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
-  notice: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderRadius: radius.lg, padding: 16 },
 });

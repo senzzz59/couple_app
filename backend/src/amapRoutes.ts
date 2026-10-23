@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { parseAmapPoiId, resolveAmapUrl, validAmapUrl } from './amap.ts';
 import { amapService, AmapServiceError } from './amapService.ts';
+import { coupleOf } from './auth.ts';
 import { db, schema } from './db/index.ts';
 import { broadcast } from './realtime.ts';
 
@@ -34,12 +35,13 @@ export async function amapRoutes(app: FastifyInstance) {
     catch (error) { if (error instanceof AmapServiceError) return { place: null, checkedAt, message: error.message }; throw error; }
   });
   // 给已经收藏、关联了高德但还没有照片的店补上高德照片（每次最多 8 家，前端打开美食页时顺手调用）
-  app.post('/api/places/amap-photos', auth, async (req) => {
+  app.post('/api/places/amap-photos', { preHandler: app.paired }, async (req) => {
     const provider = service();
+    const coupleId = coupleOf(req);
     const rows = await db
       .select({ id: schema.places.id, amapUrl: schema.places.amapUrl })
       .from(schema.places)
-      .where(and(isNull(schema.places.amapPhoto), isNotNull(schema.places.amapUrl)))
+      .where(and(eq(schema.places.coupleId, coupleId), isNull(schema.places.amapPhoto), isNotNull(schema.places.amapUrl)))
       .limit(8);
     let updated = 0;
     for (const row of rows) {
@@ -55,7 +57,7 @@ export async function amapRoutes(app: FastifyInstance) {
       await db.update(schema.places).set({ amapPhoto: photo }).where(eq(schema.places.id, row.id));
       if (photo) updated++;
     }
-    if (updated) broadcast({ type: 'change', collection: 'places', by: req.user.sub });
+    if (updated) broadcast(coupleId, { type: 'change', collection: 'places', by: req.user.sub });
     return { checked: rows.length, updated };
   });
 

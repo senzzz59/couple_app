@@ -53,6 +53,20 @@ function CardTitle({ children, right, color = colors.ink }: { children: ReactNod
   );
 }
 
+// ---------------- TA 还没加入（刚建好空间，或 TA 解除了关系）
+function InviteBanner() {
+  return (
+    <PressScale onPress={() => router.push('/settings/space')} style={styles.invite}>
+      <FlatHeart size={22} color={colors.accent} />
+      <View style={{ flex: 1, gap: 2 }}>
+        <Txt v="bodyStrong">邀请 TA 加入</Txt>
+        <Txt v="secondary">把邀请码发给 TA，就能一起记录啦</Txt>
+      </View>
+      <ChevronRight size={18} color={colors.faint} />
+    </PressScale>
+  );
+}
+
 // ---------------- 在一起天数
 function HeroCard() {
   const { space, me, partner } = useCouple();
@@ -500,6 +514,7 @@ export default function Home() {
   const pullRefresh = usePullRefresh(refresh, y, insets.top + 8);
 
   const blocks = [
+    ...(me && !partner ? [<InviteBanner key="invite" />] : []),
     <HeroCard key="hero" />,
     <Row key="r1" gap={12} style={{ alignItems: 'stretch' }}>
       <NudgeCard />
@@ -562,6 +577,7 @@ const styles = StyleSheet.create({
   chatBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
   chatBadge: { position: 'absolute', top: -3, right: -4, minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4, backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.bg },
   chatBadgeText: { color: colors.white, fontSize: 10, fontWeight: '800', lineHeight: 12 },
+  invite: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: colors.surface, borderRadius: radius.lg, padding: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.accentSoft },
   hero: { borderRadius: radius.xl, padding: 22, overflow: 'hidden', minHeight: 196, borderCurve: 'continuous', backgroundColor: colors.pink, justifyContent: 'center' },
   heroBlobs: { position: 'absolute', right: 4, bottom: -6 },
   heroPill: { alignSelf: 'flex-start', marginTop: 10, backgroundColor: 'rgba(255,255,255,0.8)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill },

@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
-import { eq, ne } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import webpush from 'web-push';
 import { z } from 'zod';
 import { db, schema } from './db/index.ts';
+import { partnerOf } from './couple.ts';
 import { isOnline } from './realtime.ts';
 
 /**
@@ -110,10 +111,10 @@ function throttled(key: string, ms: number) {
  */
 export function notifyPartner(fromUserId: string, message: PushMessage & { throttleMs?: number }, log: (error: unknown) => void) {
   void (async () => {
-    const [partner] = await db.select({ id: schema.users.id }).from(schema.users).where(ne(schema.users.id, fromUserId)).limit(1);
+    const [sender] = await db.select({ name: schema.users.name, coupleId: schema.users.coupleId }).from(schema.users).where(eq(schema.users.id, fromUserId));
+    const partner = sender ? await partnerOf(fromUserId, sender.coupleId) : null;
     if (!partner || isOnline(partner.id)) return;
     if (message.throttleMs && throttled(`${fromUserId}:${message.tag}`, message.throttleMs)) return;
-    const [sender] = await db.select({ name: schema.users.name }).from(schema.users).where(eq(schema.users.id, fromUserId));
     const name = sender?.name || 'TA';
     await sendWebPush(partner.id, { ...message, title: message.title.replace('{name}', name), body: message.body.replace('{name}', name) }, log);
   })().catch(log);

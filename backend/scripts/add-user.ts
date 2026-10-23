@@ -1,4 +1,4 @@
-// 添加 / 重置账号（App 没有注册入口，账号只能用这个脚本创建）
+// 添加账号 / 重置密码（新账号登录后自己创建空间或填邀请码配对）
 // 用法：npm run user:add -- <邮箱> <密码> <昵称>
 import bcrypt from 'bcryptjs';
 import { eq } from 'drizzle-orm';
@@ -19,8 +19,6 @@ if (existing) {
   await db.update(schema.users).set({ passwordHash, ...(name ? { name } : {}) }).where(eq(schema.users.id, existing.id));
   console.log(`已更新账号 ${key}`);
 } else {
-  const count = (await db.select({ id: schema.users.id }).from(schema.users)).length;
-  if (count >= 2) console.warn('提示：已经有两个账号了，这个 App 是按两人设计的。');
   await db.insert(schema.users).values({ email: key, passwordHash, name });
   console.log(`已创建账号 ${key}`);
 }

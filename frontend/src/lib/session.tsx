@@ -1,7 +1,7 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AppState } from 'react-native';
 
-import { api, clearToken, loadCredentials, saveCredentials, setUnauthorizedHandler, wsUrl } from './api';
+import { api, clearToken, loadCredentials, saveCredentials, setNotPairedHandler, setUnauthorizedHandler, wsUrl } from './api';
 import { emitRealtime, onRealtime, setRealtimeSender } from './realtime';
 import { clearCache, invalidate, useQuery } from './store';
 import { cancelReminders } from './notify';
@@ -39,6 +39,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setUnauthorizedHandler(() => void signOut());
+    // 在别的设备上解除了关系：重新读一下自己，回到配对页
+    setNotPairedHandler(() => void invalidate('me'));
+    return () => setNotPairedHandler(null);
   }, [signOut]);
 
   const signInWithToken = useCallback(async (url: string, token: string) => {

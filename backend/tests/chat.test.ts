@@ -6,6 +6,7 @@ const A = '11111111-1111-4111-8111-111111111111';
 const B = '22222222-2222-4222-8222-222222222222';
 const ITEM = '33333333-3333-4333-8333-333333333333';
 const ITEM2 = '44444444-4444-4444-8444-444444444444';
+const C1 = 'couple-1';
 
 function fakeSocket() {
   const got: Record<string, unknown>[] = [];
@@ -48,8 +49,8 @@ test('partner sees where I am in the gallery, only while the app is open', async
   rt.resetRealtime();
   const a = fakeSocket();
   const b = fakeSocket();
-  rt.attachSocket(a, A);
-  rt.attachSocket(b, B);
+  rt.attachSocket(a, A, C1);
+  rt.attachSocket(b, B, C1);
   assert.deepEqual(b.got.at(-1), { type: 'peer', online: false, where: null, itemId: null });
   rt.handleMessage(a, JSON.stringify({ type: 'presence', active: true }), 1000);
   assert.deepEqual(b.got.at(-1), { type: 'peer', online: true, where: null, itemId: null });
@@ -63,7 +64,7 @@ test('partner sees where I am in the gallery, only while the app is open', async
   assert.equal(b.got.length, count);
   // 新连上的人马上知道另一半在看哪张
   const b2 = fakeSocket();
-  rt.attachSocket(b2, B);
+  rt.attachSocket(b2, B, C1);
   assert.deepEqual(b2.got[0], { type: 'peer', online: true, where: 'viewer', itemId: ITEM });
   // 切到后台 = 离线
   rt.handleMessage(a, JSON.stringify({ type: 'presence', active: false }), 4000);
@@ -78,8 +79,8 @@ test('turning off viewing share hides the photo but keeps online status', async 
   rt.resetRealtime();
   const a = fakeSocket();
   const b = fakeSocket();
-  rt.attachSocket(a, A, false);
-  rt.attachSocket(b, B);
+  rt.attachSocket(a, A, C1, false);
+  rt.attachSocket(b, B, C1);
   rt.handleMessage(a, JSON.stringify({ type: 'presence', active: true }), 1000);
   rt.handleMessage(a, JSON.stringify({ type: 'look', where: 'viewer', itemId: ITEM }), 2000);
   assert.deepEqual(b.got.at(-1), { type: 'peer', online: true, where: null, itemId: null });
@@ -95,8 +96,8 @@ test('reactions and co-viewing are relayed to the partner and validated', async 
   rt.resetRealtime();
   const a = fakeSocket();
   const b = fakeSocket();
-  rt.attachSocket(a, A);
-  rt.attachSocket(b, B);
+  rt.attachSocket(a, A, C1);
+  rt.attachSocket(b, B, C1);
   const relayed = () => b.got.filter((e) => e.type === 'react' || e.type === 'coview');
   rt.handleMessage(a, JSON.stringify({ type: 'react', itemId: ITEM, emoji: '😍' }), 1000);
   rt.handleMessage(a, JSON.stringify({ type: 'react', itemId: ITEM, emoji: 'blob:love' }), 1000);
@@ -129,10 +130,68 @@ test('a flood of realtime messages is dropped after the per-second limit', async
   rt.resetRealtime();
   const a = fakeSocket();
   const b = fakeSocket();
-  rt.attachSocket(a, A);
-  rt.attachSocket(b, B);
+  rt.attachSocket(a, A, C1);
+  rt.attachSocket(b, B, C1);
   for (let i = 0; i < 50; i++) rt.handleMessage(a, JSON.stringify({ type: 'react', itemId: ITEM, emoji: '💗' }), 1000 + i);
   assert.equal(b.got.filter((e) => e.type === 'react').length, 15);
   rt.handleMessage(a, JSON.stringify({ type: 'react', itemId: ITEM, emoji: '💗' }), 2100);
   assert.equal(b.got.filter((e) => e.type === 'react').length, 16);
+});
+
+test('realtime events stay inside one couple', async () => {
+  const rt = await import('../src/realtime.ts');
+  rt.resetRealtime();
+  const C = '55555555-5555-4555-8555-555555555555';
+  const D = '66666666-6666-4666-8666-666666666666';
+  const a = fakeSocket();
+  const b = fakeSocket();
+  const c = fakeSocket();
+  const d = fakeSocket();
+  const lonely = fakeSocket();
+  rt.attachSocket(a, A, C1);
+  rt.attachSocket(b, B, C1);
+  rt.attachSocket(c, C, 'couple-2');
+  rt.attachSocket(d, D, 'couple-2');
+  rt.attachSocket(lonely, '77777777-7777-4777-8777-777777777777', null);
+  rt.broadcast(C1, { type: 'change', collection: 'moments', by: A });
+  rt.broadcast(null, { type: 'change', collection: 'moments', by: A });
+  assert.equal(a.got.filter((e) => e.type === 'change').length, 1);
+  assert.equal(b.got.filter((e) => e.type === 'change').length, 1);
+  assert.ok(![c, d, lonely].some((x) => x.got.some((e) => e.type === 'change')));
+  rt.handleMessage(a, JSON.stringify({ type: 'presence', active: true }), 1000);
+  rt.handleMessage(a, JSON.stringify({ type: 'react', itemId: ITEM, emoji: '😍' }), 1000);
+  assert.ok(b.got.some((e) => e.type === 'react'));
+  assert.ok(![c, d, lonely].some((x) => x.got.some((e) => e.type === 'react' || (e.type === 'peer' && e.online))));
+  // 另一对的人在线，不会被当成我的另一半
+  const seen = b.got.length;
+  rt.handleMessage(c, JSON.stringify({ type: 'presence', active: true }), 1100);
+  assert.equal(b.got.length, seen);
+  assert.deepEqual(d.got.at(-1), { type: 'peer', online: true, where: null, itemId: null });
+  const fresh = fakeSocket();
+  rt.attachSocket(fresh, D, 'couple-2');
+  assert.deepEqual(fresh.got[0], { type: 'peer', online: true, where: null, itemId: null });
+});
+
+test('pairing moves open connections into the new couple', async () => {
+  const rt = await import('../src/realtime.ts');
+  rt.resetRealtime();
+  const a = fakeSocket();
+  const b = fakeSocket();
+  rt.attachSocket(a, A, C1);
+  rt.attachSocket(b, B, null);
+  rt.handleMessage(a, JSON.stringify({ type: 'presence', active: true }), 1000);
+  rt.handleMessage(b, JSON.stringify({ type: 'presence', active: true }), 1000);
+  rt.broadcast(C1, { type: 'change', collection: 'users', by: A });
+  assert.ok(!b.got.some((e) => e.type === 'change'));
+  rt.moveUser(B, C1);
+  assert.deepEqual(b.got.at(-1), { type: 'peer', online: true, where: null, itemId: null });
+  assert.deepEqual(a.got.at(-1), { type: 'peer', online: true, where: null, itemId: null });
+  rt.broadcast(C1, { type: 'change', collection: 'users', by: A });
+  assert.ok(b.got.some((e) => e.type === 'change'));
+  // 解除关系：留下的人看到 TA 离线，离开的人不再收到这一对的消息
+  rt.moveUser(B, null);
+  assert.deepEqual(a.got.at(-1), { type: 'peer', online: false, where: null, itemId: null });
+  const before = b.got.length;
+  rt.broadcast(C1, { type: 'change', collection: 'users', by: A });
+  assert.equal(b.got.length, before);
 });
