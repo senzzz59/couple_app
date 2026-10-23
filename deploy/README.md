@@ -195,10 +195,12 @@ MySQL 5.7.44 不支持 JSON 数据库默认值，数组默认值由应用写入�
 
 安卓 App（包名 `com.senfoundry.us`）在 Expo 账号 `luweisens-team` 的 EAS 项目 `us-couple` 里打包，签名证书由 EAS 生成并保管，以后打新 APK 必须继续用同一个项目，否则已装的 App 无法覆盖升级。
 
-- **打 APK**：在 `frontend` 运行 `eas build -p android --profile preview`（需要 `EXPO_TOKEN` 或 `eas login`）。打好后把版本、构建 ID、下载地址和 sha256 写进 `deploy/android-release.json` 随功能合并。
-- **服务器提供下载**：部署时 `deploy/sync-android.mjs` 按 `android-release.json` 下载 APK、校验 sha256，保存到 `/www/couple-app/downloads`（不随网页版本切换，只保留当前和上一个）。网页通过 `/download/us.apk` 下载，`/download/android.json` 是当前版本信息；安卓浏览器打开「我的 → 关于」会出现「安卓 App」下载入口。不需要改 Nginx：网页版本目录里的 `download` 是指向该目录的软链接。下载失败只在部署日志里记 `Android APK not updated`，不影响部署，旧 APK 仍可下载。EAS 的下载地址约两周后失效，所以要在这之前完成合并部署。
-- **热更新**：`.github/workflows/android-update.yml` 在 master 的 `frontend/` 有改动时，等服务器部署好这次提交（检查 `/version.json`），再用 `eas update` 发布到 `preview` 频道。App 每次打开会检查并安装更新。需要在 GitHub 仓库 Settings → Secrets and variables → Actions 添加 `EXPO_TOKEN`。
-- **什么时候要重新打 APK**：原生部分变化（新增或升级带原生代码的依赖、权限、`app.json` 里的配置、Expo SDK 升级）会改变 runtime 指纹，旧 APK 收不到这些热更新，需要重新打 APK 并更新 `android-release.json`。普通页面和逻辑改动走热更新即可。
+- **自动更新**：`.github/workflows/android-update.yml` 在 master 的 `frontend/` 有改动时，先等服务器部署好这次提交（检查 `/version.json`），再比较 runtime 指纹和 `deploy/android-release.json` 里记录的：
+  - 指纹相同（只改了页面和逻辑）：`eas update` 发布热更新到 `preview` 频道，App 每次打开会检查并安装。
+  - 指纹不同（新增或升级带原生代码的依赖、权限、`app.json` 配置、Expo SDK 升级）：旧 APK 收不到这次更新，工作流自动在 EAS 打新 APK，把版本、构建 ID、下载地址、runtime 和 sha256 写回 `deploy/android-release.json`，以「安卓安装包自动更新」提交推到 master，这次推送触发的部署会把新 APK 放到服务器上。已装旧版的手机需要重新下载安装包覆盖安装（数据都在服务器上，不会丢）。
+  - 需要在 GitHub 仓库 Settings → Secrets and variables → Actions 添加 `EXPO_TOKEN`；master 开了分支保护时，要允许 GitHub Actions 推送。
+- **服务器提供下载**：部署时 `deploy/sync-android.mjs` 按 `android-release.json` 下载 APK、校验 sha256，保存到 `/www/couple-app/downloads`（不随网页版本切换，只保留当前和上一个）。网页通过 `/download/us.apk` 下载，`/download/android.json` 是当前版本信息；网页版「设置 → 下载 App 版」提供下载入口（iPhone 提示暂不支持）。不需要改 Nginx：网页版本目录里的 `download` 是指向该目录的软链接。下载失败只在部署日志里记 `Android APK not updated`，不影响部署，旧 APK 仍可下载；EAS 的下载地址约两周后失效，失效前重新部署一次即可。
+- **手动打 APK**：在 `frontend` 运行 `eas build -p android --profile preview`（需要 `EXPO_TOKEN` 或 `eas login`），或在 GitHub Actions 里手动运行 Android update 工作流。
 
 ## 从 Gitee 切换到 GitHub（已有服务器）
 
