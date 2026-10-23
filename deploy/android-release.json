@@ -1,8 +1,9 @@
 {
   "version": "1.1.0",
   "versionCode": "1",
-  "build": "77cee148-bdef-4924-8046-44114ab9f9d4",
-  "runtime": "1a2a988b0339a0f8447c3ef87b4f1606a93f6590",
-  "url": "https://expo.dev/artifacts/eas/PDF45dGzMu776TuIyF2-A2hrPqWDu2eAMrHhPZI0EEA.apk",
-  "createdAt": "2026-10-23T10:27:14.533Z"
+  "build": "bab47d78-decf-4c36-8a2a-dd043a9ddbca",
+  "runtime": "19faa926c514c823d4eb7fcc0ef655986adbf165",
+  "url": "https://expo.dev/artifacts/eas/nDG9CPOa1j503fiu528BIe6kNPVILBYB-I0-B6XbO5A.apk",
+  "sha256": "58429c722fa9e57f005c295d3f0f4944df7f036b44d4a14c8acb65c12eeba81b",
+  "createdAt": "2026-10-23T17:01:17.153Z"
 }
