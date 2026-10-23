@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "id": "fix-ios-standalone-zoom-jump",
+      "date": "2026-10-24",
+      "title": "修复 iPhone 主屏幕打开页面忽大忽小",
+      "changes": [
+        { "type": "fix", "text": "修复部分 iPhone 从主屏幕图标打开时，页面一会儿缩成一半、一会儿变得特别大的问题（更新后把 us. 从后台划掉再打开一次）" }
+      ]
+    },
+    {
       "id": "hide-app-download",
       "date": "2026-10-24",
       "title": "先不用 App 版了",
