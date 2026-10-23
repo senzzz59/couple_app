@@ -20,6 +20,29 @@ const fmtBuilt = (iso: string | null) => {
   return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
+/** 超出屏幕右边 / 左边的元素（iOS 会因为它们把整页按更宽排版再缩小）：只列最外层的那个，不列它里面的 */
+function overflowing() {
+  const w = Math.min(screen.width, screen.height);
+  const out: string[] = [];
+  const name = (el: Element) => {
+    const cls = typeof el.className === 'string' ? el.className.trim().split(/\s+/).slice(0, 2).join('.') : '';
+    const label = el.getAttribute('aria-label') || el.getAttribute('data-testid') || '';
+    return `${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''}${cls ? `.${cls}` : ''}${label ? `[${label.slice(0, 12)}]` : ''}`;
+  };
+  const sticks = (el: Element) => {
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && (r.right > w + 2 || r.left < -2);
+  };
+  for (const el of Array.from(document.body.querySelectorAll('*'))) {
+    if (out.length >= 8 || !sticks(el) || (el.parentElement && el.parentElement !== document.body && sticks(el.parentElement))) continue;
+    const r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    const path = [el.parentElement, el.parentElement?.parentElement].filter(Boolean).map((p) => name(p!)).reverse().join(' > ');
+    out.push(`超出 ${name(el)} ${Math.round(r.left)}→${Math.round(r.right)} ${cs.position}${cs.transform !== 'none' ? ' transform' : ''} 在 ${path || 'body'}`);
+  }
+  return out.length ? out : ['超出 无'];
+}
+
 /** 屏幕信息：页面显示大小不对时截图给开发者看（连点版本号 5 下才出现） */
 function screenInfo() {
   if (Platform.OS !== 'web' || typeof window === 'undefined') return [];
@@ -32,6 +55,8 @@ function screenInfo() {
     `visual ${vv ? `${Math.round(vv.width)}×${Math.round(vv.height)} ×${vv.scale.toFixed(2)}` : '-'}`,
     `root ${document.getElementById('root')?.offsetWidth ?? '-'}×${document.getElementById('root')?.offsetHeight ?? '-'}`,
     `主屏幕模式 ${standalone ? '是' : '否'}`,
+    `scroll html ${document.documentElement.scrollWidth} body ${document.body.scrollWidth}`,
+    ...overflowing(),
     `viewport ${document.querySelector('meta[name=viewport]')?.getAttribute('content') ?? '-'}`,
     navigator.userAgent,
   ];
@@ -64,8 +89,8 @@ export default function About() {
         </Group>
         {info && (
           <View style={styles.info}>
-            {info.map((line) => (
-              <Txt key={line} v="caption" selectable style={{ fontSize: 11 }}>
+            {info.map((line, i) => (
+              <Txt key={i} v="caption" selectable style={{ fontSize: 11 }}>
                 {line}
               </Txt>
             ))}

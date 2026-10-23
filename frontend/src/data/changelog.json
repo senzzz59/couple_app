@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "id": "about-overflow-diagnostics",
+      "date": "2026-10-24",
+      "title": "排查 iPhone 页面大小问题",
+      "changes": [
+        { "type": "improve", "text": "「关于」里连点版本号 5 下出现的屏幕信息，现在会列出超出屏幕的部分，方便找出 iPhone 主屏幕打开时页面大小不对的原因" }
+      ]
+    },
+    {
       "id": "fix-ios-standalone-zoom-jump",
       "date": "2026-10-24",
       "title": "修复 iPhone 主屏幕打开页面忽大忽小",
