@@ -37,6 +37,9 @@ function screenInfo() {
   ];
 }
 
+/** 安卓手机用浏览器打开时，提供 App 安装包下载（服务器上的 /download/us.apk） */
+const androidWeb = Platform.OS === 'web' && typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+
 export default function About() {
   const update = useUpdateCheck();
   const [taps, setTaps] = useState(0);
@@ -61,6 +64,7 @@ export default function About() {
           />
           {buildInfo.builtAt && <SettingRow label="发布时间" value={fmtBuilt(buildInfo.builtAt)} />}
           {buildInfo.commit && <SettingRow label="提交" value={buildInfo.commit} />}
+          {androidWeb && <SettingRow label="安卓 App" value="下载安装包" onPress={() => window.location.assign('/download/us.apk')} />}
         </Group>
         {info && (
           <View style={styles.info}>

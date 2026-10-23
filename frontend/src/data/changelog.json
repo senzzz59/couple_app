@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "id": "android-app",
+      "date": "2026-10-23",
+      "title": "安卓手机可以装 us. App 了",
+      "changes": [
+        { "type": "new", "text": "安卓手机有了独立的 us. App：用手机浏览器打开网页，在「我的 → 关于」里点「安卓 App」下载安装包，装好后用原来的账号登录" },
+        { "type": "new", "text": "App 以后的小更新会自动下载，下次打开 App 就是新版本，不用重新下载安装包" }
+      ]
+    },
+    {
       "id": "couple-spaces",
       "date": "2026-10-23",
       "title": "每一对情侣都有自己的空间",

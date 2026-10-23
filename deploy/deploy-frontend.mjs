@@ -23,6 +23,9 @@ await withLock('frontend', async () => {
       }
     }
     await fs.cp(path.join(frontend, 'dist'), release, { recursive: true });
+    // /download/ 指向服务器上保存的安卓 APK（sync-android.mjs），网页版本切换时不受影响
+    await fs.mkdir(path.join(root, 'downloads'), { recursive: true });
+    await fs.symlink(path.join(root, 'downloads'), path.join(release, 'download'), 'dir');
     const metadata = JSON.parse(await fs.readFile(path.join(release, 'version.json'), 'utf8'));
     if (!metadata.id || !metadata.assets.length) throw new Error('Invalid frontend build');
     if (process.argv.includes('--prepare')) {

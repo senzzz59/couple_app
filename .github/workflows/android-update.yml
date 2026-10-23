@@ -1,0 +1,52 @@
+# 安卓 App 热更新：master 部署上线后，把新的 JS 代码发布到 EAS Update 的 preview 频道。
+# 已装的 APK 打开时检查并下载；原生部分（依赖、权限、app.json）变了的话 runtime 指纹不同，
+# 旧 APK 不会收到这次更新，需要重新打 APK。需要仓库 Secret：EXPO_TOKEN。
+name: Android OTA update
+
+on:
+  push:
+    branches: [master]
+    paths: ['frontend/**']
+  workflow_dispatch:
+
+concurrency:
+  group: android-ota
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    if: ${{ github.repository == 'senzzz59/couple_app' }}
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Check EXPO_TOKEN
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: test -n "$EXPO_TOKEN" || { echo "::error::缺少仓库 Secret EXPO_TOKEN"; exit 1; }
+      - run: npm ci
+      - name: Wait for the server deployment
+        # 先等服务器部署好这次提交（后端接口已更新），再推给 App
+        run: |
+          short=${GITHUB_SHA::7}
+          for i in $(seq 1 60); do
+            commit=$(curl -fsS https://couple.senfoundry.com/version.json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s).commit||'')}catch{}})" || true)
+            [ "$commit" = "$short" ] && echo "Deployed: $commit" && exit 0
+            git merge-base --is-ancestor "$GITHUB_SHA" "$commit" 2>/dev/null && echo "Newer commit $commit deployed" && exit 0
+            sleep 30
+          done
+          echo "::error::30 分钟内服务器没有部署 $short"; exit 1
+      - name: Publish update
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_API_URL: https://couple.senfoundry.com
+        run: npx --yes eas-cli@25.3.0 update --channel preview --platform android --environment preview --message "$(git log -1 --format=%s)" --non-interactive
