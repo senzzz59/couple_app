@@ -69,8 +69,11 @@ export function s3ConfigFrom(e: NodeJS.ProcessEnv): S3Config | null {
  *   thumbs/     缩略图
  *   originals/  相册原图 / 原片（下载用）
  *   uploading/  网页直传的临时文件，处理完就删
+ *   app/        安卓 App 安装包（只留当前这个，App 内更新从这里下载）
  * 目录只由文件名决定，所以拿到文件名就能找到对象。
  */
+/** 安卓安装包的目录（不在 FOLDERS 里：清理照片 / 视频时不会碰到） */
+export const APP_FOLDER = 'app/';
 export const FOLDERS = { photos: 'photos/', videos: 'videos/', thumbs: 'thumbs/', originals: 'originals/', uploading: 'uploading/' } as const;
 // 语音（m4a）也放 videos/
 const VIDEO_NAME = /\.(mp4|mov|webm|m4v|3gp|m4a)$/i;
@@ -613,6 +616,37 @@ export class Storage {
     const cfg = this.cfg!;
     const source = await this.resolveKey(area, from);
     await this.ops!.send(new CopyObjectCommand({ Bucket: cfg.bucket, Key: this.key(area, to), CopySource: `${cfg.bucket}/${source.split('/').map(encodeURIComponent).join('/')}` }));
+  }
+
+  /**
+   * 安卓安装包放进对象存储的 app/ 目录（下载比服务器带宽快得多）。
+   * 已经有一份大小一样的就不重传；传好后删掉 app/ 里别的旧安装包。返回对象的 key。
+   */
+  async putAppFile(file: string, name: string, size: number) {
+    const cfg = this.cfg!;
+    const key = `${cfg.prefix}${APP_FOLDER}${name}`;
+    const head = await this.ops!.send(new HeadObjectCommand({ Bucket: cfg.bucket, Key: key })).catch(() => null);
+    if (Number(head?.ContentLength ?? -1) !== size) {
+      await new Upload({
+        client: this.ops!,
+        params: { Bucket: cfg.bucket, Key: key, Body: createReadStream(file), ContentType: 'application/vnd.android.package-archive', ContentLength: size, CacheControl: 'private, max-age=31536000, immutable' },
+        queueSize: 2,
+        partSize: 16 * 1024 * 1024,
+      }).done();
+      const done = await this.ops!.send(new HeadObjectCommand({ Bucket: cfg.bucket, Key: key }));
+      if (Number(done.ContentLength) !== size) throw new Error(`size mismatch after upload (${done.ContentLength} != ${size})`);
+    }
+    const page = await this.ops!.send(new ListObjectsV2Command({ Bucket: cfg.bucket, Prefix: `${cfg.prefix}${APP_FOLDER}` }));
+    for (const o of page.Contents ?? []) {
+      if (o.Key && o.Key !== key) await this.ops!.send(new DeleteObjectCommand({ Bucket: cfg.bucket, Key: o.Key })).catch(() => {});
+    }
+    return key;
+  }
+
+  /** 安装包的下载链接（公网地址，临时签名） */
+  async signedAppUrl(key: string, download: string) {
+    const cmd = new GetObjectCommand({ Bucket: this.cfg!.bucket, Key: key, ResponseContentDisposition: `attachment; filename="${download}"` });
+    return getSignedUrl(this.signer!, cmd, { expiresIn: 24 * 3600 });
   }
 
   /** 删除本地和对象存储里的文件 */

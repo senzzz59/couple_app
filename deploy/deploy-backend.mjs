@@ -19,7 +19,7 @@ await withLock('backend', async () => {
     const release = path.join(root, 'releases', build.id);
     await fs.mkdir(release, { recursive: true });
     await fs.cp(backend, release, { recursive: true, filter: (source) => !source.split(path.sep).includes('node_modules') });
-    const dockerEnv = { ...process.env, COUPLE_DATA_DIR: path.join(root, 'shared/data') };
+    const dockerEnv = { ...process.env, COUPLE_DATA_DIR: path.join(root, 'shared/data'), COUPLE_DOWNLOADS_DIR: path.join(root, 'downloads') };
     // Build before touching either the database or the currently running API.
     await compose(path.join(release, 'docker-compose.yml'), ['build', 'api'], release, dockerEnv);
     // Backup and apply only committed, pending migrations while the old API is still running.

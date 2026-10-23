@@ -24,6 +24,7 @@ import { settingsRoutes } from './settings.ts';
 import { deployNotifyRoutes } from './deployNotify.ts';
 import { realtimeRoutes } from './realtime.ts';
 import { registerRoutes } from './register.ts';
+import { appReleaseRoutes } from './appRelease.ts';
 import { resourceRoutes } from './resources.ts';
 import { pushRoutes } from './push.ts';
 import { webPushRoutes } from './webPush.ts';
@@ -80,6 +81,7 @@ await app.register(pushRoutes);
 await app.register(webPushRoutes);
 await app.register(settingsRoutes);
 await app.register(deployNotifyRoutes);
+await app.register(appReleaseRoutes);
 
 await app.listen({ port: env.port, host: env.host });
 // 启动后再检查以前上传的视频，不耽误 API 上线

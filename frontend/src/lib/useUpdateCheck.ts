@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import { toast } from '@/components/motion';
 
+import { checkApkUpdate } from './apkUpdate';
 import { openUpdateSheet } from './updateFlow';
 import { appUpdates, updatesEnabled, useAppUpdates } from './updates';
 
@@ -14,6 +15,8 @@ export function useUpdateCheck() {
     if (update.pending) return openUpdateSheet();
     setBusy(true);
     try {
+      // 原生部分变了：热更新装不上，先看有没有新安装包（有就弹出下载）
+      if (await checkApkUpdate(true)) return;
       if (await appUpdates.check(true)) openUpdateSheet();
       else {
         const error = appUpdates.getState().error;

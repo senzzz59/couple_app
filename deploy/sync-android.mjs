@@ -6,10 +6,11 @@ import { createHash } from 'node:crypto';
  * 安卓 APK 下载：deploy/android-release.json 记录 EAS 打好的 APK 地址和 sha256（自动打包时填写；手动记录时可以省略，只靠 HTTPS）。
  * 部署时下载到 <root>/downloads（不随网页版本切换），网页里的 /download/us.apk 指向当前版本。
  * EAS 内部分发的下载地址过一段时间会失效，所以下载一次后就一直保存在服务器上。
+ * android.json 带上 runtime（原生指纹）：App 和自己的比，不一样就在 App 里提示下载新安装包（backend/src/appRelease.ts）。
  */
 export async function syncAndroidApk({ root, release, fetchImpl = fetch, log = console.log }) {
   if (!release) return { updated: false, reason: 'no release' };
-  const { version, build, url, sha256 } = release;
+  const { version, build, url, sha256, runtime } = release;
   if (!/^\d+\.\d+\.\d+$/.test(version ?? '') || !/^[0-9a-f-]{8,}$/i.test(build ?? '') || !/^https:\/\//.test(url ?? '') || (sha256 != null && !/^[0-9a-f]{64}$/i.test(sha256))) {
     throw new Error('Invalid android-release.json');
   }
@@ -39,7 +40,7 @@ export async function syncAndroidApk({ root, release, fetchImpl = fetch, log = c
   await fs.symlink(file, nextLink);
   await fs.rename(nextLink, link);
   const { size } = await fs.stat(target);
-  await fs.writeFile(path.join(downloads, 'android.json'), JSON.stringify({ version, build, file, size, sha256: await hashOf(target), updatedAt: new Date().toISOString() }, null, 2));
+  await fs.writeFile(path.join(downloads, 'android.json'), JSON.stringify({ version, build, file, size, sha256: await hashOf(target), runtime: typeof runtime === 'string' ? runtime : null, updatedAt: new Date().toISOString() }, null, 2));
   // 只保留当前和上一个 APK
   const apks = (await fs.readdir(downloads)).filter((name) => /^us-.*\.apk$/.test(name) && name !== file);
   const dated = await Promise.all(apks.map(async (name) => ({ name, time: (await fs.stat(path.join(downloads, name))).mtimeMs })));
