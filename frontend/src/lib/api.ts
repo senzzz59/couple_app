@@ -3,10 +3,10 @@ import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
 /**
- * 后端地址：优先用登录页里填写的，其次 EXPO_PUBLIC_API_URL。
+ * 后端地址：优先用登录页里填写的，其次 EXPO_PUBLIC_API_URL；安卓 App 默认连正式服务器。
  * 本地开发时手机和电脑在同一个 Wi-Fi，填电脑的局域网 IP，例如 http://192.168.1.6:8787
  */
-const DEFAULT_URL = process.env.EXPO_PUBLIC_API_URL || (Platform.OS === 'web' ? (__DEV__ ? 'http://127.0.0.1:8787' : typeof window !== 'undefined' ? window.location.origin : '') : '');
+const DEFAULT_URL = process.env.EXPO_PUBLIC_API_URL || (Platform.OS === 'web' ? (__DEV__ ? 'http://127.0.0.1:8787' : typeof window !== 'undefined' ? window.location.origin : '') : 'https://couple.senfoundry.com');
 
 let baseUrl = DEFAULT_URL;
 let token: string | null = null;

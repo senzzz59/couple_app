@@ -73,6 +73,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "b1833282-e5b7-4006-b265-aaa40080462b"
+      }
+    },
+    "owner": "luweisens-team"
   }
 }
