@@ -122,7 +122,7 @@ export default function PlaceDetail() {
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <Animated.View style={[styles.cover, { height: HEADER }, cover]}>
         {coverName ? (
-          <Image source={fileUrl(coverName)} placeholder={fileUrl(coverName, true)} style={StyleSheet.absoluteFill} contentFit="cover" transition={300} />
+          <Image source={fileUrl(coverName)} placeholder={fileUrl(coverName, true)} style={StyleSheet.absoluteFill} contentFit="cover" placeholderContentFit="cover" transition={300} />
         ) : (
           <View style={[StyleSheet.absoluteFill, { backgroundColor: sectionTheme.eats.bg, alignItems: 'center', justifyContent: 'center' }]}>
             <Text style={{ fontSize: 110 }}>{categoryEmoji(p.category)}</Text>

@@ -464,7 +464,7 @@ export default function Viewer() {
           ) : e.kind === 'live' && e.video ? (
             <LivePhoto key={active ? 'a' : 'i'} item={e} fit="cover" glow={false} autoPlay={active} onPress={toggleChrome} style={box} />
           ) : (
-            <Image source={mediaUrl(e.image)} placeholder={mediaUrl(e.image, 'thumb')} style={box} contentFit="contain" transition={200} />
+            <Image source={mediaUrl(e.image)} placeholder={mediaUrl(e.image, 'thumb')} style={box} contentFit="contain" placeholderContentFit="contain" transition={200} />
           )}
         </View>
       </Pressable>

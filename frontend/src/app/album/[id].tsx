@@ -85,7 +85,7 @@ export default function AlbumScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <Animated.View style={[styles.hero, heroStyle]}>
-        {cover?.image ? <Image source={mediaUrl(cover.image)} placeholder={mediaUrl(cover.image, 'thumb')} style={StyleSheet.absoluteFill} contentFit="cover" transition={250} /> : <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.pink }]} />}
+        {cover?.image ? <Image source={mediaUrl(cover.image)} placeholder={mediaUrl(cover.image, 'thumb')} style={StyleSheet.absoluteFill} contentFit="cover" placeholderContentFit="cover" transition={250} /> : <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.pink }]} />}
         <LinearGradient colors={['rgba(0,0,0,0.25)', 'transparent', 'rgba(0,0,0,0.35)']} style={StyleSheet.absoluteFill} />
       </Animated.View>
 

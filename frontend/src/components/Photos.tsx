@@ -67,7 +67,7 @@ export function PhotoGrid({ photos, width }: { photos: string[]; width: number }
   if (photos.length === 1) {
     return (
       <PressScale haptics={false} onPress={() => openViewer(photos, 0)}>
-        <Image source={fileUrl(photos[0])} placeholder={fileUrl(photos[0], true)} style={{ width: width * 0.75, aspectRatio: 4 / 5, borderRadius: radius.md }} contentFit="cover" transition={250} />
+        <Image source={fileUrl(photos[0])} placeholder={fileUrl(photos[0], true)} style={{ width: width * 0.75, aspectRatio: 4 / 5, borderRadius: radius.md }} contentFit="cover" placeholderContentFit="cover" transition={250} />
       </PressScale>
     );
   }

@@ -94,7 +94,7 @@ export function LivePhoto({ item, style, fit = 'cover', autoPlay, onPress, label
       onHoverIn={start}
       onHoverOut={stop}
       style={[{ overflow: 'hidden' }, style]}>
-      <Image source={mediaUrl(item.image)} placeholder={mediaUrl(item.image, 'thumb')} style={StyleSheet.absoluteFill} contentFit={fit} transition={200} />
+      <Image source={mediaUrl(item.image)} placeholder={mediaUrl(item.image, 'thumb')} style={StyleSheet.absoluteFill} contentFit={fit} placeholderContentFit={fit} transition={200} />
       {mounted && item.video && (
         <View pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity: playing ? 1 : 0 }]}>
           <Video ref={video} uri={mediaUrl(item.video)!} controls={false} muted autoPlay={autoPlay} fit={fit} style={StyleSheet.absoluteFill} onPlaying={() => setPlaying(true)} onEnded={() => setPlaying(false)} />
@@ -140,7 +140,7 @@ export function MediaGrid({ items, width, takenAt }: { items: MediaItem[]; width
     return (
       <PressScale haptics={false} onPress={() => open(0)} accessibilityRole="imagebutton" accessibilityLabel={KIND_LABEL[m.kind]} style={[box, { overflow: 'hidden', backgroundColor: colors.surfaceAlt }]}>
         {m.image ? (
-          <Image source={mediaUrl(m.image)} placeholder={mediaUrl(m.image, 'thumb')} style={StyleSheet.absoluteFill} contentFit="cover" transition={250} />
+          <Image source={mediaUrl(m.image)} placeholder={mediaUrl(m.image, 'thumb')} style={StyleSheet.absoluteFill} contentFit="cover" placeholderContentFit="cover" transition={250} />
         ) : (
           <View style={[StyleSheet.absoluteFill, styles.noPoster]} />
         )}

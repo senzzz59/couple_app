@@ -44,6 +44,7 @@ export function PlaceArt({
         placeholder={thumb ? undefined : fileUrl(image.name, true)}
         style={StyleSheet.absoluteFill}
         contentFit="cover"
+        placeholderContentFit="cover"
         transition={250}
       />
     );
