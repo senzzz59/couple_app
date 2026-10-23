@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Bell, CalendarHeart, ChevronRight, Download, Eye, Heart, Info, KeyRound, LogOut, Smartphone } from 'lucide-react-native';
+import { Bell, CalendarHeart, ChevronRight, Download, Eye, Heart, Info, KeyRound, LogOut, Package, Smartphone } from 'lucide-react-native';
 import { useCallback, useEffect, useState } from 'react';
 import { Platform, StyleSheet, Switch, View } from 'react-native';
 import Animated from 'react-native-reanimated';
@@ -91,6 +91,14 @@ export default function Settings() {
     }
   };
 
+  // 网页版：下载安卓 App 安装包（服务器上的 /download/us.apk），iPhone 暂时没有 App 版
+  const downloadApp = async () => {
+    if (isIOS()) return toast('iPhone 暂时不支持 App 版', '🍎', '继续用 Safari 添加到主屏幕就好');
+    const ready = await fetch('/download/android.json', { cache: 'no-store' }).then((r) => r.ok).catch(() => false);
+    if (!ready) return toast('安装包还没准备好，稍后再试', '⚠️');
+    window.location.assign('/download/us.apk');
+  };
+
   const logout = async () => {
     if (await confirm('退出登录？', '', '退出')) signOut();
   };
@@ -134,7 +142,8 @@ export default function Settings() {
         <Animated.View entering={enter(3)}>
           <Group title="应用">
             {web && !isStandalone() && <SettingRow first icon={Smartphone} label="添加到主屏幕" onPress={install} />}
-            <SettingRow first={!web || isStandalone()} icon={Download} label={update.pending ? '更新到新版本' : '检查更新'} value={update.pending ? undefined : appVersion} badge={update.pending ? '新版本' : undefined} busy={update.busy} onPress={update.check} />
+            {web && <SettingRow first={isStandalone()} icon={Package} label="下载 App 版" value={isIOS() ? undefined : '安卓'} onPress={downloadApp} />}
+            <SettingRow first={!web} icon={Download} label={update.pending ? '更新到新版本' : '检查更新'} value={update.pending ? undefined : appVersion} badge={update.pending ? '新版本' : undefined} busy={update.busy} onPress={update.check} />
             <SettingRow icon={Info} label="关于" onPress={() => router.push('/settings/about')} />
           </Group>
         </Animated.View>
