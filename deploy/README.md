@@ -200,6 +200,8 @@ MySQL 5.7.44 不支持 JSON 数据库默认值，数组默认值由应用写入�
   - 指纹不同（新增或升级带原生代码的依赖、权限、`app.json` 配置、Expo SDK 升级）：旧 APK 收不到这次更新，工作流自动在 EAS 打新 APK，把版本、构建 ID、下载地址、runtime 和 sha256 写回 `deploy/android-release.json`，以「安卓安装包自动更新」提交推到 master，这次推送触发的部署会把新 APK 放到服务器上。已装旧版的手机需要重新下载安装包覆盖安装（数据都在服务器上，不会丢）。
   - 需要在 GitHub 仓库 Settings → Secrets and variables → Actions 添加 `EXPO_TOKEN`；master 开了分支保护时，要允许 GitHub Actions 推送。
 - **服务器提供下载**：部署时 `deploy/sync-android.mjs` 按 `android-release.json` 下载 APK、校验 sha256，保存到 `/www/couple-app/downloads`（不随网页版本切换，只保留当前和上一个）。网页通过 `/download/us.apk` 下载，`/download/android.json` 是当前版本信息；网页版「设置 → 下载 App 版」提供下载入口（iPhone 提示暂不支持）。不需要改 Nginx：网页版本目录里的 `download` 是指向该目录的软链接。下载失败只在部署日志里记 `Android APK not updated`，不影响部署，旧 APK 仍可下载；EAS 的下载地址约两周后失效，失效前重新部署一次即可。
+- **App 内更新安装包**：后端 `GET /api/app/android`（`backend/src/appRelease.ts`，不用登录）读挂载进容器的 `downloads/android.json`（`deploy-backend.mjs` 把 `/www/couple-app/downloads` 只读挂到 `/app/downloads`），返回版本、大小、runtime 和下载地址。App 打开、回到前台、点「检查更新」时比较 runtime，和自己的不一样就弹出「发现新版本」，在 App 里下载（显示进度和速度，可以后台下载），下载好打开系统安装界面覆盖安装；第一次安装时系统会要求允许「安装未知应用」（App 声明了 `REQUEST_INSTALL_PACKAGES`）。
+- **下载加速**：配置了对象存储时，后端每 5 分钟检查一次，把当前 APK 传到桶里的 `app/` 目录（只留当前这个），之后 App 和网页版「下载 App 版」拿到的都是对象存储的临时签名链接（24 小时有效），不占服务器带宽；还没传好或没配对象存储时用 `/download/us.apk`。安装包只打 `arm64-v8a`（`app.json` 里 `expo-build-properties` 的 `buildArchs`），体积比四种架构都打小一半多；2017 年以后的安卓手机都是 64 位，够用。
 - **手动打 APK**：在 `frontend` 运行 `eas build -p android --profile preview`（需要 `EXPO_TOKEN` 或 `eas login`），或在 GitHub Actions 里手动运行 Android update 工作流。
 
 ## 从 Gitee 切换到 GitHub（已有服务器）

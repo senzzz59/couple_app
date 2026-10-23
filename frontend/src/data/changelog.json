@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "id": "app-installer-update",
+      "date": "2026-10-23",
+      "title": "App 里直接下载新版本",
+      "changes": [
+        { "type": "new", "text": "以后需要重新装 App 时，打开 App 会弹出「发现新版本」，点「下载并安装」就在 App 里下载，能看到进度和速度，下载好直接安装，不用再去网页找下载入口" },
+        { "type": "improve", "text": "下载时可以点「后台下载」继续用 App，下载好了会自己弹出来提醒安装" },
+        { "type": "improve", "text": "安装包变小了一半多，而且改从存照片视频的地方下载，比以前快很多；网页版「下载 App 版」也一起变快了" },
+        { "type": "improve", "text": "这次还需要最后一次从网页版「设置 → 下载 App 版」手动下载安装，装好之后就都能在 App 里更新了" }
+      ]
+    },
+    {
       "id": "app-video-player",
       "date": "2026-10-23",
       "title": "App 里可以直接看视频了",

@@ -94,6 +94,9 @@ export default function Settings() {
   // 网页版：下载安卓 App 安装包（服务器上的 /download/us.apk），iPhone 暂时没有 App 版
   const downloadApp = async () => {
     if (isIOS()) return toast('iPhone 暂时不支持 App 版', '🍎', '继续用 Safari 添加到主屏幕就好');
+    // 服务器配了对象存储时给的是对象存储的链接，下载快很多；没有就用服务器上的 /download/us.apk
+    const info = await fetch('/api/app/android', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    if (info?.url) return window.location.assign(info.url);
     const ready = await fetch('/download/android.json', { cache: 'no-store' }).then((r) => r.ok).catch(() => false);
     if (!ready) return toast('安装包还没准备好，稍后再试', '⚠️');
     window.location.assign('/download/us.apk');
