@@ -42,6 +42,15 @@ test('rejects a download whose sha256 does not match and keeps the previous APK'
   });
 });
 
+test('without a recorded sha256 the APK is still downloaded and its hash recorded', async () => {
+  await withRoot(async (root) => {
+    const { sha256: _omit, ...unsigned } = release;
+    await syncAndroidApk({ root, release: unsigned, fetchImpl: async () => new Response(apk), log: () => {} });
+    const info = JSON.parse(await fs.readFile(path.join(root, 'downloads/android.json'), 'utf8'));
+    assert.equal(info.sha256, sha256);
+  });
+});
+
 test('skips when no release is recorded', async () => {
   await withRoot(async (root) => {
     assert.deepEqual(await syncAndroidApk({ root, release: null }), { updated: false, reason: 'no release' });
