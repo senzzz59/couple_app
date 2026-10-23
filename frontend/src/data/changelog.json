@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "id": "app-video-player",
+      "date": "2026-10-23",
+      "title": "App 里可以直接看视频了",
+      "changes": [
+        { "type": "new", "text": "在安卓 App 里点开视频直接在 App 里播放，不会再跳到浏览器" },
+        { "type": "improve", "text": "App 里的视频和网页版一样：可以拖进度条、调倍速、长按 2 倍速快进、静音，也能全屏横过来看" },
+        { "type": "improve", "text": "这次需要重新下载一次安装包：在网页版「设置 → 下载 App 版」下载新版覆盖安装，照片和聊天都不会丢" }
+      ]
+    },
+    {
       "id": "android-app",
       "date": "2026-10-23",
       "title": "安卓手机可以装 us. App 了",

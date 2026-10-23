@@ -61,6 +61,7 @@
         }
       ],
       "expo-secure-store",
+      "expo-video",
       [
         "expo-build-properties",
         {

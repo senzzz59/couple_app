@@ -28,6 +28,7 @@
     "expo-symbols": "~57.0.3",
     "expo-system-ui": "~57.0.4",
     "expo-updates": "~57.0.26",
+    "expo-video": "~57.0.5",
     "expo-web-browser": "~57.0.3",
     "lucide-react-native": "^1.55.0",
     "lunar-javascript": "^1.7.7",
