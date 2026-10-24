@@ -64,7 +64,7 @@ export function MediaThumb({ item, size, style, radius: r = 10 }: { item: MediaI
 }
 
 /**
- * Live 图：平时是静态照片，按住（电脑上鼠标移上去）播放动态部分。
+ * Live 图：平时是静态照片，按住（电脑上鼠标移上去）播放动态部分，带声音。
  * autoPlay：打开时先自动播放一次（和 iPhone 相册一样）。
  */
 export function LivePhoto({ item, style, fit = 'cover', autoPlay, onPress, label, children, glow = true }: { item: MediaItem; style?: StyleProp<ViewStyle>; fit?: 'cover' | 'contain'; autoPlay?: boolean; onPress?: () => void; label?: string; children?: React.ReactNode; /** 播放时描一圈白边（全屏查看时不要） */ glow?: boolean }) {
@@ -97,7 +97,7 @@ export function LivePhoto({ item, style, fit = 'cover', autoPlay, onPress, label
       <Image source={mediaUrl(item.image)} placeholder={mediaUrl(item.image, 'thumb')} style={StyleSheet.absoluteFill} contentFit={fit} placeholderContentFit={fit} transition={200} />
       {mounted && item.video && (
         <View pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity: playing ? 1 : 0 }]}>
-          <Video ref={video} uri={mediaUrl(item.video)!} controls={false} muted autoPlay={autoPlay} fit={fit} style={StyleSheet.absoluteFill} onPlaying={() => setPlaying(true)} onEnded={() => setPlaying(false)} />
+          <Video ref={video} uri={mediaUrl(item.video)!} controls={false} autoPlay={autoPlay} fit={fit} style={StyleSheet.absoluteFill} onPlaying={() => setPlaying(true)} onEnded={() => setPlaying(false)} />
         </View>
       )}
       {/* 点左上角的 LIVE：完整播一遍动态部分（和 iPhone 相册一样） */}

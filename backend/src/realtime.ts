@@ -32,7 +32,8 @@ export type RealtimeEvent =
   | { type: 'show'; id: string; from: string; itemId: string; at: string }
   | ({ type: 'peer' } & PeerState)
   | { type: 'react'; from: string; itemId: string; emoji?: string; text?: string; at: string }
-  | { type: 'coview'; from: string; action: CoviewAction; itemId?: string; at: string };
+  | { type: 'coview'; from: string; action: CoviewAction; itemId?: string; at: string }
+  | { type: 'probe'; id: string };
 
 /** 一起看：邀请 / 加入 / 退出；goto = 我翻到了这张，对方跟过来 */
 export type CoviewAction = 'invite' | 'join' | 'leave' | 'goto';
@@ -50,7 +51,48 @@ let lastSent = new Map<string, string>();
 
 const open = (ws: Socket) => ws.readyState === 1;
 
-export const isOnline = (userId: string) => [...sockets].some(([ws, s]) => s.userId === userId && open(ws) && s.active);
+/** 等着前台页面回 probe-ack 的 */
+const probes = new Map<string, () => void>();
+/** 正在问的：同一个人同时只问一次（一口气传很多照片时） */
+const asking = new Map<string, Promise<boolean>>();
+const PROBE_MS = 2500;
+
+/**
+ * 推送前确认 TA 真的开着 App：手机切到后台、锁屏、杀后台时页面会被冻住，
+ * 连接却可能还要几十秒才断，只看连接会以为 TA 在线而不推送。
+ * 问一下前台的连接，规定时间内有回应才算在线；没回应的连接当作在后台。
+ */
+export function confirmActive(userId: string, ms = PROBE_MS) {
+  let p = asking.get(userId);
+  if (!p) {
+    p = probe(userId, ms).finally(() => asking.delete(userId));
+    asking.set(userId, p);
+  }
+  return p;
+}
+
+async function probe(userId: string, ms: number) {
+  const targets = [...sockets].filter(([ws, s]) => s.userId === userId && open(ws) && s.active);
+  if (!targets.length) return false;
+  const id = crypto.randomUUID();
+  const acked = await new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => {
+      probes.delete(id);
+      resolve(false);
+    }, ms);
+    probes.set(id, () => {
+      clearTimeout(timer);
+      probes.delete(id);
+      resolve(true);
+    });
+    for (const [ws] of targets) send(ws, { type: 'probe', id });
+  });
+  if (!acked) {
+    for (const [, s] of targets) s.active = false;
+    publishPeer(userId);
+  }
+  return acked;
+}
 
 function send(ws: Socket, event: RealtimeEvent) {
   if (open(ws)) ws.send(JSON.stringify(event));
@@ -157,6 +199,14 @@ export function handleMessage(ws: Socket, raw: string, now = Date.now()) {
   if (e.type === 'presence') {
     s.active = e.active === true;
     publishPeer(s.userId);
+  } else if (e.type === 'probe-ack') {
+    if (typeof e.id !== 'string') return;
+    // 回应了说明在前台
+    if (!s.active) {
+      s.active = true;
+      publishPeer(s.userId);
+    }
+    probes.get(e.id)?.();
   } else if (e.type === 'look') {
     const where = e.where === 'grid' || e.where === 'viewer' ? e.where : null;
     s.where = where;
@@ -182,6 +232,8 @@ export function handleMessage(ws: Socket, raw: string, now = Date.now()) {
 export function resetRealtime() {
   sockets.clear();
   shareViewing.clear();
+  probes.clear();
+  asking.clear();
   lastSent = new Map();
 }
 

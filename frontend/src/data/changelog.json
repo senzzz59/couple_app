@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "id": "live-sound-push-reliable-chat-effects",
+      "date": "2026-10-24",
+      "title": "Live 图有声音了，通知更及时",
+      "changes": [
+        { "type": "fix", "text": "Live 图按住播放、打开时自动播放都有声音了（和 iPhone 相册一样）" },
+        { "type": "fix", "text": "手机切到后台或锁屏后，TA 发消息、戳你时不会再漏掉通知：以前 App 刚切走的那几十秒里会被当成「还开着」而不推送" },
+        { "type": "fix", "text": "发的特效表情对方也能看到了：对方不在聊天页时，打开聊天会把没看过的表情特效补放一遍" }
+      ]
+    },
+    {
       "id": "web-only-no-app-build",
       "date": "2026-10-24",
       "title": "只保留网页版",

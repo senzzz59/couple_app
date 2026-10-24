@@ -7,7 +7,7 @@ import { db, schema } from './db/index.ts';
 import { env } from './env.ts';
 import { removeFiles } from './files.ts';
 import { partnerOf } from './couple.ts';
-import { broadcast, isOnline, sendTo, setShareViewing } from './realtime.ts';
+import { broadcast, confirmActive, sendTo, setShareViewing } from './realtime.ts';
 import { pushNudge } from './push.ts';
 import { sendWebPush } from './webPush.ts';
 
@@ -137,7 +137,7 @@ export async function authRoutes(app: FastifyInstance) {
     const event = { id, kind, from: req.user.sub, at: new Date().toISOString() };
     await db.insert(schema.nudges).values({ id, fromId: req.user.sub, toId: partner.id, kind });
     const [sender] = await db.select({ name: schema.users.name }).from(schema.users).where(eq(schema.users.id, req.user.sub));
-    const offline = !isOnline(partner.id);
+    const offline = !(await confirmActive(partner.id));
     const log = (e: unknown) => req.log.warn(e, 'push delivery failed');
     const [nativePush, webPush] = offline
       ? await Promise.all([
