@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "id": "web-smooth-tab-switching",
+      "date": "2026-10-24",
+      "title": "切换页面不卡了",
+      "changes": [
+        { "type": "fix", "text": "底部切换首页、动态、相册、美食、清单时不再卡顿：没在看的页面不再在后台一直绘制，切过去直接显示，滑到哪里也还停在哪里" },
+        { "type": "improve", "text": "美食的「想去 / 吃过」、清单的筛选和动态列表，切换和刷新时更流畅" }
+      ]
+    },
+    {
       "id": "about-overflow-diagnostics",
       "date": "2026-10-24",
       "title": "排查 iPhone 页面大小问题",

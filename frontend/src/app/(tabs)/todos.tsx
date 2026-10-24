@@ -3,13 +3,13 @@ import { ArrowUp, SlidersHorizontal, Trash2 } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
-import Animated, { FadeOut, LinearTransition, useAnimatedStyle, useSharedValue, withSpring, ZoomIn } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring, ZoomIn } from 'react-native-reanimated';
 
 import { Segmented, toast } from '@/components/motion';
 import { Screen } from '@/components/Screen';
 import { QueryFallback } from '@/components/Skeleton';
 import { TodoRow } from '@/components/TodoRow';
-import { Chip, Empty, enter, IconButton, PressScale, Row, Txt } from '@/components/ui';
+import { Chip, Empty, enter, IconButton, listItem, PressScale, Row, Txt } from '@/components/ui';
 import { api } from '@/lib/api';
 import { haptic } from '@/lib/haptics';
 import { undoable, usePendingDeletes } from '@/lib/undo';
@@ -142,7 +142,7 @@ export default function Todos() {
         ) : (
           <View style={styles.listCard}>
             {list.map((t, i) => (
-              <Animated.View key={t.id} entering={enter(i)} exiting={FadeOut.duration(180)} layout={LinearTransition.springify().damping(18)}>
+              <Animated.View key={t.id} {...listItem(i, 180)}>
                 {i > 0 && <View style={styles.sep} />}
                 <SwipeRow todo={t} />
               </Animated.View>

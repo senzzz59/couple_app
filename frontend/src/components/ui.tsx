@@ -15,7 +15,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import Animated, { FadeInDown, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, { FadeInDown, FadeOut, LinearTransition, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { fileUrl } from '@/lib/api';
 import { mascotFor } from '@/lib/profile';
@@ -90,6 +90,17 @@ export function Card({ style, children, bg = colors.surface, onPress, ...p }: Pr
 
 /** 列表 / 卡片依次入场 */
 export const enter = (i = 0) => FadeInDown.delay(Math.min(i, 10) * 50).springify().damping(13).stiffness(170);
+
+/**
+ * 列表里一项的动画：依次入场，删掉时淡出，其它项顺滑挪位。
+ * 网页上 Reanimated 的挪位动画每次重新渲染都要逐项测量位置，淡出要复制整项再删，
+ * 列表一长切换筛选、刷新数据就卡，所以网页只保留入场。
+ */
+export const listItem = (i: number, exitMs?: number) => ({ entering: enter(i), ...listMotion(exitMs) });
+
+/** 只有删掉时的淡出和挪位（入场自己定）；网页上不做，原因见 listItem */
+export const listMotion = (exitMs?: number, damping = 18) =>
+  Platform.OS === 'web' ? {} : { exiting: exitMs ? FadeOut.duration(exitMs) : FadeOut, layout: LinearTransition.springify().damping(damping) };
 
 // ---------- 按钮
 export function Button({
