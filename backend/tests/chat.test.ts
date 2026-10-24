@@ -74,6 +74,31 @@ test('partner sees where I am in the gallery, only while the app is open', async
   assert.deepEqual(b.got.at(-1), { type: 'peer', online: false, where: null, itemId: null });
 });
 
+test('push is skipped only when the partner\'s page answers that it is really open', async () => {
+  const rt = await import('../src/realtime.ts');
+  rt.resetRealtime();
+  const a = fakeSocket();
+  const b = fakeSocket();
+  rt.attachSocket(a, A, C1);
+  rt.attachSocket(b, B, C1);
+  // 没有前台连接：直接推送
+  assert.equal(await rt.confirmActive(A, 50), false);
+  rt.handleMessage(a, JSON.stringify({ type: 'presence', active: true }), 1000);
+  // 前台页面回应了：不推送
+  const asked = rt.confirmActive(A, 1000);
+  const probe = a.got.find((e) => e.type === 'probe') as { id: string };
+  assert.ok(probe);
+  rt.handleMessage(a, JSON.stringify({ type: 'probe-ack', id: probe.id }), 1100);
+  assert.equal(await asked, true);
+  // 手机切后台被冻住、连接还没断：不回应，算离线，另一半也看到 TA 不在线了
+  assert.equal(await rt.confirmActive(A, 30), false);
+  assert.deepEqual(b.got.at(-1), { type: 'peer', online: false, where: null, itemId: null });
+  // 不在线以后不用再等回应
+  const before = a.got.length;
+  assert.equal(await rt.confirmActive(A, 1000), false);
+  assert.equal(a.got.length, before);
+});
+
 test('turning off viewing share hides the photo but keeps online status', async () => {
   const rt = await import('../src/realtime.ts');
   rt.resetRealtime();

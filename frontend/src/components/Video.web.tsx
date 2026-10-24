@@ -5,6 +5,8 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 import { ActivityIndicator, GestureResponderEvent, Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import Animated, { FadeOut } from 'react-native-reanimated';
 
+import { isIOS } from '@/lib/install';
+
 export type VideoHandle = { play: () => void; pause: () => void; restart: () => void; /** 停在第几秒（选帧用） */ seek: (t: number) => void };
 
 export type VideoProps = {
@@ -54,6 +56,50 @@ const noop = (e: { stopPropagation: () => void }) => e.stopPropagation();
 /** RN 的类型里没有这些网页事件，用这个塞给 View */
 const web = (p: Record<string, unknown>) => p as object;
 
+/**
+ * Live 图的声音：浏览器（尤其 iPhone）只让「点击当下」开始的视频带声音，
+ * 按住 / 打开自动播放时会被拒绝，只能静音播。这时把视频里的声音解码出来用 Web Audio 放：
+ * Web Audio 只要之前点过页面任何地方解锁一次，之后随时能出声。
+ */
+type AudioCtor = typeof AudioContext;
+let audioCtx: AudioContext | null = null;
+const getAudioCtx = () => {
+  if (audioCtx) return audioCtx;
+  const C = (window.AudioContext ?? (window as unknown as { webkitAudioContext?: AudioCtor }).webkitAudioContext) as AudioCtor | undefined;
+  audioCtx = C ? new C() : null;
+  return audioCtx;
+};
+if (typeof document !== 'undefined') {
+  // 切到后台再回来 iOS 会把它挂起：每次点击都试着恢复
+  const unlock = () => {
+    try {
+      const c = getAudioCtx();
+      if (c && c.state !== 'running') void c.resume().catch(() => {});
+    } catch {
+      // 不支持 Web Audio
+    }
+  };
+  for (const t of ['touchend', 'pointerup', 'click', 'keydown']) document.addEventListener(t, unlock, { capture: true, passive: true });
+}
+const decoded = new Map<string, Promise<AudioBuffer | null>>();
+function decodeAudio(uri: string) {
+  let p = decoded.get(uri);
+  if (!p) {
+    const c = getAudioCtx();
+    p = !c
+      ? Promise.resolve(null)
+      : fetch(uri)
+          .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
+          // 老的 Safari 只支持回调写法
+          .then((data) => new Promise<AudioBuffer>((resolve, reject) => void c.decodeAudioData(data, resolve, reject)?.catch?.(reject)))
+          .catch(() => null);
+    decoded.set(uri, p);
+    // 只记最近几个，别占太多内存
+    if (decoded.size > 8) decoded.delete(decoded.keys().next().value!);
+  }
+  return p;
+}
+
 /** 网页版直接用 <video>：iPhone 上 playsInline 才能在页面里播放，不会强制全屏；控件是自己画的 */
 export const Video = forwardRef<VideoHandle, VideoProps>(function Video(
   { uri, poster, placeholder, style, controls = true, controlsVisible = true, onTap, autoPlay, muted = false, loop, fit = 'contain', onEnded, onPlaying },
@@ -77,16 +123,51 @@ export const Video = forwardRef<VideoHandle, VideoProps>(function Video(
   // 第一帧播出来了（或拖过进度条）：可以拿掉盖着的封面
   const [shown, setShown] = useState(false);
 
+  // 没控件（Live 图）又要声音、浏览器却只让静音播时：声音改用 Web Audio 放
+  const sideAudio = useRef(false);
+  const source = useRef<AudioBufferSourceNode | null>(null);
+  const stopAudio = () => {
+    try {
+      source.current?.stop();
+    } catch {
+      // 已经停了
+    }
+    source.current = null;
+  };
+  const syncAudio = async () => {
+    stopAudio();
+    const v = el.current;
+    const c = getAudioCtx();
+    if (!sideAudio.current || !v || v.paused || !c) return;
+    const buf = await decodeAudio(uri);
+    // 解码的这一会儿可能已经松手了
+    if (!buf || !el.current || el.current.paused || source.current) return;
+    // 还没点过页面（没解锁）：这次就没声音，不能等，等到解锁时可能早就松手了
+    if (c.state !== 'running') return;
+    const offset = el.current.currentTime;
+    if (offset >= buf.duration) return;
+    // iPhone 静音键打开时 Web Audio 默认不出声；视频本来是出声的，保持一致
+    const session = (navigator as unknown as { audioSession?: { type: string } }).audioSession;
+    if (session && session.type !== 'playback') session.type = 'playback';
+    const node = c.createBufferSource();
+    node.buffer = buf;
+    node.playbackRate.value = el.current.playbackRate;
+    node.connect(c.destination);
+    node.start(0, offset);
+    source.current = node;
+  };
+
   const play = () => {
     const v = el.current;
     if (!v) return;
     if (v.ended) v.currentTime = 0;
     v.play().catch(() => {
-      // 浏览器不让带声音自动播放：先静音播放，右下角可以打开声音
       if (v.muted) return setPaused(true);
+      // 浏览器不让带声音自动播放：先静音播放。有控件时右下角可以打开声音，没控件时声音另外放
       v.muted = true;
-      setMuted(true);
-      v.play().catch(() => setPaused(true));
+      if (controls) setMuted(true);
+      else sideAudio.current = true;
+      v.play().then(syncAudio, () => setPaused(true));
     });
   };
 
@@ -112,10 +193,13 @@ export const Video = forwardRef<VideoHandle, VideoProps>(function Video(
     const node = wrap.current as unknown as Element | null;
     if (!v) return;
     v.muted = muted;
+    // 没控件又要声音的（Live 图）：iPhone 一定要另外放声音，先解码好，按住时能马上出声
+    if (!controls && !muted && isIOS()) void decodeAudio(uri);
     if (autoPlay) play();
     // 离开页面（翻到别的照片）时停止播放、退出全屏
     return () => {
       v.pause();
+      stopAudio();
       if (node && document.fullscreenElement === node) void document.exitFullscreen().catch(() => {});
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -244,20 +328,29 @@ export const Video = forwardRef<VideoHandle, VideoProps>(function Video(
         playsInline
         preload={controls ? 'auto' : 'metadata'}
         onPlay={() => setPaused(false)}
-        onPause={() => setPaused(true)}
+        onPause={() => {
+          setPaused(true);
+          stopAudio();
+        }}
         onPlaying={() => {
           setWaiting(false);
           setShown(true);
+          void syncAudio();
           onPlaying?.();
         }}
         onWaiting={() => setWaiting(true)}
         onCanPlay={() => setWaiting(false)}
-        onSeeked={() => setShown(true)}
+        onSeeked={() => {
+          setShown(true);
+          // 重新从头播（再按一次 Live 图）：声音也跟着回到开头
+          if (source.current) void syncAudio();
+        }}
         onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
         onDurationChange={(e) => setDuration(e.currentTarget.duration)}
         onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
         onEnded={() => {
           setPaused(true);
+          stopAudio();
           onEnded?.();
         }}
         style={{ width: '100%', height: '100%', objectFit: fit, background: 'transparent', display: 'block', WebkitTouchCallout: 'none', userSelect: 'none' }}

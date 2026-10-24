@@ -5,7 +5,7 @@ import webpush from 'web-push';
 import { z } from 'zod';
 import { db, schema } from './db/index.ts';
 import { partnerOf } from './couple.ts';
-import { isOnline } from './realtime.ts';
+import { confirmActive } from './realtime.ts';
 
 /**
  * 网页推送（添加到主屏幕后的 iPhone / 安卓 / 电脑）。
@@ -106,14 +106,14 @@ function throttled(key: string, ms: number) {
 }
 
 /**
- * 有新动态、评论等时提醒另一半。对方正开着 App（前台实时连接）时不推送，页面会实时刷新。
+ * 有新动态、评论等时提醒另一半。对方正开着 App（前台连接，并且问了有回应）时不推送，页面会实时刷新。
  * body 里可以用 {name} 代表发送人的昵称。推送失败不影响原来的操作。
  */
 export function notifyPartner(fromUserId: string, message: PushMessage & { throttleMs?: number }, log: (error: unknown) => void) {
   void (async () => {
     const [sender] = await db.select({ name: schema.users.name, coupleId: schema.users.coupleId }).from(schema.users).where(eq(schema.users.id, fromUserId));
     const partner = sender ? await partnerOf(fromUserId, sender.coupleId) : null;
-    if (!partner || isOnline(partner.id)) return;
+    if (!partner || (await confirmActive(partner.id))) return;
     if (message.throttleMs && throttled(`${fromUserId}:${message.tag}`, message.throttleMs)) return;
     const name = sender?.name || 'TA';
     await sendWebPush(partner.id, { ...message, title: message.title.replace('{name}', name), body: message.body.replace('{name}', name) }, log);

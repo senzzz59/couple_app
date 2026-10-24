@@ -82,6 +82,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           return;
         }
         if (!e || typeof e.type !== 'string') return;
+        // 服务器推送前问一下「还开着吗」：只有在前台才回，后台 / 被系统冻住时不回，服务器就会改发通知
+        if (e.type === 'probe') {
+          if (AppState.currentState === 'active') socket.send(JSON.stringify({ type: 'probe-ack', id: e.id }));
+          return;
+        }
         if (e.type === 'change') invalidate(e.collection === 'users' ? 'me' : e.collection);
         emitRealtime(e);
       };

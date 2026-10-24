@@ -46,16 +46,24 @@ export default function Chat() {
   const replyPicked = useRef(false);
   const list = useRef<FlatList<ChatMessage>>(null);
 
-  // ---- 表情特效：自己刚发的、对方刚发来的（翻历史不放）
+  // ---- 表情特效：自己刚发的、对方刚发来的、打开聊天时还没看过的（翻历史不放）
   const [fresh, setFresh] = useState<Set<string>>(() => new Set());
-  useEffect(() => {
-    const offFresh = onFreshMessage((m) => {
-      if (!expressiveSymbol(m)) return;
-      setFresh((s) => new Set(s).add(m.id));
-      const rain = rainFor(m);
+  const played = useRef(new Set<string>());
+  const celebrate = useCallback(
+    (ms: ChatMessage[]) => {
+      const list = ms.filter((m) => expressiveSymbol(m) && !played.current.has(m.id));
+      if (!list.length) return;
+      list.forEach((m) => played.current.add(m.id));
+      setFresh((s) => new Set([...s, ...list.map((m) => m.id)]));
+      // 一下来好几条时只下最新那条的雨
+      const rain = list.map(rainFor).find(Boolean);
       if (rain) emojiRain(rain);
-      if (m.createdBy !== me?.id) haptic.medium();
-    });
+      if (list.some((m) => m.createdBy !== me?.id)) haptic.medium();
+    },
+    [me?.id]
+  );
+  useEffect(() => {
+    const offFresh = onFreshMessage((m) => celebrate([m]));
     // 对方的新消息只会从实时通道来
     const offChat = onRealtime<{ message: ChatMessage }>('chat', ({ message }) => {
       setQueryData<ChatMessage[]>('/api/chat/messages', (prev) => [message, ...(prev ?? []).filter((x) => x.id !== message.id)]);
@@ -65,7 +73,26 @@ export default function Chat() {
       offFresh();
       offChat();
     };
-  }, [me?.id]);
+  }, [celebrate]);
+
+  // 对方发表情时我不在聊天页（或者手机在后台、实时通道断了）：
+  // 打开聊天时把还没读的表情补放一遍；之后刷新列表多出来的对方消息也放
+  const known = useRef<Set<string> | null>(null);
+  const unreadAtOpen = unread.data?.count;
+  useEffect(() => {
+    const list = latest.data;
+    if (!list || !me) return;
+    if (!known.current) {
+      if (unreadAtOpen === undefined) return;
+      known.current = new Set(list.map((m) => m.id));
+      celebrate(list.filter((m) => m.createdBy !== me.id).slice(0, Math.min(unreadAtOpen, 5)));
+      return;
+    }
+    const added = list.filter((m) => !known.current!.has(m.id));
+    added.forEach((m) => known.current!.add(m.id));
+    // 缓存里的列表很旧时一下会多出很多：只放半小时内的最近几条
+    celebrate(added.filter((m) => m.createdBy !== me.id && Date.now() - new Date(m.createdAt).getTime() < 30 * 60_000).slice(0, 5));
+  }, [latest.data, unreadAtOpen, me, celebrate]);
 
   useFocusEffect(
     useCallback(() => {
