@@ -5,7 +5,7 @@ import { Copy, FolderPlus, Heart, MapPin, MessageCircle, MoreHorizontal, Plus, R
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { FadeIn, FadeOut, LinearTransition, useAnimatedStyle, useSharedValue, withSequence, withSpring, withTiming } from 'react-native-reanimated';
+import Animated, { FadeIn, useAnimatedStyle, useSharedValue, withSequence, withSpring, withTiming } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
 import { CommentComposer } from '@/components/CommentComposer';
@@ -15,7 +15,7 @@ import { Screen } from '@/components/Screen';
 import { Sheet } from '@/components/Sheet';
 import { QueryFallback, SkeletonList } from '@/components/Skeleton';
 import { Sticker } from '@/components/Sticker';
-import { Avatar, Button, Empty, enter, IconButton, PressScale, Row, Txt } from '@/components/ui';
+import { Avatar, Button, Empty, IconButton, listItem, listMotion, PressScale, Row, Txt } from '@/components/ui';
 import { api } from '@/lib/api';
 import { timeAgo } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
@@ -78,7 +78,7 @@ function CommentLine({ c, byId, onPress, onLongPress }: { c: Comment; byId: Map<
   const { userName } = useCouple();
   const target = c.replyToId ? byId.get(c.replyToId) : undefined;
   return (
-    <Animated.View entering={FadeIn} exiting={FadeOut.duration(150)} layout={LinearTransition.springify().damping(20)}>
+    <Animated.View entering={FadeIn} {...listMotion(150, 20)}>
       <Pressable onPress={onPress} onLongPress={onLongPress} delayLongPress={350} style={({ pressed }) => [styles.comment, pressed && { backgroundColor: 'rgba(75,46,53,0.06)' }]}>
         <Text style={styles.commentText}>
           <Text style={styles.commentName}>{userName(c.createdBy)}</Text>
@@ -208,7 +208,7 @@ function MomentCard({ m, i, queryKey }: { m: Moment; i: number; queryKey: string
     : [];
 
   return (
-    <Animated.View entering={enter(i)} exiting={FadeOut} layout={LinearTransition.springify().damping(18)} style={styles.card}>
+    <Animated.View {...listItem(i)} style={styles.card}>
       <Row style={{ justifyContent: 'space-between' }}>
         <Row gap={10}>
           <Avatar user={author} size={38} />

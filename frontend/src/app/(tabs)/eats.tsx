@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { Dices, Map as MapIcon, MapPin, Plus } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
-import Animated, { FadeOut, LinearTransition } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 
 import { FoodFilters } from '@/components/FoodFilters';
 import { Segmented, StarRating } from '@/components/motion';
@@ -11,7 +11,7 @@ import { PlaceArt, PlacePolaroid } from '@/components/PlacePolaroid';
 import { PlacePeek } from '@/components/PlacePeek';
 import { Screen } from '@/components/Screen';
 import { QueryFallback } from '@/components/Skeleton';
-import { Button, Empty, enter, IconButton, PressScale, Row, Txt } from '@/components/ui';
+import { Button, Empty, IconButton, listItem, PressScale, Row, Txt } from '@/components/ui';
 import { api } from '@/lib/api';
 import { placeArea, placeImage } from '@/lib/food';
 import { applyFoodFilter, DEFAULT_FILTER, type FilteredPlace, type FoodFilter } from '@/lib/foodFilter';
@@ -26,7 +26,7 @@ const open = (p: Place) => router.push({ pathname: '/place/[id]', params: { id: 
 function VisitedCard({ p, visits, count, i, onPeek }: { p: FilteredPlace; visits: Visit[]; count: number; i: number; onPeek: () => void }) {
   const where = [p.km != null ? fmtKm(p.km) : null, placeArea(p) ?? p.city, p.address].filter(Boolean).join(' · ');
   return (
-    <Animated.View entering={enter(i)} exiting={FadeOut.duration(150)} layout={LinearTransition.springify().damping(18)}>
+    <Animated.View {...listItem(i, 150)}>
       <PressScale
         onPress={() => open(p)}
         onLongPress={() => {
@@ -150,7 +150,7 @@ export default function Eats() {
         ) : (
           <View style={styles.wall}>
             {shown.map((p, i) => (
-              <Animated.View key={p.id} entering={enter(i)} exiting={FadeOut.duration(150)} layout={LinearTransition.springify().damping(18)}>
+              <Animated.View key={p.id} {...listItem(i, 150)}>
                 <PlacePolaroid p={p} image={placeImage(p, visits.data)} km={p.km} width={polW} onPress={() => open(p)} onLongPress={() => setPeek(p)} />
               </Animated.View>
             ))}
