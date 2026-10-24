@@ -1,6 +1,6 @@
 import { api } from './api';
 import { isIOS, isStandalone } from './install';
-import { registerWebsite } from './updates.web';
+import { registerWebsite } from './updates';
 
 /**
  * 网页推送：添加到主屏幕后，App 关着也能收到 TA 的动态、评论、戳一戳。

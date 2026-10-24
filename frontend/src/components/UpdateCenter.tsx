@@ -22,7 +22,6 @@ import { closeUpdateSheet, takePendingRestore, useUpdateSheetOpen } from '@/lib/
 import { appUpdates, appVersion, updateCandidate, useAppUpdates } from '@/lib/updates';
 import { colors, fonts, radius, springs } from '@/theme';
 
-import { ApkUpdateHost } from './ApkUpdate';
 import { Blob, BlobCouple, FlatHeart, type BlobMood } from './Mascot';
 import { toast } from './motion';
 import { ReleaseCard } from './ReleaseNotes';
@@ -80,7 +79,6 @@ export function UpdateHost({ signedIn }: { signedIn: boolean }) {
   return (
     <>
       <UpdateSheet visible={open} onClose={closeUpdateSheet} onUpdate={start} />
-      <ApkUpdateHost />
       {updating && <UpdateCurtain />}
     </>
   );

@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "id": "web-only-no-app-build",
+      "date": "2026-10-24",
+      "title": "只保留网页版",
+      "changes": [
+        { "type": "improve", "text": "不再做安卓 App 了，iPhone 和安卓都用浏览器「添加到主屏幕」，更新打开就是最新的" },
+        { "type": "improve", "text": "以前装过安卓 App 的话，可以卸载掉，改用网页版，照片和聊天都还在" }
+      ]
+    },
+    {
       "id": "web-smooth-tab-switching",
       "date": "2026-10-24",
       "title": "切换页面不卡了",

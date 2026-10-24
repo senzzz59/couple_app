@@ -39,5 +39,3 @@ services:
       S3_PREFIX: ${S3_PREFIX:-}
     volumes:
       - ${COUPLE_DATA_DIR:-./data}/uploads:/app/uploads
-      # 安卓安装包（部署时放到服务器上的），App 内更新从这里读版本信息
-      - ${COUPLE_DOWNLOADS_DIR:-./downloads}:/app/downloads:ro

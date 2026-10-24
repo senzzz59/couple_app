@@ -8,7 +8,6 @@
     "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "~57.0.27",
     "expo-blur": "~57.0.3",
-    "expo-build-properties": "~57.0.22",
     "expo-clipboard": "~57.0.2",
     "expo-constants": "~57.0.21",
     "expo-device": "~57.0.2",
@@ -18,7 +17,6 @@
     "expo-haptics": "~57.0.3",
     "expo-image": "~57.0.5",
     "expo-image-picker": "~57.0.20",
-    "expo-intent-launcher": "~57.0.1",
     "expo-linear-gradient": "~57.0.2",
     "expo-linking": "~57.0.12",
     "expo-location": "~57.0.20",
@@ -29,7 +27,6 @@
     "expo-status-bar": "~57.0.1",
     "expo-symbols": "~57.0.3",
     "expo-system-ui": "~57.0.4",
-    "expo-updates": "~57.0.26",
     "expo-video": "~57.0.5",
     "expo-web-browser": "~57.0.3",
     "lucide-react-native": "^1.55.0",
@@ -56,16 +53,11 @@
   },
   "scripts": {
     "start": "expo start",
-    "android": "expo run:android",
-    "ios": "expo run:ios",
     "web": "expo start --web",
     "build:web": "expo export --platform web --output-dir dist --max-workers 1 && node scripts/prepare-web.mjs",
     "preview:web": "node scripts/preview-web.mjs",
     "lint": "expo lint",
-    "typecheck": "tsc --noEmit",
-    "updates:configure": "node scripts/configure-updates.mjs",
-    "update:preview": "npx eas-cli@latest update --channel preview --environment preview",
-    "update:production": "npx eas-cli@latest update --channel production --environment production"
+    "typecheck": "tsc --noEmit"
   },
   "private": true
 }
