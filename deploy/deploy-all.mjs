@@ -2,8 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { notifyDeploy } from './notify.mjs';
-import { root, repository, run, capture, withLock, publishFrontend } from './release-utils.mjs';
-import { syncAndroidApk } from './sync-android.mjs';
+import { root, repository, run, withLock, publishFrontend } from './release-utils.mjs';
 
 const scripts = path.dirname(fileURLToPath(import.meta.url));
 await withLock('all', async () => {
@@ -16,11 +15,6 @@ await withLock('all', async () => {
   // Both sides use the same immutable commit even if master advances during the build.
   await run(process.execPath, [path.join(scripts, 'deploy-backend.mjs')], scripts, { ...process.env, COUPLE_DEPLOY_COMMIT: pending.commit });
   const lastDeployed = await fs.readFile(path.join(root, 'state/deployment.json'), 'utf8').then((t) => JSON.parse(t).commit).catch(() => null);
-  // 安卓 APK 放到服务器上提供下载（失败不影响部署，旧 APK 保持可下载）
-  try {
-    const release = await capture('git', ['show', `${pending.commit}:deploy/android-release.json`], repository).then(JSON.parse).catch(() => null);
-    await syncAndroidApk({ root, release });
-  } catch (error) { console.error('Android APK not updated:', error.message); }
   await withLock('frontend', async () => {
     const file = path.join(root, 'state/frontend.json');
     const previous = await fs.readFile(file, 'utf8').then(JSON.parse).catch(() => null);

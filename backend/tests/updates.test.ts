@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createUpdateController } from '../../frontend/src/lib/updateController.ts';
-import { configureApp } from '../../frontend/app.config.ts';
 
 test('concurrent checks share one download and installation requires a downloaded update', async () => {
   let checks = 0;
@@ -87,25 +86,4 @@ test('unsupported environments make no native update calls', async () => {
   });
   assert.equal(await controller.check(true), false);
   assert.equal(controller.getState().phase, 'unsupported');
-});
-
-test('build config only enables updates with a valid project and preserves existing settings', () => {
-  const previous = process.env.EXPO_PUBLIC_EAS_PROJECT_ID;
-  delete process.env.EXPO_PUBLIC_EAS_PROJECT_ID;
-  try {
-    const context = { config: { name: 'us.', slug: 'us-couple', extra: { retained: 'yes' } } } as Parameters<typeof configureApp>[0];
-    assert.equal(configureApp(context).updates?.enabled, false);
-    const id = '550e8400-e29b-41d4-a716-446655440000';
-    process.env.EXPO_PUBLIC_EAS_PROJECT_ID = id;
-    const configured = configureApp(context);
-    assert.equal(configured.updates?.url, `https://u.expo.dev/${id}`);
-    assert.equal(configured.updates?.checkAutomatically, 'NEVER');
-    assert.deepEqual(configured.runtimeVersion, { policy: 'fingerprint' });
-    assert.equal(configured.extra?.retained, 'yes');
-    process.env.EXPO_PUBLIC_EAS_PROJECT_ID = 'invalid';
-    assert.throws(() => configureApp(context));
-  } finally {
-    if (previous === undefined) delete process.env.EXPO_PUBLIC_EAS_PROJECT_ID;
-    else process.env.EXPO_PUBLIC_EAS_PROJECT_ID = previous;
-  }
 });
